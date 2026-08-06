@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Administração e Auditoria{% endblock %}
+
+{% block css %}
+<style>
+.admin-kpi { min-height: 112px; overflow: hidden; }
+.admin-kpi .admin-kpi-icon { position:absolute; right:18px; bottom:-8px; font-size:64px; opacity:.12; }
+.admin-avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(0,172,172,.18); color:#00acac; font-weight:700; }
+.admin-table td { vertical-align:middle; }
+.admin-detail { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.origin-badge { background:rgba(73,182,214,.15); color:#49b6d6; border:1px solid rgba(73,182,214,.25); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item active">Administração</li></ol>
+<h1 class="page-header">Administração <small>usuários, acessos e auditoria</small></h1>
+
+<div id="admin-alert" class="alert d-none"></div>
+<div class="row mb-3">
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-blue text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Usuários cadastrados</div><h2 id="kpi-users">0</h2><div class="small">todos os perfis</div><i class="fa fa-users admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-warning text-dark admin-kpi"><div class="card-body position-relative"><div class="text-dark text-opacity-75">Aguardando liberação</div><h2 id="kpi-pending">0</h2><div class="small">requerem análise</div><i class="fa fa-user-clock admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-teal text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Acessos registrados</div><h2 id="kpi-sessions">0</h2><div class="small">sessões de utilização</div><i class="fa fa-right-to-bracket admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-gray-800 text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Eventos auditados</div><h2 id="kpi-logs">0</h2><div class="small">últimos 500 eventos</div><i class="fa fa-clipboard-list admin-kpi-icon"></i></div></div></div>
+</div>
+
+<div class="panel panel-inverse">
+  <div class="panel-heading"><h4 class="panel-title"><i class="fa fa-shield-halved me-2"></i>Central de gerenciamento global</h4><button class="btn btn-xs btn-outline-light" id="refresh-admin"><i class="fa fa-rotate"></i> Atualizar</button></div>
+  <div class="panel-body">
+    <ul class="nav nav-tabs mb-3" id="admin-tabs">
+      <li class="nav-item"><a href="#pendentes" data-bs-toggle="tab" class="nav-link active"><i class="fa fa-user-check me-1"></i>Liberações <span class="badge bg-warning text-dark ms-1" id="pending-badge">0</span></a></li>
+      <li class="nav-item"><a href="#usuarios" data-bs-toggle="tab" class="nav-link"><i class="fa fa-users-gear me-1"></i>Usuários</a></li>
+      <li class="nav-item"><a href="#auditoria" data-bs-toggle="tab" class="nav-link"><i class="fa fa-list-check me-1"></i>Auditoria</a></li>
+      <li class="nav-item"><a href="#sessoes" data-bs-toggle="tab" class="nav-link"><i class="fa fa-clock-rotate-left me-1"></i>Sessões</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="pendentes"><div class="row" id="pending-users"></div></div>
+      <div class="tab-pane fade" id="usuarios">
+        <div class="row mb-3"><div class="col-md-7"><input class="form-control" id="user-search" placeholder="Pesquisar por nome, comum, município ou origem..."></div><div class="col-md-3"><select class="form-select" id="status-filter"><option value="">Todos os status</option><option value="approved">Aprovados</option><option value="pending">Pendentes</option><option value="rejected">Rejeitados</option></select></div></div>
+        <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Usuário</th><th>Escopo</th><th>Origem</th><th>Utilização</th><th>Status</th><th></th></tr></thead><tbody id="users-table"></tbody></table></div>
+      </div>
+      <div class="tab-pane fade" id="auditoria">
+        <div class="row mb-3"><div class="col-md-5"><input class="form-control" id="log-search" placeholder="Pesquisar ação, módulo, usuário ou detalhe..."></div><div class="col-md-3"><select class="form-select" id="module-filter"><option value="">Todos os módulos</option></select></div><div class="col-md-2"><input type="date" class="form-control" id="log-date"></div></div>
+        <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th>Origem</th><th>Detalhes</th></tr></thead><tbody id="logs-table"></tbody></table></div>
+      </div>
+      <div class="tab-pane fade" id="sessoes"><div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Início</th><th>Usuário</th><th>Status</th><th>Última atividade</th><th>Encerramento</th><th>Motivo</th></tr></thead><tbody id="sessions-table"></tbody></table></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="user-modal"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Revisar acesso do usuário</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+  <input type="hidden" id="edit-user-id"><div class="row g-3">
+    <div class="col-md-6"><label class="form-label">Nome</label><input class="form-control" id="edit-name"></div>
+    <div class="col-md-3"><label class="form-label">Nível de acesso</label><select class="form-select" id="edit-role"><option value="4">Local</option><option value="3">Municipal</option><option value="2">Regional</option><option value="1">Global</option></select></div>
+    <div class="col-md-3"><label class="form-label">Status</label><select class="form-select" id="edit-status"><option value="pending">Pendente</option><option value="approved">Aprovado</option><option value="rejected">Rejeitado</option></select></div>
+    <div class="col-md-6"><label class="form-label">Comum congregação</label><input class="form-control" id="edit-comum"></div>
+    <div class="col-md-3"><label class="form-label">Município</label><input class="form-control" id="edit-municipio"></div>
+    <div class="col-md-3"><label class="form-label">Cargo/Função</label><input class="form-control" id="edit-cargo"></div>
+    <div class="col-12"><div class="alert alert-info mb-0"><strong>Origem:</strong> <span id="edit-origin"></span></div></div>
+  </div>
+</div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
+{% endblock %}
+
+{% block js %}<script src="{% static 'js/admin/administracao.js' %}?v=20260805-1"></script>{% endblock %}

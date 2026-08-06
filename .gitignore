@@ -1,0 +1,44 @@
+# Django
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.sqlite3.bak
+.env
+.env.*
+!.env.example
+staticfiles/
+media/
+
+# Local and inherited development artifacts
+ColorAdmin/settings-VANESSA.py
+scratch/
+testproj/
+
+# One-off maintenance/debug scripts from the source project
+/check_db.py
+/debug_*.py
+/final_fix.py
+/fix_*.py
+/patch_*.py
+/reparar_views.py
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# node_modules
+node_modules/
+**/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+.vercel

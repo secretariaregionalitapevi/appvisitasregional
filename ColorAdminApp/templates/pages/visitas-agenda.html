@@ -1,0 +1,584 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Regional Itapevi | Logística de Visitas{% endblock %}
+
+{% block css %}
+<link href="{% static 'plugins/@fullcalendar/common/main.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/@fullcalendar/daygrid/main.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/@fullcalendar/timegrid/main.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/@fullcalendar/list/main.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/@fullcalendar/bootstrap/main.min.css' %}" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .calendar .fc-header-toolbar {
+        margin-bottom: 30px !important;
+    }
+
+    /* Estilo exclusivo para os itens de ARRASTAR (Sidebar) */
+    #external-events .fc-event {
+        cursor: grab;
+        padding: 10px 12px !important;
+        border: 1px solid #e2e7eb !important;
+        background: #fff !important;
+        color: #2d353c !important;
+        margin-bottom: 8px !important;
+        display: flex;
+        align-items: center;
+        border-radius: 6px !important;
+        position: relative;
+        padding-left: 35px !important;
+        transition: all 0.2s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    #external-events .fc-event:hover {
+        border-color: #348fe2 !important;
+        background: #f8f9fa !important;
+    }
+
+    /* Estilo para os eventos DENTRO do calendário */
+    .fc-v-event, .fc-h-event {
+        border: none !important;
+        padding: 2px 5px !important;
+        cursor: pointer;
+    }
+    
+    .fc-event-title {
+        font-weight: 600 !important;
+        font-size: 11px !important;
+        color: #fff !important;
+    }
+
+    .fc-event-main {
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .modal-header-calendar {
+        background: #1e4b7a;
+        color: white;
+        border-radius: 8px 8px 0 0;
+    }
+
+    #external-events {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+    }
+
+    .fc-event-icon {
+        position: absolute;
+        left: 10px;
+        color: #929ba1;
+        font-size: 12px;
+    }
+
+    .fc-event-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        position: absolute;
+        right: 10px;
+    }
+
+    /* Cores das Categorias */
+    .color-gvi { background-color: #348fe2; }
+    .color-gvm { background-color: #00acac; }
+    .color-gve { background-color: #f59c1a; }
+    .color-rf { background-color: #727cb6; }
+    .color-re { background-color: #ff5b57; }
+
+    .team-box {
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 5px;
+        color: #fff;
+        text-align: center;
+        font-weight: bold;
+        font-size: 11px;
+        opacity: 0.8;
+    }
+    .bg-team-1 { background-color: #348fe2; }
+    .bg-team-2 { background-color: #727cb6; }
+    .bg-team-3 { background-color: #00acac; }
+    .bg-team-4 { background-color: #2d353c; }
+
+    .btn-floating-add {
+        margin-bottom: 20px;
+        box-shadow: 0 4px 10px rgba(52, 143, 226, 0.3);
+    }
+
+    /* Correções de layout para o Select2 */
+    .select2-container--default .select2-selection--single .select2-selection__clear {
+        float: none !important;
+        position: static !important;
+        margin-left: 15px !important; /* Afasta mais da borda esquerda */
+        margin-right: 4px !important; /* Aproxima do texto */
+        padding: 0 !important;
+        color: #dc3545 !important;
+        font-size: 18px !important;
+        line-height: 1 !important;
+    }
+    .select2-container .select2-selection--single .select2-selection__rendered {
+        padding-left: 8px !important; 
+        display: flex !important;
+        align-items: center !important;
+        gap: 2px !important; /* Deixa o texto mais próximo do x */
+    }
+</style>
+{% endblock %}
+
+{% block js %}
+<script src="{% static 'plugins/moment/min/moment-with-locales.min.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/core/index.global.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/daygrid/index.global.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/timegrid/index.global.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/interaction/index.global.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/list/index.global.js' %}"></script>
+<script src="{% static 'plugins/@fullcalendar/bootstrap/index.global.js' %}"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    var calendar;
+    var irmandadeData = [];
+
+    $(document).ready(function () {
+        const categoryColors = {
+            'GVI': '#348fe2',
+            'GVM': '#00acac',
+            'GVE': '#f59c1a',
+            'RF': '#727cb6',
+            'RE': '#ff5b57'
+        };
+
+        const loadIrmandadeList = async () => {
+            const res = await fetch('/visitas/api/irmandade/?status=Ativo');
+            irmandadeData = await res.json();
+            const options = irmandadeData.map(item => ({ id: item.id, text: item.nome }));
+            $('#event-member-select').select2({
+                data: options,
+                placeholder: 'Buscar família para visita (ou digite um novo nome)',
+                allowClear: true,
+                tags: true,
+                dropdownParent: $('#modal-event')
+            });
+        };
+
+        const loadComunsList = async () => {
+            const res = await fetch('/visitas/api/comuns/');
+            const comunsData = await res.json();
+            const options = comunsData.map(item => ({ id: item.comum, text: item.comum }));
+            $('#event-comum').select2({
+                data: options,
+                placeholder: 'Selecione ou digite a comum...',
+                allowClear: true,
+                tags: true,
+                dropdownParent: $('#modal-event')
+            });
+        };
+
+        loadIrmandadeList();
+        loadComunsList();
+
+        $('#event-member-select').on('change', function () {
+            const idOrText = $(this).val();
+            if (!idOrText) {
+                $('#event-titulo, #event-endereco, #event-setor, #event-comum').val('');
+                return;
+            }
+            const member = irmandadeData.find(i => i.id == idOrText);
+            if (member) {
+                $('#event-titulo').val(member.nome);
+                $('#event-endereco').val(member.endereco || '');
+                $('#event-setor').val(member.setor || 'Não Definido');
+                
+                const comumVal = member.comum || '';
+                if (comumVal) {
+                    if ($('#event-comum').find("option[value='" + comumVal + "']").length) {
+                        $('#event-comum').val(comumVal).trigger('change.select2');
+                    } else {
+                        var newOption = new Option(comumVal, comumVal, true, true);
+                        $('#event-comum').append(newOption).trigger('change.select2');
+                    }
+                } else {
+                    $('#event-comum').val(null).trigger('change.select2');
+                }
+            } else {
+                // É um novo nome digitado
+                $('#event-titulo').val(idOrText);
+            }
+        });
+
+        // Configuração Drag & Drop
+        var containerEl = document.getElementById('external-events');
+        new FullCalendar.Interaction.Draggable(containerEl, {
+            itemSelector: '.fc-event',
+            eventData: function (eventEl) {
+                return {
+                    title: 'Agendando...',
+                    extendedProps: { 
+                        categoria: eventEl.getAttribute('data-category'),
+                        is_new: true 
+                    }
+                };
+            }
+        });
+
+        // Inicialização do Calendário
+        var calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            locale: 'pt-br',
+            themeSystem: 'bootstrap',
+            headerToolbar: { left: 'dayGridMonth,timeGridWeek,listMonth', center: 'title', right: 'prev,next today' },
+            buttonText: { today: 'Hoje', month: 'Mês', week: 'Semana', list: 'Lista' },
+            initialView: 'dayGridMonth',
+            editable: true,
+            droppable: true,
+            displayEventTime: false,
+            eventDisplay: 'block',
+            events: function (info, successCallback, failureCallback) {
+                fetch('/visitas/api/agenda/').then(res => res.json()).then(data => {
+                    const events = data.map(item => {
+                        const baseColor = categoryColors[item.categoria] || '#1e4b7a';
+                        const spTime = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+                        let displayTitle = `${spTime} ${item.titulo}`;
+                        
+                        if (item.status === 'Cancelada') displayTitle = `${spTime} (C) ${item.titulo}`;
+                        else if (item.status === 'Não realizada') displayTitle = `${spTime} (NR) ${item.titulo}`;
+                        else if (item.status === 'Realizada') displayTitle = `${spTime} (R) ${item.titulo}`;
+                        else displayTitle = `${spTime} (A) ${item.titulo}`;
+                        
+                        return {
+                            id: item.id,
+                            title: displayTitle,
+                            start: item.data_inicio,
+                            end: item.data_fim,
+                            backgroundColor: item.status === 'Não realizada' ? '#fd7e14' : baseColor,
+                            borderColor: item.status === 'Cancelada' ? '#ff5b57' : (item.status === 'Não realizada' ? '#fd7e14' : (item.status === 'Realizada' ? '#28a745' : baseColor)),
+                            textColor: '#ffffff',
+                            extendedProps: { ...item }
+                        };
+                    });
+                    successCallback(events);
+                });
+            },
+            
+            // CORREÇÃO: Drop agora abre o modal em vez de salvar direto
+            // CORREÇÃO: Drop agora abre o modal e remove o 'fantasma' imediatamente
+            eventReceive: function (info) {
+                const categoria = info.draggedEl.getAttribute('data-category');
+                const droppedDate = moment(info.event.start).format('YYYY-MM-DDTHH:mm');
+                
+                // Remove o evento 'fantasma' que o FullCalendar cria ao receber o drop
+                info.event.remove(); 
+
+                resetModal();
+                $('#modal-title').text('Novo Agendamento');
+                $('#event-start').val(droppedDate);
+                $('#event-categoria-modal').val(categoria);
+                $('#modal-event').modal('show');
+            },
+
+            dateClick: function(info) {
+                resetModal();
+                $('#modal-title').text('Novo Agendamento');
+                $('#event-start').val(moment(info.date).format('YYYY-MM-DDTHH:mm'));
+                $('#modal-event').modal('show');
+            },
+
+            eventClick: function (info) {
+                const e = info.event.extendedProps;
+                resetModal();
+                
+                $('#event-id').val(e.id);
+                $('#event-member-select').val(e.irmandade_id).trigger('change');
+                $('#event-titulo').val(e.titulo);
+                $('#event-start').val(moment(e.data_inicio).format('YYYY-MM-DDTHH:mm'));
+                $('#event-equipe').val(e.equipe_responsavel || 'Equipe 01');
+                $('#event-categoria-modal').val(e.categoria || 'GVI');
+                $('#event-status').val(e.status).trigger('change');
+                $('#event-setor').val(e.setor || '');
+                $('#event-endereco').val(e.endereco_visitado || '');
+                $('#event-cancel-reason').val(e.motivo_cancelamento || '');
+                $('#event-obs').val(e.observacoes || '');
+
+                $('#btn-delete-event').show();
+                if (e.status === 'Realizada') {
+                    $('#modal-title').text('Visita Concluída (Edição Permitida)');
+                } else {
+                    $('#modal-title').text('Editar Agendamento');
+                }
+                $('#modal-event').modal('show');
+            },
+
+            eventDrop: async function (info) {
+                const res = await fetch(`/visitas/api/agenda/?id=${info.event.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({
+                        data_inicio: moment(info.event.start).format('YYYY-MM-DDTHH:mm:ss-03:00'),
+                        data_fim: info.event.end ? moment(info.event.end).format('YYYY-MM-DDTHH:mm:ss-03:00') : moment(info.event.start).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss-03:00')
+                    })
+                });
+                if (res.ok) Swal.fire({ icon: 'success', title: 'Data atualizada', timer: 1000, showConfirmButton: false });
+                else info.revert();
+            }
+        });
+        calendar.render();
+
+        function resetModal() {
+            $('#form-event')[0].reset();
+            $('#event-id').val('');
+            $('#event-member-select').val(null).trigger('change');
+            $('#form-event input, #form-event select, #form-event textarea').prop('disabled', false);
+            $('#btn-save-event').show();
+            $('#btn-delete-event').hide();
+            $('#cancel-reason-container').hide();
+        }
+
+        $('#form-event').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#event-id').val();
+            let irmandade_id = $('#event-member-select').val();
+            const typedName = $('#event-titulo').val();
+
+            // Se for um novo nome (não está na lista de ids conhecidos)
+            const memberExists = irmandadeData.find(i => i.id == irmandade_id);
+            if (!memberExists && irmandade_id) {
+                const newMemberData = {
+                    nome: typedName,
+                    endereco: $('#event-endereco').val() || '',
+                    setor: $('#event-setor').val() || 'Não Definido',
+                    comum: $('#event-comum').val() || '{{ request.session.user_profile.comum|default:""|escapejs }}',
+                    status: 'Ativo'
+                };
+                
+                try {
+                    const irmRes = await fetch('/visitas/api/irmandade/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                        body: JSON.stringify(newMemberData)
+                    });
+                    
+                    if (irmRes.ok) {
+                        const newIrm = await irmRes.json();
+                        irmandade_id = newIrm[0].id;
+                        irmandadeData.push(newIrm[0]); // Adiciona à lista local
+                    } else {
+                        Swal.fire('Erro', 'Não foi possível cadastrar a nova pessoa.', 'error');
+                        return; // Interrompe o salvamento
+                    }
+                } catch(err) {
+                    Swal.fire('Erro', 'Falha na comunicação ao cadastrar pessoa.', 'error');
+                    return;
+                }
+            }
+
+            const data = {
+                irmandade_id: irmandade_id,
+                titulo: typedName,
+                data_inicio: moment($('#event-start').val()).format('YYYY-MM-DDTHH:mm:ss-03:00'),
+                data_fim: moment($('#event-start').val()).add(60, 'minutes').format('YYYY-MM-DDTHH:mm:ss-03:00'),
+                equipe_responsavel: $('#event-equipe').val(),
+                categoria: $('#event-categoria-modal').val(),
+                status: $('#event-status').val(),
+                setor: $('#event-setor').val(),
+                endereco_visitado: $('#event-endereco').val(),
+                motivo_cancelamento: $('#event-cancel-reason').val(),
+                observacoes: $('#event-obs').val()
+            };
+
+            const url = id ? `/visitas/api/agenda/?id=${id}` : '/visitas/api/agenda/';
+            const method = id ? 'PATCH' : 'POST';
+
+            const res = await fetch(url, { method: method, headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' }, body: JSON.stringify(data) });
+            if (res.ok) {
+                $('#modal-event').modal('hide');
+                calendar.refetchEvents();
+                Swal.fire({ icon: 'success', title: 'Salvo com sucesso!', timer: 1500, showConfirmButton: false });
+            }
+        });
+
+        $('#btn-delete-event').on('click', async function () {
+            const id = $('#event-id').val();
+            const { isConfirmed } = await Swal.fire({ title: 'Excluir?', text: "Remover este agendamento?", icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim, excluir' });
+            if (isConfirmed) {
+                const res = await fetch(`/visitas/api/agenda/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+                if (res.ok) {
+                    $('#modal-event').modal('hide');
+                    calendar.refetchEvents();
+                }
+            }
+        });
+
+        $('#event-status').on('change', function() {
+            if($(this).val() === 'Cancelada' || $(this).val() === 'Não realizada') $('#cancel-reason-container').show();
+            else $('#cancel-reason-container').hide();
+        });
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<ol class="breadcrumb float-xl-end">
+    <li class="breadcrumb-item"><a href="/">Home</a></li>
+    <li class="breadcrumb-item active">Agenda de Visitas</li>
+</ol>
+<h1 class="page-header">Gestão de Visitas <small>Logística Ministerial</small></h1>
+<hr />
+
+<div class="row">
+    <div class="col-lg-3 col-xl-2">
+        <button class="btn btn-primary w-100 fw-bold btn-floating-add mb-3" onclick="resetModal(); $('#modal-event').modal('show');">
+            <i class="fa fa-plus me-1"></i> Nova Visita
+        </button>
+        <button class="btn btn-warning w-100 fw-bold mb-3 shadow-sm" onclick="$('#modal-roteiro').modal('show');">
+            <i class="fa fa-route me-1"></i> Gerar Roteiro Otimizado
+        </button>
+
+        <div id="external-events" class="fc-event-list">
+            <h5 class="mb-3">Categorias <small class="text-muted d-block" style="font-size: 10px;">Arraste para o dia desejado</small></h5>
+            <div class="fc-event" data-category="GVI"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">GVI: Irmandade</div><div class="fc-event-dot color-gvi"></div></div>
+            <div class="fc-event" data-category="GVM"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">GVM: Mocidade</div><div class="fc-event-dot color-gvm"></div></div>
+            <div class="fc-event" data-category="GVE"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">GVE: Encarregados</div><div class="fc-event-dot color-gve"></div></div>
+            <div class="fc-event" data-category="RF"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">RF: Reunião Familiar</div><div class="fc-event-dot color-rf"></div></div>
+            <div class="fc-event" data-category="RE"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">RE: Reunião de Evangelização</div><div class="fc-event-dot color-re"></div></div>
+            
+            <hr class="my-3" />
+            <h5 class="mb-3">Equipes</h5>
+            <div class="team-box bg-team-1">EQUIPE 01</div>
+            <div class="team-box bg-team-2">EQUIPE 02</div>
+            <div class="team-box bg-team-3">EQUIPE 03</div>
+            <div class="team-box bg-team-4">EQUIPE 04</div>
+            <div class="team-box" style="background-color: #727cb6;">GRUPO RF</div>
+        </div>
+    </div>
+    <div class="col-lg-9 col-xl-10">
+        <div id="calendar" class="calendar bg-white p-3 rounded shadow-sm"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal-event" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header modal-header-calendar border-0">
+                <h5 class="modal-title fw-bold" id="modal-title">Configuração de Visita</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="form-event">
+                <input type="hidden" id="event-id">
+                <div class="modal-body p-4 text-dark">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold small text-muted">SELECIONAR FAMÍLIA / IRMÃO</label>
+                            <select class="form-select" id="event-member-select" style="width:100%"></select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">IGREJA / COMUM</label>
+                            <select class="form-select" id="event-comum" style="width:100%"></select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold small text-muted">CONFIRMAÇÃO DO NOME</label>
+                            <input type="text" class="form-control fw-bold" id="event-titulo" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">SETOR</label>
+                            <input type="text" class="form-control" id="event-setor">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold small text-muted">ENDEREÇO REGISTRADO</label>
+                            <input type="text" class="form-control" id="event-endereco">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted">CATEGORIA</label>
+                            <select class="form-select" id="event-categoria-modal">
+                                <option value="GVI">GVI (Irmandade)</option>
+                                <option value="GVM">GVM (Mocidade)</option>
+                                <option value="GVE">GVE (Encarregados)</option>
+                                <option value="RF">RF (Reunião Familiar)</option>
+                                <option value="RE">RE (Reunião de Evangelização)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
+                            <select class="form-select" id="event-equipe">
+                                <option value="Equipe 01">Equipe de Visita 01</option>
+                                <option value="Equipe 02">Equipe de Visita 02</option>
+                                <option value="Equipe 03">Equipe de Visita 03</option>
+                                <option value="Equipe 04">Equipe de Visita 04</option>
+                                <option value="Grupo RF">Grupo RF</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12 text-center py-2 bg-light rounded border">
+                            <label class="form-label fw-bold small text-muted d-block">DATA E HORA PROPOSTA</label>
+                            <input type="datetime-local" class="form-control text-center border-0 bg-transparent fw-bold" id="event-start" required style="font-size: 1.1rem;">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">STATUS</label>
+                            <select class="form-select" id="event-status">
+                                <option value="Marcada">Agendada</option>
+                                <option value="Realizada">Realizada</option>
+                                <option value="Não realizada">Não realizada</option>
+                                <option value="Cancelada">Cancelada</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8" id="cancel-reason-container" style="display:none;">
+                            <label class="form-label fw-bold small text-danger">MOTIVO (CANCELAMENTO / NÃO REALIZADA)</label>
+                            <input type="text" class="form-control border-danger" id="event-cancel-reason">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold small text-muted">OBSERVAÇÕES DA EQUIPE</label>
+                            <textarea class="form-control" id="event-obs" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light">
+                    <button type="button" class="btn btn-danger me-auto fw-bold px-4" id="btn-delete-event" style="display:none;">Excluir</button>
+                    <button type="button" class="btn btn-white fw-bold px-4" data-bs-dismiss="modal">Fechar</button>
+                    <button type="submit" class="btn btn-primary fw-bold px-4" id="btn-save-event">Salvar Visita</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Roteiro -->
+<div class="modal fade" id="modal-roteiro" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning border-0 text-dark">
+                <h5 class="modal-title fw-bold"><i class="fa fa-route me-2"></i>Gerar Roteiro Otimizado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{% url 'ColorAdminApp:visitasRoteiro' %}" method="GET" target="_blank">
+                <div class="modal-body p-4 text-dark">
+                    <p class="small text-muted mb-4">O sistema calculará automaticamente a melhor rota (menor distância) a partir da Comum Congregação para as visitas selecionadas.</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">EQUIPE</label>
+                        <select name="equipe" class="form-select" required>
+                            <option value="">Selecione a equipe...</option>
+                            <option value="Equipe 01">Equipe de Visita 01</option>
+                            <option value="Equipe 02">Equipe de Visita 02</option>
+                            <option value="Equipe 03">Equipe de Visita 03</option>
+                            <option value="Equipe 04">Equipe de Visita 04</option>
+                            <option value="Grupo RF">Grupo RF</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">DATA DAS VISITAS</label>
+                        <input type="date" name="data" class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light">
+                    <button type="button" class="btn btn-white fw-bold px-4" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning fw-bold px-4 text-dark"><i class="fa fa-print me-1"></i> Gerar e Imprimir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

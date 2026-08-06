@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Irmandade Regional | Analytics{% endblock %}
+
+{% block css %}
+    <style>
+        /* DASHBOARD V2 SPECIFIC REFINEMENTS */
+        .widget-stats { margin-bottom: 20px; }
+        .widget-stats .stats-info h4 { font-size: 11px; font-weight: 700; opacity: 0.7; margin-bottom: 2px; text-transform: uppercase; }
+        .widget-stats .stats-number { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+        .widget-stats .stats-progress { height: 2px; background: rgba(0,0,0,0.2) !important; margin: 0 0 10px; }
+        .widget-stats .stats-progress .progress-bar { background: #fff !important; }
+        .widget-stats .stats-desc { font-size: 11px; font-weight: 600; opacity: 0.8; }
+        
+        .panel-v2 { background: #2d353c; border: none; border-radius: 6px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .panel-v2 .panel-heading { border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 20px; }
+        .panel-v2 .panel-title { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 0.5px; }
+        .panel-v2 .panel-body { padding: 20px; }
+
+        .bg-teal-v2 { background: #00acac !important; }
+        .bg-blue-v2 { background: #348fe2 !important; }
+        .bg-purple-v2 { background: #727cb6 !important; }
+        .bg-dark-v2 { background: #1a2229 !important; }
+    </style>
+{% endblock %}
+
+{% block js %}
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script>
+        const renderDashboard = async () => {
+            const res = await fetch(`/visitas/api/irmandade/`);
+            const data = await res.json();
+            
+            updateWidgets(data);
+            initMainChart(data);
+            initDonutChart(data);
+            initLocationList(data);
+        };
+
+        const updateWidgets = (data) => {
+            const total = data.length;
+            const musicos = data.filter(i => i.perfil_musico || i.cargo_organista).length;
+            const mocidade = data.filter(i => i.perfil_mocidade).length;
+            const enfermos = data.filter(i => i.perfil_enfermo).length;
+
+            $('#num-total').text(total);
+            $('#num-musicos').text(musicos);
+            $('#num-mocidade').text(mocidade);
+            $('#num-enfermos').text(enfermos);
+        };
+
+        const initMainChart = (data) => {
+            const options = {
+                chart: { type: 'area', height: 330, toolbar: { show: false }, zoom: { enabled: false }, background: 'transparent' },
+                theme: { mode: 'dark' },
+                colors: ['#00acac', '#348fe2'],
+                series: [
+                    { name: 'Entradas por Batismo', data: [31, 40, 28, 51, 42, 109, 100, 120, 110] },
+                    { name: 'Procedentes de Mudança', data: [11, 32, 45, 32, 34, 52, 41, 60, 55] }
+                ],
+                stroke: { curve: 'smooth', width: 3 },
+                xaxis: { categories: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep'], axisBorder: { show: false } },
+                grid: { borderColor: 'rgba(255,255,255,0.05)' },
+                tooltip: { theme: 'dark' }
+            };
+            new ApexCharts(document.querySelector("#main-v2-chart"), options).render();
+        };
+
+        const initDonutChart = (data) => {
+            const options = {
+                chart: { type: 'donut', height: 300, background: 'transparent' },
+                theme: { mode: 'dark' },
+                colors: ['#348fe2', '#00acac', '#f59c1a'],
+                series: [45, 35, 20],
+                labels: ['Músicos Oficiais', 'Organistas', 'Graduandos'],
+                legend: { show: true, position: 'bottom', labels: { colors: '#fff' } },
+                stroke: { width: 0 }
+            };
+            new ApexCharts(document.querySelector("#musician-v2-chart"), options).render();
+        };
+
+        const initLocationList = (data) => {
+            const counts = data.reduce((acc, i) => { acc[i.comum] = (acc[i.comum] || 0) + 1; return acc; }, {});
+            const sorted = Object.entries(counts).sort((a,b) => b[1] - a[1]).slice(0, 5);
+            
+            const list = $('#location-list');
+            list.empty();
+            sorted.forEach(([name, count], idx) => {
+                const percent = Math.round((count / data.length) * 100);
+                list.append(`
+                    <div class="d-flex align-items-center mb-10px">
+                        <div class="w-10px h-10px rounded-pill bg-teal me-2"></div>
+                        <div class="flex-fill fs-12px text-white opacity-8">${idx + 1}. ${name}</div>
+                        <div class="fs-12px fw-bold text-white">${percent}%</div>
+                    </div>
+                `);
+            });
+        };
+
+        $(document).ready(() => renderDashboard());
+    </script>
+{% endblock %}
+
+{% block content %}
+    <!-- HEADER -->
+    <div class="d-flex align-items-center mb-3">
+        <div>
+            <ul class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="/">Home</a></li>
+                <li class="breadcrumb-item"><a href="/visitas/cadastro">Visitas</a></li>
+                <li class="breadcrumb-item active">Dashboard V2</li>
+            </ul>
+            <h1 class="page-header mb-0">Estatísticas Vitais Ministerial</h1>
+        </div>
+        <div class="ms-auto">
+            <a href="/visitas/cadastro" class="btn btn-teal rounded-pill px-4 shadow-sm"><i class="fa fa-list me-2"></i> Ver Fichas de Cadastro</a>
+        </div>
+    </div>
+
+    <!-- WIDGETS STATS V2 -->
+    <div class="row">
+        <div class="col-xl-3 col-md-6">
+            <div class="widget widget-stats bg-teal-v2 border-0 shadow-lg">
+                <div class="stats-icon"><i class="fa fa-users"></i></div>
+                <div class="stats-info">
+                    <h4>IRMANDADE TOTAL</h4>
+                    <p id="num-total">0</p>
+                </div>
+                <div class="stats-progress progress"><div class="progress-bar" style="width: 70.1%;"></div></div>
+                <div class="stats-desc">Taxa de retenção estável em 94%</div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="widget widget-stats bg-blue-v2 border-0 shadow-lg">
+                <div class="stats-icon"><i class="fa fa-music"></i></div>
+                <div class="stats-info">
+                    <h4>MÚSICOS ATIVOS</h4>
+                    <p id="num-musicos">0</p>
+                </div>
+                <div class="stats-progress progress"><div class="progress-bar" style="width: 40.5%;"></div></div>
+                <div class="stats-desc">Aumento de 5% no último trimestre</div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="widget widget-stats bg-purple-v2 border-0 shadow-lg">
+                <div class="stats-icon"><i class="fa fa-child"></i></div>
+                <div class="stats-info">
+                    <h4>MOCIDADE / JOVENS</h4>
+                    <p id="num-mocidade">0</p>
+                </div>
+                <div class="stats-progress progress"><div class="progress-bar" style="width: 76.3%;"></div></div>
+                <div class="stats-desc">Comparecimento histórico registrado</div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="widget widget-stats bg-dark-v2 border-0 shadow-lg">
+                <div class="stats-icon"><i class="fa fa-heart"></i></div>
+                <div class="stats-info">
+                    <h4>ENFERMOS / VISITA</h4>
+                    <p id="num-enfermos">0</p>
+                </div>
+                <div class="stats-progress progress"><div class="progress-bar" style="width: 54.9%;"></div></div>
+                <div class="stats-desc">Atenção prioritária em 3 casos críticos</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHARTS ANALYTICS V2 -->
+    <div class="row">
+        <!-- Main Chart -->
+        <div class="col-xl-8">
+            <div class="panel-v2 h-100">
+                <div class="panel-heading d-flex align-items-center">
+                    <h4 class="panel-title flex-fill">Fluxo de Crescimento da Comum</h4>
+                    <div class="dropdown">
+                        <a href="javascript:;" class="text-white opacity-5" data-bs-toggle="dropdown"><i class="fa fa-ellipsis-h text-white"></i></a>
+                        <div class="dropdown-menu dropdown-menu-end">
+                            <a href="#" class="dropdown-item">Ver Relatório Semanal</a>
+                            <a href="#" class="dropdown-item">Exportar Imagem</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="main-v2-chart"></div>
+                </div>
+            </div>
+        </div>
+        <!-- Side Charts / Info -->
+        <div class="col-xl-4 col-lg-6">
+            <div class="panel-v2 mb-3">
+                <div class="panel-heading"><h4 class="panel-title">Composição Ministerial</h4></div>
+                <div class="panel-body">
+                    <div id="musician-v2-chart"></div>
+                </div>
+            </div>
+            
+            <div class="panel-v2">
+                <div class="panel-heading"><h4 class="panel-title">Membros por Localidade</h4></div>
+                <div class="panel-body">
+                    <div id="location-list">
+                        <!-- Inserido via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

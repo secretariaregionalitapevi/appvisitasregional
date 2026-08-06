@@ -1,0 +1,1297 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Regional Itapevi | Registro de Irmandade{% endblock %}
+
+{% block css %}
+	<link href="{% static 'plugins/datatables.net-bs5/css/dataTables.bootstrap5.min.css' %}" rel="stylesheet" />
+	<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .filter-section { background: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .executive-summary { border-left: 4px solid #2d353c; background: #f8f9fa; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
+        .kpi-card { border: none; border-radius: 4px; transition: transform 0.2s; position: relative; overflow: hidden; }
+        .kpi-card:hover { transform: translateY(-5px); }
+        .badge-ministerio { 
+            font-size: 9px; 
+            font-weight: 800; 
+            text-transform: uppercase; 
+            padding: 5px 15px; 
+            border-radius: 50px; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            margin: 2px;
+            letter-spacing: 0.7px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.25);
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .badge-ministerio:hover { transform: scale(1.08) translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+        .badge-ministerio i { font-size: 11px; }
+
+        /* Ultra-Vibrant Palette */
+        .badge-anciao { background: linear-gradient(135deg, #1a1a1a 0%, #444 100%); color: #ffca28; border: 1.5px solid #ffca28 !important; }
+        .badge-diacono { background: linear-gradient(135deg, #007bff 0%, #004085 100%); color: #fff; }
+        .badge-cooperador { background: linear-gradient(135deg, #28a745 0%, #155724 100%); color: #fff; }
+        .badge-encarregado { background: linear-gradient(135deg, #17a2b8 0%, #0c5460 100%); color: #fff; }
+        .badge-musico { background: linear-gradient(135deg, #6610f2 0%, #3d0894 100%); color: #fff; } /* Deep Indigo */
+        .badge-organista { background: linear-gradient(135deg, #e83e8c 0%, #8f1d51 100%); color: #fff; } /* Bright Pink/Purple */
+        .badge-instrutor { background: linear-gradient(135deg, #fd7e14 0%, #85420b 100%); color: #fff; }
+        .badge-secretaria { background: linear-gradient(135deg, #20c997 0%, #0e634a 100%); color: #fff; }
+        .badge-mocidade { background: linear-gradient(135deg, #ffc107 0%, #b38600 100%); color: #2d353c; text-shadow: none; border-color: rgba(0,0,0,0.1); }
+        .badge-piedade { background: linear-gradient(135deg, #6f42c1 0%, #4a2b82 100%); color: #fff; }
+        .badge-enfermo { background: linear-gradient(135deg, #dc3545 0%, #721c24 100%); color: #fff; }
+        .badge-examinadora { background: linear-gradient(135deg, #d4ed17 0%, #839110 100%); color: #2d353c; text-shadow: none; }
+        .badge-apoio { background: linear-gradient(135deg, #6c757d 0%, #343a40 100%); color: #fff; }
+        .badge-porteiro { background: #2c3e50 !important; color: white !important; border: 1px solid #1a252f; }
+        .badge-auxiliar { background: #3498db !important; color: white !important; border: 1px solid #2980b9; }
+        .badge-estacionamento { background: #4b148c !important; color: white !important; border: 1px solid #311b92; }
+        .badge-irmandade { background: #ecf0f1 !important; color: #7f8c8d !important; border: 1px solid #bdc3c7; }
+        .badge-ebi { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: #fff; border: 1px solid #0072ff; }
+        .badge-emi { background: linear-gradient(135deg, #f83600 0%, #f9d423 100%); color: #fff; border: 1px solid #f83600; }
+        .badge-som { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: #fff; border: 1px solid #1e3c72; }
+        .badge-manutencao { background: linear-gradient(135deg, #5c258d 0%, #4389a2 100%); color: #fff; border: 1px solid #5c258d; }
+        .badge-reuniao { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); color: #fff; border: 1px solid #ff5e62; }
+        .badge-grupo-visitas { background: linear-gradient(135deg, #00acac 0%, #087f8c 100%); color: #fff; border: 1px solid #087f8c; }
+        .badge-equipe-visita { background: linear-gradient(135deg, #348fe2 0%, #6f42c1 100%); color: #fff; border: 1px solid #6f42c1; }
+        
+        /* FIX SELECT2 DENTRO DE MODAL */
+        .select2-container--open { z-index: 9999999 !important; }
+        .select2-container .select2-selection--single {
+            height: 38px !important;
+            border: none !important;
+            background-color: #f3f3f3 !important;
+            border-radius: 6px !important;
+            display: flex !important;
+            align-items: center !important;
+        }
+        .select2-dropdown {
+            border: none !important;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15) !important;
+            border-radius: 8px !important;
+            overflow: hidden !important;
+        }
+
+        /* Aesthetics 4.0 Styles - Modal Histórico */
+        .widget-header-premium {
+            background: linear-gradient(135deg, #1e4b7a 0%, #348fe2 100%);
+            padding: 30px 30px 25px 30px;
+            position: relative;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            overflow: visible;
+        }
+        .widget-header-premium:after {
+            content: ""; position: absolute; top: -20%; right: -10%; width: 200px; height: 200px;
+            background: rgba(255,255,255,0.1); border-radius: 50%;
+        }
+
+        /* Timeline Inspinia Style */
+        .timeline-v2 { position: relative; padding: 25px 0; list-style: none; }
+        .timeline-v2:before { 
+            content: ""; position: absolute; top: 0; bottom: 0; left: 100px; 
+            width: 2px; border-left: 2px dashed #cbd5e0;
+        }
+        .timeline-item-v2 { position: relative; margin-bottom: 45px; display: flex; align-items: flex-start; }
+        
+        .timeline-time-v2 { width: 85px; text-align: right; padding-right: 25px; flex-shrink: 0; padding-top: 8px; }
+        .timeline-time-v2 .date { display: block; font-size: 13px; font-weight: 800; color: #2d353c; }
+        .timeline-time-v2 .time { display: block; font-size: 11px; color: #707478; }
+        
+        .timeline-icon-v2 { 
+            position: absolute; left: 86px; top: 4px; width: 32px; height: 32px; 
+            border-radius: 50%; background: #fff; border: 4px solid #fff; 
+            z-index: 10; display: flex; align-items: center; justify-content: center;
+            color: #fff !important; font-size: 12px; box-shadow: 0 0 0 2px #e2e7eb;
+        }
+        
+        .timeline-content-v2 { 
+            margin-left: 50px; flex: 1; background: #fff; padding: 20px; 
+            border-radius: 12px; border: 1px solid #e2e7eb; position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .timeline-content-v2:before {
+            content: ""; position: absolute; left: -9px; top: 12px;
+            width: 16px; height: 16px; background: #fff; border-left: 1px solid #e2e7eb;
+            border-bottom: 1px solid #e2e7eb; transform: rotate(45deg);
+        }
+
+        /* Cores da Agenda Sincronizadas */
+        .bg-gvi { background-color: #348fe2 !important; }
+        .bg-gvm { background-color: #00acac !important; }
+        .bg-gve { background-color: #f59c1a !important; }
+        .bg-rf { background-color: #727cb6 !important; }
+        .bg-re { background-color: #ff5b57 !important; }
+        
+        .text-gvi { color: #348fe2 !important; }
+        .text-gvm { color: #00acac !important; }
+        .text-gve { color: #f59c1a !important; }
+        .text-re { color: #ff5b57 !important; }
+
+        .badge-premium {
+            padding: 5px 12px; font-weight: 800; font-size: 10px; text-transform: uppercase;
+            letter-spacing: 0.8px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            color: #fff !important;
+        }
+        .timeline-content-v2 .badge-premium {
+            display: inline-flex; align-items: center; margin-bottom: 12px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+	<ol class="breadcrumb float-xl-end">
+		<li class="breadcrumb-item"><a href="/">Home</a></li>
+		<li class="breadcrumb-item"><a href="/visitas/analytics">Visitas</a></li>
+		<li class="breadcrumb-item active">Cadastro</li>
+	</ol>
+	<h1 class="page-header mb-3">Relatórios e Filtros Rápidos</h1>
+
+    <!-- FILTROS (LAYOUT DASHBOARD) -->
+    <div class="filter-section p-3 bg-white shadow-sm mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-1">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Ano</label>
+                <select class="form-select border-gray-300 shadow-none" id="filter-ano">
+                    <option value="2026" selected>2026</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Mês</label>
+                <select class="form-select border-gray-300 shadow-none" id="filter-mes">
+                    <option value="all">Sempre</option>
+                    <option value="4" selected>Abril</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Período</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-gray-300"><i class="fa fa-calendar-alt"></i></span>
+                    <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-de">
+                    <span class="input-group-text bg-white border-0 shadow-none small px-1">até</span>
+                    <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Localidade</label>
+                <input type="text" class="form-control border-gray-300 shadow-none" id="filter-comum" placeholder="Igreja ou Comum...">
+            </div>
+            <div class="col-md-5 text-end">
+                <div class="btn-group me-2">
+                    <button class="btn btn-white border-gray-400 px-3" onclick="loadContent()"><i class="fa fa-sync-alt text-primary me-1"></i> Atualizar</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="exportExcel()"><i class="fa fa-file-excel text-success me-1"></i> Excel</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="exportPDF()"><i class="fa fa-file-pdf text-danger me-1"></i> PDF</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="importCSV()"><i class="fa fa-upload text-indigo me-1"></i> Importar</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="location.reload()"><i class="fa fa-eraser text-dark me-1"></i> Limpar</button>
+                </div>
+                <button class="btn btn-primary px-3 fw-bold" onclick="openModalCadastro()"><i class="fa fa-plus me-1"></i> Novo Registro</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="executive-summary" id="exec-text">Sincronizando registros ministeriais...</div>
+
+    <!-- KPIs INDEXADOS (LAYOUT DASHBOARD) -->
+    <div class="row g-2 mb-4">
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-indigo text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-home fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">FAMÍLIAS ATENDIDAS (30d)</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-fam">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-red text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-clock fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">VISITAS EM ATRASO (+60d)</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-atraso">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-orange text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-music fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">NOVOS MÚSICOS (ANO)</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-musicos">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-teal text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-user-graduate fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">COBERTURA MOCIDADE</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-cob-moc">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-blue-700 text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-users fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">TOTAL IRMANDADE</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-base">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-lg-4 col-sm-6">
+            <div class="card kpi-card bg-gray-800 text-white h-100 shadow-sm">
+                <div class="card-body py-3">
+                    <div class="float-end text-white-transparent-8"><i class="fa fa-calendar-check fa-3x"></i></div>
+                    <div class="small fw-bold text-white-transparent-8">VISITAS AGENDADAS</div>
+                    <h2 class="mb-0 mt-2 text-white" id="widget-total-agenda">0</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+	
+	<div class="card border-0 shadow-sm overflow-hidden">
+		<div class="card-body p-0">
+            <div class="p-3 bg-light-100 border-bottom">
+                <div class="input-group">
+                    <div class="input-group-text bg-none border-0 pe-0"><i class="fa fa-search opacity-5"></i></div>
+                    <input type="text" class="form-control border-0 bg-transparent px-2" placeholder="Pesquisar por nome ou família..." onkeyup="handleSearch(this.value)" />
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-3" width="25%">Membro / Nome Completo</th>
+                            <th width="30%">Cargo / Ministério</th>
+                            <th class="text-center" width="15%">Última Visita</th>
+                            <th class="text-center" width="15%">Próxima Visita</th>
+                            <th class="text-center" width="5%">Status</th>
+                            <th class="text-center" width="10%">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+
+            <div class="p-3 border-top d-flex align-items-center">
+                <div class="me-auto text-muted small fw-bold" id="record-count">Calculando registros...</div>
+                <div id="pagination-container"></div>
+            </div>
+		</div>
+	</div>
+
+    <!-- MODAL REGISTRO (DOSSIÊ PROFISSIONAL V2) -->
+    <div class="modal fade" id="modal-cadastro" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+                <div class="modal-header bg-dark text-white py-3">
+                    <h5 class="modal-title fw-bold">Dossiê Ministerial de Membro</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4 bg-white">
+                    <form id="form-cadastro">
+                        <input type="hidden" id="irm-id">
+                        
+						<div class="row mb-3">
+							<div class="col-md-12 text-center">
+								<div class="position-relative d-inline-block">
+									<div id="photo-preview" class="bg-light rounded-circle shadow-sm d-flex align-items-center justify-content-center overflow-hidden" 
+                                         style="width: 100px; height: 100px; border: 4px solid #fff; cursor: pointer; transition: all 0.2s;"
+                                         onclick="$('#irm-foto-input').click()"
+                                         title="Clique, arraste ou cole uma foto aqui">
+										<i class="fa fa-user-circle fa-7x text-muted opacity-2"></i>
+									</div>
+									<button type="button" class="btn btn-primary btn-icon btn-circle btn-sm position-absolute bottom-0 end-0 shadow" onclick="$('#irm-foto-input').click()">
+										<i class="fa fa-camera"></i>
+									</button>
+									<input type="file" id="irm-foto-input" class="d-none" accept="image/*" onchange="previewPhoto(this)">
+									<input type="hidden" id="irm-url-foto">
+								</div>
+								<div class="mt-1 text-muted fw-bold small">FOTO DE PERFIL / DOSSIÊ</div>
+							</div>
+						</div>
+
+						<div class="fw-bold text-primary text-uppercase small mb-2 border-bottom pb-2"><i class="fa fa-id-card me-2"></i> 1. Identificação Básica</div>
+                        <div class="row gx-3 gy-2 mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">CEP</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control border-0 bg-light fw-bold" id="irm-cep" placeholder="00000-000" maxlength="9">
+                                    <button class="btn btn-light border-0" type="button" onclick="lookupCEP()"><i class="fa fa-search text-primary"></i></button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">NOME COMPLETO</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-nome" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">STATUS</label>
+                                <select class="form-select border-0 bg-light fw-bold" id="irm-status">
+                                    <option value="Ativo" class="text-success">Ativo / Regular</option>
+                                    <option value="Inativo" class="text-danger">Inativo / Mudança</option>
+                                    <option value="Dorme no Senhor">Dorme no Senhor</option>
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label fw-bold small">LOCALIDADE (COMUM)</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-comum" value="{{ request.session.user_profile.comum|default:'' }}" required>
+                            </div>
+							<div class="col-md-4">
+                                <label class="form-label fw-bold small">SETOR / BAIRRO</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-setor" placeholder="Ex: Setor 1 ou Jardim Rosemeire">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">CELULAR DE CONTATO</label>
+                                <input type="tel" class="form-control border-0 bg-light" id="irm-celular" placeholder="(11) 99999-9999" maxlength="15" inputmode="numeric" autocomplete="tel">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold small text-primary"><i class="fa fa-map-marker-alt me-1"></i> ENDEREÇO RESIDENCIAL COMPLETO</label>
+                                <input type="text" class="form-control border-0 bg-light fw-bold" id="irm-endereco" placeholder="Ex: Rua Rosângela Mariana Limas, 124, Itapevi - SP">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">COMPLEMENTO</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-complemento" placeholder="Ex: Apto 12, Bloco B, Travessa">
+                            </div>
+                            <div class="col-md-12 d-none">
+                                <label class="form-label fw-bold small text-danger"><i class="fa fa-crosshairs me-1"></i> LOCALIZAÇÃO GPS (LATITUDE, LONGITUDE)</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control border-0 bg-light-200 fw-bold" id="irm-gps" placeholder="Ex: -23.5382, -46.9265" readonly>
+                                    <button class="btn btn-dark btn-sm fw-bold" type="button" onclick="Swal.fire('Como pegar?', '1. Abra o Google Maps normal.<br>2. Clique com botão direito na casa.<br>3. Clique nos números que aparecem para copiar.<br>4. Cole aqui!', 'info')">?</button>
+                                </div>
+                                <small class="text-muted" style="font-size: 10px;">Preenchido automaticamente pelo sistema.</small>
+                            </div>
+							<div class="col-md-8">
+                                <label class="form-label fw-bold small">VÍNCULO FAMILIAR (CHEFE DA FAMÍLIA)</label>
+                                <select class="form-select" id="irm-chefe-select" style="width: 100%"></select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">GRAU DE PARENTESCO</label>
+                                <select class="form-select border-0 bg-light fw-bold" id="irm-vinculo-tipo">
+                                    <option value="">Não Informado</option>
+                                    <option value="Cônjuge">Cônjuge (Esposa/Marido)</option>
+                                    <option value="Filho(a)">Filho(a)</option>
+                                    <option value="Pai/Mãe">Pai/Mãe</option>
+                                    <option value="Irmão/Irmã">Irmão/Irmã</option>
+                                    <option value="Neto(a)">Neto(a)</option>
+                                    <option value="Outro">Outro Vínculo</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="fw-bold text-primary text-uppercase small mb-3 border-bottom pb-2"><i class="fa fa-briefcase me-2"></i> 2. Ministério e Cargos (Marque todos que se aplicam)</div>
+                        <div class="row g-2 mb-4 bg-light p-3 rounded">
+                            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Irmandade" name="cargo"><label class="form-check-label fw-bold">Irmandade</label></div></div>
+                            <div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Ancião" name="cargo"><label class="form-check-label fw-bold">Ancião</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Diácono" name="cargo"><label class="form-check-label fw-bold">Diácono</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Irmã da Obra da Piedade" name="cargo"><label class="form-check-label fw-bold">Obra da Piedade</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Cooperador do Ofício" name="cargo"><label class="form-check-label fw-bold">Cooperador Ofício</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Cooperador de Jovens" name="cargo"><label class="form-check-label fw-bold">Cooperador Jovens</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Encarregado Regional" name="cargo"><label class="form-check-label fw-bold text-teal">Encarregado Regional</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Examinadora" name="cargo"><label class="form-check-label fw-bold">Examinadora</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Encarregado Local" name="cargo"><label class="form-check-label fw-bold text-teal">Encarregado Local</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Secretário da Música" name="cargo"><label class="form-check-label fw-bold text-indigo">Secretário da Música</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Secretária da Música" name="cargo"><label class="form-check-label fw-bold text-indigo">Secretária da Música</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Secretário do GEM" name="cargo"><label class="form-check-label fw-bold text-indigo">Secretário do GEM</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Instrutor" name="cargo"><label class="form-check-label fw-bold text-primary">Instrutor</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Instrutora" name="cargo"><label class="form-check-label fw-bold text-primary">Instrutora</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Músico" name="cargo"><label class="form-check-label fw-bold text-primary">Músico</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Organista" name="cargo"><label class="form-check-label fw-bold text-purple">Organista</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Porteiro" name="cargo"><label class="form-check-label fw-bold">Porteiro</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Auxiliar da Porta" name="cargo"><label class="form-check-label fw-bold">Auxiliar da Porta</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Auxiliar de Jovens" name="cargo"><label class="form-check-label fw-bold">Auxiliar de Jovens</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Apoio Estacionamento" name="cargo"><label class="form-check-label fw-bold">Apoio Estacionamento</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Som" name="cargo"><label class="form-check-label fw-bold">Som</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Cozinha" name="cargo"><label class="form-check-label fw-bold">Cozinha</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Manutenção" name="cargo"><label class="form-check-label fw-bold">Manutenção</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Limpeza" name="cargo"><label class="form-check-label fw-bold">Limpeza</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Reunião Familiar" name="cargo"><label class="form-check-label fw-bold">Reunião Familiar</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="EBI" name="cargo"><label class="form-check-label fw-bold">EBI</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="EMI" name="cargo"><label class="form-check-label fw-bold">EMI</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Auxiliar de Escrita" name="cargo"><label class="form-check-label fw-bold">Auxiliar de Escrita</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Fundo Bíblico" name="cargo"><label class="form-check-label fw-bold">Fundo Bíblico</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Grupo de Visitas" name="cargo"><label class="form-check-label fw-bold text-teal">Grupo de Visitas</label></div></div>
+							<div class="col-md-4">
+								<input type="text" class="form-control form-control-sm border-0 border-bottom bg-transparent" id="cargo-extra" placeholder="Outro cargo...">
+							</div>
+                        </div>
+
+                        <div class="fw-bold text-primary text-uppercase small mb-3 border-bottom pb-2"><i class="fa fa-calendar-check me-2"></i> 3. Datas Importantes</div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6"><label class="form-label fw-bold small text-primary">DATA DE NASCIMENTO</label><input type="date" class="form-control border-0 bg-light fw-bold" id="irm-nascimento"></div>
+                            <div class="col-md-6"><label class="form-label fw-bold small text-primary">DATA DE BATISMO</label><input type="date" class="form-control border-0 bg-light fw-bold" id="irm-batismo"></div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-4"><label class="form-label fw-bold small text-muted">INÍCIO ENSAIOS</label><input type="date" class="form-control border-0 bg-light" id="irm-ensaios"></div>
+                            <div class="col-md-4"><label class="form-label fw-bold small text-muted">CULTO OFICIAL</label><input type="date" class="form-control border-0 bg-light" id="irm-oficial"></div>
+                            <div class="col-md-4"><label class="form-label fw-bold small text-muted">OFICIALIZAÇÃO</label><input type="date" class="form-control border-0 bg-light" id="irm-graduacao"></div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-0 p-4 bg-light text-end">
+                    <button type="button" class="btn btn-white px-4 fw-bold" data-bs-dismiss="modal">Fechar</button>
+                    <button type="button" class="btn btn-primary px-5 fw-bold" id="btn-save-cadastro" onclick="saveCadastro()">Salvar Registro</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block js %}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="{% static 'plugins/moment/min/moment-with-locales.min.js' %}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script>
+        const userName = '{{ request.session.user_profile.full_name|default:"Usuário do Sistema"|escapejs }}';
+        let irmandadeData = [];
+        let agendaData = [];
+
+        // Inicialização Profissional
+        const loadContent = async () => {
+            moment.locale('pt-br');
+            try {
+                const [resIrm, resAge] = await Promise.all([
+                    fetch(`/visitas/api/irmandade/`),
+                    fetch(`/visitas/api/agenda/`)
+                ]);
+                
+                irmandadeData = await resIrm.json();
+                agendaData = await resAge.json();
+                
+                updateWidgets(irmandadeData);
+                updateSelects();
+                renderItems(irmandadeData);
+            } catch (err) {
+                console.error("Erro ao carregar dados:", err);
+            }
+        };
+
+        const exportExcel = () => {
+            const dataDe = $('#peridodo-de').val();
+            const dataAte = $('#peridodo-ate').val();
+            const periodText = dataDe && dataAte ? `${moment(dataDe).format('DD/MM/YYYY')} a ${moment(dataAte).format('DD/MM/YYYY')}` : 'Todos os registros';
+
+            const rows = [
+                ['Congregação Cristã no Brasil'],
+                ['Regional Itapevi - São Paulo'],
+                ['CADASTRO DE IRMANDADE'],
+                ['Relatório Detalhado de Membros'],
+                ['Período', periodText],
+                ['Impresso por', userName],
+                ['Impresso em', `${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`],
+                [],
+                ['Membro', 'Localidade', 'Cargos / Ministério', 'Status']
+            ];
+
+            irmandadeData.forEach(i => {
+                rows.push([
+                    i.nome,
+                    i.comum || 'Comum nao informada',
+                    i.cargos || '-',
+                    i.status || 'Ativo'
+                ]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let R = range.s.r; R <= range.e.r; ++R) {
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cell_ref = XLSX.utils.encode_cell({c: C, r: R});
+                    if (!ws[cell_ref]) continue;
+
+                    // Header row (index 8)
+                    if (R === 8) {
+                        ws[cell_ref].s = { font: { bold: true }, alignment: { horizontal: 'center' } };
+                    }
+                }
+            }
+
+            ws['!cols'] = [ { wch: 40 }, { wch: 30 }, { wch: 40 }, { wch: 15 } ];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Irmandade");
+            XLSX.writeFile(wb, "Cadastro_Irmandade.xlsx");
+        };
+
+        const exportPDF = () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const pageWidth = doc.internal.pageSize.getWidth();
+            
+            const dataDe = $('#peridodo-de').val();
+            const dataAte = $('#peridodo-ate').val();
+            const periodText = dataDe && dataAte ? `${moment(dataDe).format('DD/MM/YYYY')} a ${moment(dataAte).format('DD/MM/YYYY')}` : 'Todos os registros';
+
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text('CONGREGAÇÃO CRISTÃ NO BRASIL', 14, 15);
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Regional Itapevi - São Paulo', 14, 21);
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(30, 75, 122);
+            doc.text('CADASTRO DE IRMANDADE', 14, 29);
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 100, 100);
+            doc.text('Relatório Detalhado de Membros', 14, 34);
+
+            doc.setFontSize(8);
+            doc.setTextColor(0, 0, 0);
+            doc.text(`Emissão: ${moment().format('DD/MM/YYYY')}`, pageWidth - 14, 15, { align: 'right' });
+            doc.text(`Período: ${periodText}`, pageWidth - 14, 20, { align: 'right' });
+            doc.text(`Impresso por: ${userName}`, pageWidth - 14, 25, { align: 'right' });
+            
+            doc.setFontSize(7);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`, pageWidth - 14, 29, { align: 'right' });
+
+            const headers = [["Membro", "Localidade", "Cargos / Ministério", "Status"]];
+            const tableData = irmandadeData.map(i => [
+                i.nome,
+                i.comum || 'Comum nao informada',
+                i.cargos || '-',
+                i.status || 'Ativo'
+            ]);
+
+            doc.autoTable({
+                head: headers,
+                body: tableData,
+                startY: 40,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [30, 75, 122], textColor: 255 },
+                alternateRowStyles: { fillColor: [245, 245, 245] },
+                didDrawPage: function (data) {
+                    doc.setFontSize(8);
+                    doc.text(`Página ${data.pageNumber}`, pageWidth - 14, 10, { align: 'right' });
+                }
+            });
+
+            doc.save("Cadastro_Irmandade.pdf");
+        };
+
+        const updateWidgets = (data) => {
+            const now = moment();
+            const last30d = moment().subtract(30, 'days');
+            const last60d = moment().subtract(60, 'days');
+            const startOfYear = moment().startOf('year');
+
+            // 1. Famílias Assistidas (30d) - Lógica de Consolidação Inteligente
+            const getCanonicalFamilyId = (i) => {
+                if (!i.id_chefe_familia) return i.id;
+                // Para evitar ciclos ou vínculos mútuos, pegamos sempre o menor ID (string) entre o membro e seu chefe
+                return i.id < i.id_chefe_familia ? i.id : i.id_chefe_familia;
+            };
+            const recentVisits = agendaData.filter(v => v.status === 'Realizada' && moment(v.data_inicio).isAfter(last30d));
+            const visitedFamilyIds = new Set();
+            recentVisits.forEach(v => {
+                const member = data.find(m => m.id == v.irmandade_id);
+                if (member) visitedFamilyIds.add(getCanonicalFamilyId(member));
+            });
+            const famAtendidas = visitedFamilyIds.size;
+
+            // 2. Visitas em Atraso (+60d)
+            const ativos = data.filter(i => i.status !== 'Inativo');
+            let emAtraso = 0;
+            ativos.forEach(i => {
+                const visits = agendaData.filter(v => (v.irmandade_id == i.id) && v.status === 'Realizada');
+                if (visits.length === 0) {
+                    emAtraso++;
+                } else {
+                    const lastDate = moment(Math.max(...visits.map(v => new Date(v.data_inicio))));
+                    if (lastDate.isBefore(last60d)) emAtraso++;
+                }
+            });
+
+            // 3. Novos Músicos (Ano)
+            const novosMusicos = data.filter(i => {
+                const isMusico = i.perfil_musico || i.cargo_organista || (i.cargos && (i.cargos.includes('Músico') || i.cargos.includes('Organista')));
+                if (!isMusico) return false;
+                const dOfi = i.data_oficializacao ? moment(i.data_oficializacao) : null;
+                const dIni = i.data_inicio_ensaios ? moment(i.data_inicio_ensaios) : null;
+                return (dOfi && dOfi.isAfter(startOfYear)) || (dIni && dIni.isAfter(startOfYear));
+            }).length;
+
+            // 4. Cobertura Mocidade (%)
+            const mocidade = data.filter(i => i.perfil_mocidade || (i.cargos && i.cargos.includes('Mocidade')));
+            const mocTotal = mocidade.length;
+            const mocVisitada = mocidade.filter(i => {
+                 const visits = agendaData.filter(v => v.irmandade_id == i.id && v.status === 'Realizada' && moment(v.data_inicio).isAfter(last60d));
+                 return visits.length > 0;
+            }).length;
+            const cobMoc = mocTotal > 0 ? Math.round((mocVisitada / mocTotal) * 100) : 0;
+
+            // 5. Total Base
+            const totalBase = data.length;
+
+            // 6. Visitas Agendadas (Futuras)
+            const visitasAgendadas = agendaData.filter(v => moment(v.data_inicio).isAfter(now) && v.status !== 'Realizada').length;
+
+            // Atualização dos Widgets
+            $('#widget-total-fam').text(famAtendidas);
+            $('#widget-total-atraso').text(emAtraso);
+            $('#widget-total-musicos').text(novosMusicos);
+            $('#widget-total-cob-moc').text(cobMoc + '%');
+            $('#widget-total-base').text(totalBase);
+            $('#widget-total-agenda').text(visitasAgendadas);
+
+            $('#exec-text').html(`<b>Relatório Consolidado:</b> Foram analisados <b>${data.length}</b> membros. Identificado que <b>${famAtendidas}</b> núcleos familiares receberam assistência recente.`);
+        };
+
+        const updateSelects = () => {
+            const options = irmandadeData.map(i => ({ id: i.id, text: i.nome }));
+            const $select = $('#irm-chefe-select');
+            
+            // Apenas destruir se já existir para reiniciar limpo
+            if ($select.hasClass("select2-hidden-accessible")) {
+                $select.select2('destroy');
+            }
+            
+            $select.empty().append('<option value="">Nenhum (Este membro é o Chefe)</option>');
+            
+            // Inicialização robusta
+            $select.select2({
+                data: options,
+                dropdownParent: $('#modal-cadastro'),
+                placeholder: 'Selecione o Chefe da Família...',
+                width: '100%'
+            });
+        };
+
+        const getBadgeInfo = (cargo) => {
+            const raw = cargo || '';
+            const c = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const match = (str) => c.includes(str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+            
+            if (match('anciao')) return { class: 'badge-anciao', icon: 'fa-user-tie' };
+            if (match('diacono')) return { class: 'badge-diacono', icon: 'fa-user-check' };
+            if (match('piedade')) return { class: 'badge-piedade', icon: 'fa-hand-holding-heart' };
+            if (match('cooperador')) return { class: 'badge-cooperador', icon: 'fa-hands-helping' };
+            if (match('encarregado')) return { class: 'badge-encarregado', icon: 'fa-star' };
+            if (match('musico')) return { class: 'badge-musico', icon: 'fa-music' };
+            if (match('organista')) return { class: 'badge-organista', icon: 'fa-keyboard' };
+            if (match('examinadora')) return { class: 'badge-examinadora', icon: 'fa-clipboard-check' };
+            if (match('instrutor')) return { class: 'badge-instrutor', icon: 'fa-chalkboard-teacher' };
+            if (match('secretar')) return { class: 'badge-secretaria', icon: 'fa-file-signature' };
+            if (match('auxiliar de jovens')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('mocidade') || match('jovens')) return { class: 'badge-mocidade', icon: 'fa-child' };
+            if (match('enfermo')) return { class: 'badge-enfermo', icon: 'fa-heartbeat' };
+            if (match('porteiro')) return { class: 'badge-porteiro', icon: 'fa-door-open' };
+            if (match('auxiliar da porta')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('estacionamento')) return { class: 'badge-estacionamento', icon: 'fa-car' };
+            if (match('ebi')) return { class: 'badge-ebi', icon: 'fa-child' };
+            if (match('emi')) return { class: 'badge-emi', icon: 'fa-music' };
+            if (match('som')) return { class: 'badge-som', icon: 'fa-volume-up' };
+            if (match('manutencao') || match('manutenção')) return { class: 'badge-manutencao', icon: 'fa-tools' };
+            if (match('reuniao') || match('reunião')) return { class: 'badge-reuniao', icon: 'fa-home' };
+            if (match('grupo de visitas')) return { class: 'badge-grupo-visitas', icon: 'fa-people-group' };
+            
+            return { class: 'badge-irmandade', icon: 'fa-user' };
+        };
+
+        const renderItems = (items) => {
+            const tbody = $('#table-body');
+            tbody.empty();
+            
+            items.forEach(item => {
+                // Cálculo de Última Visita
+                const visits = agendaData.filter(a => (a.irmandade_id == item.id || a.id_membro == item.id) && a.status === 'Realizada');
+                let lastVisitHtml = '<span class="text-muted small">Nunca Visitado</span>';
+                
+                if (visits.length > 0) {
+                    const lastDate = moment(Math.max(...visits.map(v => new Date(v.data_inicio))));
+                    const diffDays = moment().diff(lastDate, 'days');
+                    let color = 'success';
+                    if (diffDays > 30) color = 'warning';
+                    if (diffDays > 60) color = 'danger';
+                    lastVisitHtml = `<span class="badge bg-${color}-100 text-${color} border border-${color}">${lastDate.fromNow()}</span>`;
+                }
+
+                // Cálculo de Próxima Visita (Agendada)
+                const futureVisits = agendaData.filter(a => (a.irmandade_id == item.id || a.id_membro == item.id) && a.status !== 'Realizada' && moment(a.data_inicio).isSameOrAfter(moment().startOf('day')));
+                let nextVisitHtml = '<span class="text-muted small">-</span>';
+                
+                if (futureVisits.length > 0) {
+                    const nextDate = moment(Math.min(...futureVisits.map(v => new Date(v.data_inicio))));
+                    nextVisitHtml = `<span class="badge bg-indigo-100 text-indigo border border-indigo" title="Visita Agendada"><i class="fa fa-calendar-alt me-1"></i>${nextDate.format('DD/MM/YY')}</span>`;
+                }
+
+                // Renderização de Cargos (Agregação de Fontes)
+                let cargosArr = (item.cargo_outros || '').split(',').map(c => c.trim()).filter(c => c !== '');
+                
+                if (item.perfil_musico) cargosArr.push('Músico');
+                if (item.cargo_organista) cargosArr.push('Organista');
+                if (item.perfil_mocidade) cargosArr.push('Mocidade');
+                if (item.perfil_enfermo) cargosArr.push('Enfermo');
+                if (item.cargo_porteiro) cargosArr.push('Porteiro');
+                if (item.cargo_auxiliar_porta) cargosArr.push('Auxiliar da Porta');
+                
+                // Remover duplicatas e vazio
+                cargosArr = [...new Set(cargosArr)].filter(c => c);
+
+                const badgesHtml = cargosArr.map(c => {
+                    const info = getBadgeInfo(c);
+                    return `<span class="badge-ministerio ${info.class}"><i class="fa ${info.icon}"></i> ${c}</span>`;
+                }).join('');
+                const equipeBadgeHtml = item.equipe_visita
+                    ? `<span class="badge-ministerio badge-equipe-visita" title="Equipe do Grupo de Visitas"><i class="fa fa-route"></i> ${item.equipe_visita}</span>`
+                    : '';
+
+                const photoHtml = item.url_foto 
+                    ? `<img src="${item.url_foto}" class="rounded-circle shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">`
+                    : `<div class="bg-light rounded-circle d-flex align-items-center justify-content-center text-primary fw-bold" style="width: 40px; height: 40px;">${item.nome.charAt(0)}</div>`;
+
+                tbody.append(`
+                    <tr>
+                        <td class="ps-3 py-3">
+                            <div class="d-flex align-items-center">
+                                <div class="symbol symbol-40px me-3">
+                                    ${photoHtml}
+                                </div>
+                                <div>
+                                    <a href="javascript:;" onclick="handleAction('${item.id}', 'edit')" class="fw-bold text-dark text-decoration-none d-block fs-14px">${item.nome}</a>
+                                    <small class="text-muted d-flex align-items-center gap-1">
+                                        <i class="fa fa-map-marker-alt text-danger"></i> ${item.comum || 'Comum não informada'}
+                                    </small>
+                                    ${item.id_chefe_familia ? (() => {
+                                        const chefe = irmandadeData.find(i => i.id == item.id_chefe_familia);
+                                        return `<div class="mt-1"><span class="badge bg-blue-100 text-blue-700 border border-blue-200" style="font-size: 9px;"><i class="fa fa-users me-1"></i> ${item.vinculo_tipo || 'Membro'} de ${chefe ? chefe.nome : 'Chefe'}</span></div>`;
+                                    })() : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td><div class="d-flex flex-wrap gap-1">${badgesHtml || '<span class="badge-ministerio badge-irmandade"><i class="fa fa-user"></i> Irmandade</span>'}${equipeBadgeHtml}</div></td>
+                        <td class="text-center">${lastVisitHtml}</td>
+                        <td class="text-center">${nextVisitHtml}</td>
+                        <td class="text-center">
+                            <span class="badge border border-${item.status === 'Inativo' ? 'danger text-danger' : 'success text-success'} px-2 py-1 rounded-pill">
+                                ${item.status || 'Ativo'}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group">
+                                <button class="btn btn-white btn-sm border" title="Histórico de Visitação" onclick="viewHistory('${item.id}')"><i class="fa fa-history text-info"></i></button>
+                                <button class="btn btn-white btn-sm border" title="Editar" onclick="handleAction('${item.id}', 'edit')"><i class="fa fa-edit text-blue"></i></button>
+                                <button class="btn btn-white btn-sm border" title="Excluir" onclick="deleteItem('${item.id}')"><i class="fa fa-trash text-danger"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `);
+            });
+            $('#record-count').text(`Sincronização completa: ${items.length} registros ministeriais`);
+        };
+
+        const openModalCadastro = () => {
+            $('#form-cadastro')[0].reset();
+            $('#irm-id').val('');
+            $('#irm-url-foto').val('');
+            $('#photo-preview').html('<i class="fa fa-user-circle fa-7x text-muted opacity-2"></i>');
+            $('#irm-chefe-select').val('').trigger('change');
+            $('input[name="cargo"]').prop('checked', false);
+            $('#modal-cadastro').modal('show');
+        };
+
+        const lookupCEP = async () => {
+            const cep = $('#irm-cep').val().replace(/\D/g, '');
+            if (cep.length !== 8) return;
+
+            try {
+                const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                const data = await res.json();
+                
+                if (data.erro) {
+                    Swal.fire('Erro', 'CEP não encontrado.', 'error');
+                    return;
+                }
+
+                $('#irm-endereco').val(`${data.logradouro}, ${data.localidade} - ${data.uf}`);
+                $('#irm-setor').val(data.bairro);
+                
+                // Disparar Geocodificação Automática com endereço completo para melhor precisão
+                const fullAddress = `${data.logradouro}, ${data.bairro}, ${data.localidade}, ${data.uf}, Brasil`;
+                geocodeAddress(fullAddress);
+                
+            } catch (err) {
+                console.error("Erro no ViaCEP:", err);
+            }
+        };
+
+        const geocodeAddress = async (address) => {
+            try {
+                const res = await fetch(`/visitas/api/geocode/?address=${encodeURIComponent(address)}`);
+                const data = await res.json();
+                
+                if (data.lat && data.lng) {
+                    $('#irm-gps').val(`${data.lat}, ${data.lng}`);
+                    // Feedback visual sutil
+                    $('#irm-gps').addClass('is-valid');
+                    setTimeout(() => $('#irm-gps').removeClass('is-valid'), 2000);
+                }
+            } catch (err) {
+                console.error("Erro na geocodificação:", err);
+            }
+        };
+
+        const previewPhoto = (input) => {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    $('#photo-preview').html(`<img src="${e.target.result}" style="width: 100%; height: 100%; object-fit: cover;">`);
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        };
+
+        // UX: Drag & Drop e Paste
+        $(document).ready(() => {
+            // Auto-preenchimento de endereço ao selecionar Chefe
+            $('#irm-chefe-select').on('change', function() {
+                const chefeId = $(this).val();
+                if (chefeId && !$('#irm-endereco').val()) {
+                    const chefe = irmandadeData.find(i => i.id == chefeId);
+                    if (chefe) {
+                        Swal.fire({
+                            title: 'Mesmo endereço?',
+                            text: `Deseja copiar o endereço de ${chefe.nome}?`,
+                            icon: 'question',
+                            showCancelButton: true,
+                            confirmButtonText: 'Sim, copiar',
+                            cancelButtonText: 'Não, preencher manual'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                $('#irm-cep').val(chefe.cep || '');
+                                $('#irm-setor').val(chefe.setor || '');
+                                $('#irm-complemento').val(chefe.complemento || '');
+                                
+                                // Extrair endereço sem o GPS [lat,lng]
+                                const fullAddr = chefe.endereco || '';
+                                const cleanAddr = fullAddr.includes('] ') ? fullAddr.split('] ')[1] : fullAddr;
+                                const gpsMatch = fullAddr.match(/^\[([-.\d]+),\s*([-.\d]+)\]/);
+                                
+                                $('#irm-endereco').val(cleanAddr);
+                                if (gpsMatch) $('#irm-gps').val(`${gpsMatch[1]}, ${gpsMatch[2]}`);
+                                
+                                toastr.success('Endereço copiado com sucesso!');
+                            }
+                        });
+                    }
+                }
+            });
+
+            // FIX: Robust SELECT2 Focus Conflict with Bootstrap Modals
+            $('#modal-cadastro').on('shown.bs.modal', function () {
+                updateSelects(); // Reinicia com os dados mais recentes ao abrir
+            });
+            
+            // Máscara para CEP
+            $('#irm-cep').on('input', function() {
+                let v = $(this).val().replace(/\D/g, '');
+                if (v.length > 5) v = v.substring(0, 5) + '-' + v.substring(5, 8);
+                $(this).val(v);
+                if (v.length === 9) lookupCEP();
+            });
+
+            // Máscara brasileira para celular/telefone com DDD.
+            $('#irm-celular').on('input', function() {
+                const digits = $(this).val().replace(/\D/g, '').substring(0, 11);
+                let formatted = digits;
+                if (digits.length > 2) formatted = `(${digits.substring(0, 2)}) ${digits.substring(2)}`;
+                if (digits.length > 10) formatted = `${formatted.substring(0, 10)}-${formatted.substring(10)}`;
+                else if (digits.length > 6) formatted = `${formatted.substring(0, 9)}-${formatted.substring(9)}`;
+                $(this).val(formatted);
+            });
+
+            const dropZone = document.getElementById('photo-preview');
+            
+            if (dropZone) {
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+                });
+
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, () => dropZone.style.borderColor = '#348fe2', false);
+                });
+
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, () => dropZone.style.borderColor = '#fff', false);
+                });
+
+                dropZone.addEventListener('drop', e => {
+                    const dt = e.dataTransfer;
+                    const files = dt.files;
+                    if (files.length) {
+                        const input = document.getElementById('irm-foto-input');
+                        input.files = files;
+                        previewPhoto(input);
+                    }
+                }, false);
+            }
+
+            // Suporte para colar imagem (CTRL+V)
+            window.addEventListener('paste', e => {
+                if (!$('#modal-cadastro').hasClass('show')) return;
+                
+                const items = e.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const blob = items[i].getAsFile();
+                        const file = new File([blob], `pasted_img_${Date.now()}.png`, { type: blob.type });
+                        
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        const input = document.getElementById('irm-foto-input');
+                        input.files = dt.files;
+                        previewPhoto(input);
+                        break;
+                    }
+                }
+            });
+        });
+
+        const handleAction = async (id, type) => {
+            const item = irmandadeData.find(i => i.id == id);
+            if (!item) return;
+
+            $('#form-cadastro')[0].reset();
+            $('#irm-id').val(item.id);
+            $('#irm-nome').val(item.nome);
+            $('#irm-cep').val(item.cep || '');
+            $('#irm-comum').val(item.comum || '');
+            const addressRaw = item.endereco || '';
+            const coordMatch = addressRaw.match(/^\[([-.\d]+),\s*([-.\d]+)\]\s*(.*)/);
+            
+            if (coordMatch) {
+                $('#irm-gps').val(`${coordMatch[1]}, ${coordMatch[2]}`);
+                $('#irm-endereco').val(coordMatch[3]);
+            } else {
+                $('#irm-gps').val('');
+                $('#irm-endereco').val(addressRaw);
+            }
+
+            $('#irm-status').val(item.status || 'Ativo');
+            $('#irm-setor').val(item.setor || '');
+			$('#irm-celular').val(item.celular || '').trigger('input');
+			$('#irm-complemento').val(item.complemento || '');
+			$('#irm-chefe-select').val(item.id_chefe_familia || '').trigger('change');
+            $('#irm-vinculo-tipo').val(item.vinculo_tipo || '');
+            
+            // Foto
+            $('#irm-url-foto').val(item.url_foto || '');
+            if (item.url_foto) {
+                $('#photo-preview').html(`<img src="${item.url_foto}" style="width: 100%; height: 100%; object-fit: cover;">`);
+            } else {
+                $('#photo-preview').html('<i class="fa fa-user-circle fa-7x text-muted opacity-2"></i>');
+            }
+
+            // Datas
+            $('#irm-nascimento').val(item.data_nascimento);
+            $('#irm-batismo').val(item.data_batismo);
+            $('#irm-ensaios').val(item.data_inicio_ensaios);
+            $('#irm-oficial').val(item.data_culto_oficial);
+            $('#irm-graduacao').val(item.data_oficializacao);
+
+            // Cargos Checkboxes
+            const cargosArr = (item.cargo_outros || '').split(',').map(c => c.trim());
+            $('input[name="cargo"]').prop('checked', false);
+            
+            // Check based on profile flags first
+            if (item.perfil_musico) $(`input[name="cargo"][value="Músico"]`).prop('checked', true);
+            if (item.cargo_organista) $(`input[name="cargo"][value="Organista"]`).prop('checked', true);
+            if (item.perfil_enfermo) $(`input[name="cargo"][value="Enfermo"]`).prop('checked', true);
+            if (item.cargo_porteiro) $(`input[name="cargo"][value="Porteiro"]`).prop('checked', true);
+            if (item.cargo_auxiliar_porta) $(`input[name="cargo"][value="Auxiliar da Porta"]`).prop('checked', true);
+            
+            // Check based on "outros" string
+            cargosArr.forEach(c => {
+                if(c) $(`input[name="cargo"][value="${c}"]`).prop('checked', true);
+            });
+            
+            const isView = type === 'view';
+            $('#btn-save-cadastro').toggle(!isView);
+            $('#form-cadastro input, #form-cadastro select').prop('disabled', isView);
+            $('#modal-cadastro').modal('show');
+        };
+
+        const saveCadastro = async () => {
+            const id = $('#irm-id').val();
+            
+            let seleccionados = [];
+            $('input[name="cargo"]:checked').each(function() { seleccionados.push($(this).val()); });
+            const extra = $('#cargo-extra').val();
+            if (extra) seleccionados.push(extra);
+
+            let outros = [];
+            const mappedValues = ['Músico', 'Organista', 'Auxiliar de Jovens', 'Cooperador de Jovens', 'Enfermo', 'Porteiro', 'Auxiliar da Porta'];
+            seleccionados.forEach(c => {
+                if (!mappedValues.includes(c)) outros.push(c);
+            });
+
+            // LÓGICA DE UPLOAD DE FOTO (PROXY)
+            let urlFoto = $('#irm-url-foto').val();
+            const photoFile = $('#irm-foto-input')[0].files[0];
+            
+            if (photoFile) {
+                const formData = new FormData();
+                formData.append('file', photoFile);
+                formData.append('name', $('#irm-nome').val() || 'perfil');
+                
+                try {
+                    const uploadRes = await fetch('/visitas/api/upload/', {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                        body: formData
+                    });
+                    
+                    const uploadData = await uploadRes.json();
+                    
+                    if (!uploadRes.ok) {
+                        throw new Error(uploadData.details || "Erro desconhecido no servidor de fotos.");
+                    }
+
+                    if (uploadData.url) {
+                        urlFoto = uploadData.url;
+                    }
+                } catch (err) {
+                    console.error("Erro no upload da foto:", err);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Falha no Upload da Foto',
+                        text: `Não foi possível salvar a imagem: ${err.message}. Verifique se o bucket 'irmandade_fotos' existe e é público no Supabase.`,
+                        confirmButtonText: 'Entendido'
+                    });
+                    return; // Bloqueia o salvamento do registro
+                }
+            }
+
+            const payload = {
+                nome: $('#irm-nome').val(),
+                cep: $('#irm-cep').val(),
+                comum: $('#irm-comum').val(),
+                id_chefe_familia: $('#irm-chefe-select').val() || null,
+                vinculo_tipo: $('#irm-vinculo-tipo').val(),
+                setor: $('#irm-setor').val(),
+                celular: $('#irm-celular').val().trim() || null,
+                complemento: $('#irm-complemento').val().trim() || null,
+                endereco: ($('#irm-gps').val() ? `[${$('#irm-gps').val()}] ` : '') + $('#irm-endereco').val(),
+                status: $('#irm-status').val(),
+                url_foto: urlFoto,
+                updated_at: new Date().toISOString(),
+                data_nascimento: $('#irm-nascimento').val() || null,
+                data_batismo: $('#irm-batismo').val() || null,
+                data_inicio_ensaios: $('#irm-ensaios').val() || null,
+                data_culto_oficial: $('#irm-oficial').val() || null,
+                data_oficializacao: $('#irm-graduacao').val() || null,
+				perfil_musico: seleccionados.includes('Músico'),
+				cargo_organista: seleccionados.includes('Organista'),
+				perfil_mocidade: seleccionados.includes('Auxiliar de Jovens') || seleccionados.includes('Cooperador de Jovens'),
+                perfil_enfermo: seleccionados.includes('Enfermo'),
+                cargo_porteiro: seleccionados.includes('Porteiro'),
+                cargo_auxiliar_porta: seleccionados.includes('Auxiliar da Porta'),
+                cargo_outros: outros.join(',')
+            };
+
+            const url = id ? `/visitas/api/irmandade/?id=${id}` : '/visitas/api/irmandade/';
+            try {
+                const requestOptions = {
+                    method: id ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify(payload)
+                };
+                let res;
+                try {
+                    res = await fetch(url, requestOptions);
+                } catch (firstError) {
+                    // Tolera uma reinicialização rápida do servidor de desenvolvimento.
+                    await new Promise(resolve => setTimeout(resolve, 900));
+                    res = await fetch(url, requestOptions);
+                }
+
+                if (res.ok) {
+                    Swal.fire({ icon: 'success', title: 'Registro Atualizado', timer: 1500, showConfirmButton: false });
+                    $('#modal-cadastro').modal('hide');
+                    loadContent();
+                } else {
+                    const errData = await res.json();
+                    let msg = "Desculpe, ocorreu um erro ao salvar os dados.";
+                    
+                    // Tradução amigável de erros do Supabase/PostgREST
+                    if (errData.details) {
+                        const details = typeof errData.details === 'string' ? errData.details : JSON.stringify(errData.details);
+                        if (details.includes('PGRST204')) msg = "Erro de configuração: Um campo enviado não existe no servidor. Por favor, contate o suporte.";
+                        else if (details.includes('23505')) msg = "Este registro já existe (duplicidade detectada).";
+                        else if (details.includes('PGRST')) msg = "Erro de banco de dados. Verifique os campos e tente novamente.";
+                    }
+                    
+                    console.error("Erro Original:", errData);
+                    Swal.fire('Não foi possível salvar', msg, 'error');
+                }
+            } catch (e) {
+                console.error('Falha de conexão ao salvar cadastro:', e);
+                Swal.fire('Erro', 'O servidor não respondeu. Aguarde alguns segundos e tente novamente.', 'error');
+            }
+        };
+
+        const handleSearch = (val) => {
+            const query = val.toLowerCase();
+            const filtered = irmandadeData.filter(i => i.nome.toLowerCase().includes(query) || (i.comum && i.comum.toLowerCase().includes(query)));
+            renderItems(filtered);
+        };
+
+        const deleteItem = async (id) => {
+             const { isConfirmed } = await Swal.fire({ 
+                 title: 'Excluir Membro?', 
+                 text: 'Esta ação removerá o registro ministerial permanentemente.', 
+                 icon: 'warning', 
+                 showCancelButton: true,
+                 confirmButtonText: 'Sim, excluir',
+                 cancelButtonText: 'Não'
+             });
+             if (isConfirmed) {
+                 await fetch(`/visitas/api/irmandade/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+                 loadContent();
+             }
+        };
+
+        const CATEGORY_MAP = {
+            'GVI': { label: 'GVI: Irmandade', bg: 'bg-gvi', text: 'text-gvi', icon: 'fa-users' },
+            'GVM': { label: 'GVM: Mocidade', bg: 'bg-gvm', text: 'text-gvm', icon: 'fa-child' },
+            'GVE': { label: 'GVE: Encarregados', bg: 'bg-gve', text: 'text-gve', icon: 'fa-music' },
+            'RF': { label: 'RF: Reunião Familiar', bg: 'bg-rf', text: 'text-rf', icon: 'fa-home' },
+            'RE': { label: 'RE: Reunião de Evangelização', bg: 'bg-re', text: 'text-re', icon: 'fa-bullhorn' }
+        };
+
+        window.viewHistory = async (id) => {
+            const member = irmandadeData.find(m => m.id == id);
+            if (!member) return;
+
+            $('#hist-nome').text(member.nome);
+            
+            const modalEl = document.getElementById('modal-historico');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            }
+
+            try {
+                let history = agendaData.filter(v => v.irmandade_id == id || v.id_membro == id);
+                
+                if (history.length === 0) {
+                    $('#timeline-container').html('<div class="alert alert-light text-center py-5 border-dashed"><i class="fa fa-folder-open fa-3x text-gray-300 mb-3 d-block"></i>Nenhuma visita registrada para este membro.</div>');
+                    return;
+                }
+
+                const getHistoryStyle = (categoria, equipe) => {
+                    const cfg = CATEGORY_MAP[categoria] || CATEGORY_MAP['GVI'];
+                    return { icon: cfg.icon, bg: cfg.bg, label: cfg.label, text: cfg.text, eq: equipe || 'Equipe Ministerial' };
+                };
+
+                let html = '<div class="timeline-v2">';
+                history.sort((a,b) => new Date(b.data_inicio) - new Date(a.data_inicio)).forEach(v => {
+                    const data = moment(v.data_inicio).format('DD/MM/YY');
+                    const hora = moment(v.data_inicio).format('HH:mm');
+                    const style = getHistoryStyle(v.categoria, v.equipe_responsavel);
+                    
+                    const diffDays = moment().diff(moment(v.data_inicio), 'days');
+                    let timeColor = 'success';
+                    if (diffDays > 30) timeColor = 'warning';
+                    if (diffDays > 60) timeColor = 'danger';
+                    if (diffDays < 0) timeColor = 'indigo';
+                    
+                    let displayStatus = v.status || 'Marcada';
+                    let isPast = moment(v.data_inicio).isBefore(moment());
+                    if ((displayStatus === 'Marcada' || displayStatus === 'Agendada') && isPast) {
+                        displayStatus = 'Não realizada';
+                    }
+
+                    let statusLabel = 'Agendada';
+                    let statusIcon = 'fa-clock';
+                    let statusColor = 'text-info';
+
+                    if (displayStatus === 'Realizada') {
+                        statusLabel = 'Concluída';
+                        statusIcon = 'fa-check-circle';
+                        statusColor = 'text-success';
+                    } else if (displayStatus === 'Não realizada') {
+                        statusLabel = 'Não Realizada';
+                        statusIcon = 'fa-exclamation-circle';
+                        statusColor = 'text-warning';
+                    } else if (displayStatus === 'Cancelada') {
+                        statusLabel = 'Cancelada';
+                        statusIcon = 'fa-times-circle';
+                        statusColor = 'text-danger';
+                    }
+
+                    let obsText = v.observacoes || (displayStatus === 'Marcada' || displayStatus === 'Agendada' ? 'Aguardando data.' : (displayStatus === 'Realizada' ? 'Visita concluída com sucesso.' : 'Sem observações.'));
+
+                    html += `
+                        <div class="timeline-item-v2">
+                            <div class="timeline-time-v2">
+                                <span class="date">${data}</span>
+                                <span class="time">${hora}</span>
+                                <span class="mt-2 badge bg-${timeColor}-100 text-${timeColor} border border-${timeColor}" style="font-size: 8px; display: inline-block;">${moment(v.data_inicio).fromNow()}</span>
+                            </div>
+                            <div class="timeline-icon-v2 ${style.bg}">
+                                <i class="fa ${style.icon}"></i>
+                            </div>
+                            <div class="timeline-content-v2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <div class="fw-bold text-dark fs-13px">Visita Ministerial</div>
+                                    <small class="${statusColor} fw-bold" style="font-size: 10px;" ${statusColor === 'text-warning' ? 'style="color: #fd7e14 !important;"' : ''}><i class="fa ${statusIcon} me-1"></i> ${statusLabel}</small>
+                                </div>
+                                <div class="badge-premium ${style.bg} mb-2">
+                                    <i class="fa ${style.icon} me-1"></i> ${style.label}
+                                </div>
+                                <div class="small text-muted mb-2 fst-italic">"${obsText}"</div>
+                                <div class="mt-2 pt-2 border-top border-light d-flex align-items-center">
+                                    <i class="fa fa-users-cog me-2 text-muted" style="font-size: 10px;"></i>
+                                    <small class="fw-bold text-uppercase text-muted" style="font-size: 9px;">Efetuada Por: ${style.eq}</small>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                $('#timeline-container').html(html);
+            } catch (err) {
+                $('#timeline-container').html('<div class="alert alert-danger">Erro técnico ao carregar histórico. Tente novamente.</div>');
+            }
+        };
+
+        $(document).ready(() => loadContent());
+    </script>
+
+    <!-- MODAL HISTÓRICO DE VISITAS -->
+    <div class="modal fade" id="modal-historico" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+                <div class="widget-header-premium" style="background: linear-gradient(135deg, #00468c 0%, #007bff 100%);">
+                    <div class="d-flex align-items-center justify-content-between position-relative" style="z-index: 10;">
+                        <div>
+                            <h5 class="text-white fw-bold mb-0">Memória de Visitação</h5>
+                            <small class="text-white text-opacity-50">Histórico detalhado por grupo</small>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="bg-gray-800 text-white p-2 px-3 d-flex justify-content-between align-items-center">
+                    <div class="fw-bold fs-12px" id="hist-nome">-</div>
+                    <div class="badge bg-white text-dark small">Total: Histórico Consolidado</div>
+                </div>
+                <div class="modal-body p-4 bg-light bg-opacity-50" style="max-height: 550px; overflow-y: auto;">
+                    <div id="timeline-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

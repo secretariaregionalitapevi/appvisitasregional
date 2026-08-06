@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Gerar Roteiro Inteligente{% endblock %}
+
+{% block css %}
+<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
+<style>
+    .roteiro-comum-wrap .select2-container { width: 100% !important; }
+    .roteiro-comum-wrap .select2-selection--single { height: 40px; border-color: #ced4da; }
+    .roteiro-comum-wrap .select2-selection__rendered { line-height: 38px !important; padding-left: 14px !important; }
+    .roteiro-comum-wrap .select2-selection__arrow { height: 38px !important; }
+    .roteiro-comum-wrap .select2-dropdown { border-color: #80bdff; box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .roteiro-comum-wrap .select2-results__options { max-height: 260px !important; }
+    .roteiro-comum-wrap .select2-search--dropdown { padding: 8px; }
+    .roteiro-comum-wrap .select2-search__field { border-radius: 4px; padding: 8px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<ol class="breadcrumb float-xl-end">
+    <li class="breadcrumb-item"><a href="javascript:;">Visitas</a></li>
+    <li class="breadcrumb-item active">Roteiro Inteligente</li>
+</ol>
+<h1 class="page-header"><i class="fa fa-route me-2 text-warning"></i>Roteiro Inteligente <small>Otimização de Distância</small></h1>
+
+<div class="row mt-4">
+    <div class="col-xl-6 col-lg-8 mx-auto">
+        <div class="panel panel-inverse">
+            <div class="panel-heading bg-dark">
+                <h4 class="panel-title text-white"><i class="fa fa-print me-2"></i>Gerar e Imprimir Roteiro</h4>
+            </div>
+            <div class="panel-body p-4 bg-light">
+                <form action="{% url 'ColorAdminApp:visitasRoteiro' %}" method="GET" target="_blank">
+                    <p class="mb-4 text-muted">
+                        Selecione a comum, a equipe e a data. O sistema parte do endereço da Comum Congregação e calcula a melhor rota
+                        para as casas disponíveis. O bairro é opcional: sem escolhê-lo, o roteiro mantém a sequência geral já programada.
+                    </p>
+
+                    {{ comuns|json_script:"roteiro-comuns-data" }}
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small text-muted">MUNICÍPIO</label>
+                        <select id="roteiro-municipio" class="form-select form-select-lg" required>
+                            <option value="">Selecione o município...</option>
+                            {% for item in municipios %}<option value="{{ item }}" {% if item == municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-4 roteiro-comum-wrap">
+                        <label class="form-label fw-bold small text-muted">COMUM CONGREGAÇÃO</label>
+                        <select name="comum" id="roteiro-comum" class="form-select" required></select>
+                        <div class="form-text">A pesquisa retorna somente as comuns do município selecionado.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
+                        <select name="equipe" id="roteiro-equipe" class="form-select form-select-lg" required disabled>
+                            <option value="">Selecione primeiro a comum...</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small text-muted">DATA DAS VISITAS</label>
+                        <input type="date" name="data" class="form-control form-control-lg" required>
+                    </div>
+
+                    <div class="mb-5">
+                        <label class="form-label fw-bold small text-muted">BAIRRO CIRCOVIZINHO <span class="fw-normal">(OPCIONAL)</span></label>
+                        <select name="bairro" id="roteiro-bairro" class="form-select form-select-lg" disabled>
+                            <option value="">Todos — manter sequência geral</option>
+                        </select>
+                        <div id="roteiro-bairro-ajuda" class="form-text">Selecione uma comum para mapear os bairros mais próximos.</div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-warning btn-lg fw-bold text-dark shadow-sm">
+                            <i class="fa fa-cogs me-2"></i> Processar e Imprimir Roteiro
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block js %}
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
+<script src="{% static 'js/visitas/roteiro-form.js' %}?v=20260805-3"></script>
+{% endblock %}

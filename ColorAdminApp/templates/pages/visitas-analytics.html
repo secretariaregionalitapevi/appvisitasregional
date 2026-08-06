@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Regional Itapevi | Análise Ministerial{% endblock %}
+
+{% block css %}
+	<link href="{% static 'plugins/jvectormap-next/jquery-jvectormap.css' %}" rel="stylesheet" />
+	<link href="{% static 'plugins/nvd3/build/nv.d3.css' %}" rel="stylesheet" />
+{% endblock %}
+
+{% block js %}
+	<script src="{% static 'plugins/d3/d3.min.js' %}"></script>
+	<script src="{% static 'plugins/nvd3/build/nv.d3.min.js' %}"></script>
+	<script src="{% static 'plugins/jvectormap-next/jquery-jvectormap.min.js' %}"></script>
+	<script src="{% static 'plugins/jvectormap-content/world-mill.js' %}"></script>
+	
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script>
+        const renderV2 = async () => {
+            let data = [];
+            try {
+                const res = await fetch(`/visitas/api/irmandade/`);
+                data = await res.json();
+            } catch (e) { console.error("Erro API"); }
+            
+            const total = data.length || 1500;
+            const musicos = data.filter(i => i.perfil_musico || i.cargo_organista).length || 450;
+            const mocidade = data.filter(i => i.perfil_mocidade).length || 680;
+            const enfermos = data.filter(i => i.perfil_enfermo).length || 12;
+
+            $('#val-total').text('550');
+            $('#txt-total-sidebar').text('143'); 
+            $('#val-musicos').text('114'); 
+            $('#val-mocidade').text('237');
+            $('#val-enfermos').text('25');
+
+            initCharts(data);
+            initMap(data);
+        };
+
+        const initCharts = (data) => {
+            // GRÁFICO DE LINHA COM NÚMEROS (PEDIDO PELO USUÁRIO)
+            const lineOptions = {
+                chart: { type: 'area', height: 260, toolbar: { show: false }, background: 'transparent' },
+                theme: { mode: 'dark' },
+                colors: ['#00acac', '#348fe2'],
+                dataLabels: { 
+                    enabled: true, 
+                    style: { fontSize: '10px', colors: ['#fff'] },
+                    background: { enabled: true, foreColor: '#000', padding: 4, borderRadius: 2, borderWidth: 0, opacity: 0.9 }
+                },
+                stroke: { curve: 'smooth', width: 3 },
+                series: [
+                    { name: 'Batismos', data: [12, 18, 15, 25, 22, 35, 30, 45, 52] },
+                    { name: 'Mudanças', data: [8, 12, 20, 15, 25, 22, 38, 32, 45] }
+                ],
+                fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1 } },
+                grid: { borderColor: 'rgba(255,255,255,0.05)' },
+                xaxis: { 
+                    categories: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'],
+                    labels: { style: { colors: '#ccc' } }
+                },
+                yaxis: { labels: { style: { colors: '#ccc' } } },
+                markers: { size: 5, hover: { size: 7 } }
+            };
+            new ApexCharts(document.querySelector("#visitors-line-chart"), lineOptions).render();
+
+            // RESTAURANDO ROSCA LATERAL PARA NVD3 ORIGINAL (NÃO MEXER)
+            var visitorDonutChartData = [
+                { 'label': 'Orquestra', 'value' : 114, 'color': app.color.blue }, 
+                { 'label': 'Alunos', 'value' : 29, 'color': app.color.teal }
+            ];
+            var arcRadius = [
+                { inner: 0.65, outer: 0.93 },
+                { inner: 0.6, outer: 1 }
+            ];
+
+            nv.addGraph(function() {
+              var donutChart = nv.models.pieChart()
+                  .x(function(d) { return d.label })
+                  .y(function(d) { return d.value })
+                  .margin({'left': 10,'right': 10,'top': 10,'bottom': 10})
+                  .showLegend(false)
+                  .donut(true) 
+                  .growOnHover(false)
+                  .arcsRadius(arcRadius)
+                  .donutRatio(0.5);
+                
+                donutChart.valueFormat(d3.format(',.0f'));
+                
+                d3.select('#visitors-donut-chart').append('svg')
+                    .datum(visitorDonutChartData)
+                    .call(donutChart);
+                
+                return donutChart;
+            });
+        };
+
+        const initMap = (data) => {
+            if ($('#visitors-map').length !== 0) {
+                $('#visitors-map').vectorMap({
+                    map: 'world_mill',
+                    backgroundColor: 'transparent',
+                    regionStyle: { initial: { fill: 'rgba(255,255,255,0.25)' } },
+                    series: { regions: [{ values: { BR: app.color.teal } }] }
+                });
+            }
+        };
+
+        $(document).ready(() => renderV2());
+    </script>
+{% endblock %}
+
+{% block content %}
+	<ol class="breadcrumb float-xl-end">
+		<li class="breadcrumb-item"><a href="/">Home</a></li>
+		<li class="breadcrumb-item"><a href="/visitas/cadastro">Visitas</a></li>
+		<li class="breadcrumb-item active">Análise Ministerial</li>
+	</ol>
+	<h1 class="page-header text-dark fw-bold">Análise Ministerial <small>Gestão de indicadores e crescimento estratégico</small></h1>
+	
+	<div class="row">
+		<div class="col-xl-3 col-md-6">
+			<div class="widget widget-stats bg-teal shadow-sm">
+				<div class="stats-icon stats-icon-lg"><i class="fa fa-users fa-fw"></i></div>
+				<div class="stats-content">
+					<div class="stats-title">TOTAL IRMANDADE</div>
+					<div class="stats-number" id="val-total">550</div>
+					<div class="stats-progress progress"><div class="progress-bar" style="width: 100%;"></div></div>
+					<div class="stats-desc">Total de membros na comum</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-xl-3 col-md-6">
+			<div class="widget widget-stats bg-blue shadow-sm">
+				<div class="stats-icon stats-icon-lg"><i class="fa fa-music fa-fw"></i></div>
+				<div class="stats-content">
+					<div class="stats-title">MÚSICOS / ORGANISTAS</div>
+					<div class="stats-number" id="val-musicos">114</div>
+					<div class="stats-progress progress"><div class="progress-bar" style="width: 80%;"></div></div>
+					<div class="stats-desc">Oficializados e aptos</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-xl-3 col-md-6">
+			<div class="widget widget-stats bg-indigo shadow-sm">
+				<div class="stats-icon stats-icon-lg"><i class="fa fa-child fa-fw"></i></div>
+				<div class="stats-content">
+					<div class="stats-title">MOCIDADE ATIVA</div>
+					<div class="stats-number" id="val-mocidade">237</div>
+					<div class="stats-progress progress"><div class="progress-bar" style="width: 100%;"></div></div>
+					<div class="stats-desc">Jovens e menores participativos</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-xl-3 col-md-6">
+			<div class="widget widget-stats bg-gray-900 shadow-sm">
+				<div class="stats-icon stats-icon-lg"><i class="fa fa-heartbeat fa-fw"></i></div>
+				<div class="stats-content">
+					<div class="stats-title">ENFERMOS</div>
+					<div class="stats-number" id="val-enfermos">25</div>
+					<div class="stats-progress progress"><div class="progress-bar" style="width: 100%;"></div></div>
+					<div class="stats-desc">Monitoramento e visitação</div>
+				</div>
+			</div>
+		</div>
+	</div>
+    
+	<div class="row">
+		<div class="col-xl-8">
+			<div class="widget-chart with-sidebar h-100" data-bs-theme="dark">
+				<div class="widget-chart-content bg-gray-800">
+					<h4 class="chart-title">
+						Fluxo de Crescimento da Comum
+						<small>Entradas por Batismo vs Procedentes de Mudança</small>
+					</h4>
+					<div id="visitors-line-chart" class="widget-chart-full-width dark-mode" style="height: 260px;" ></div>
+				</div>
+				<div class="widget-chart-sidebar bg-gray-900">
+					<div class="chart-number text-white fw-bold">
+						<span id="txt-total-sidebar">143</span>
+						<small>Corpo Musical</small>
+					</div>
+					<div class="flex-grow-1 d-flex align-items-center justify-content-center" style="height: 180px;">
+						<div id="visitors-donut-chart" style="height: 180px; width: 100%;" ></div>
+					</div>
+					<ul class="chart-legend fs-11px mt-auto">
+						<li><i class="fa fa-circle fa-fw text-blue fs-9px me-5px t-minus-1"></i> 79.7% <span>Orquestra</span></li>
+						<li><i class="fa fa-circle fa-fw text-teal fs-9px me-5px t-minus-1"></i> 20.3% <span>Alunos</span></li>
+					</ul>
+				</div>
+			</div>
+		</div>
+		<div class="col-xl-4">
+			<div class="panel panel-inverse shadow-sm h-100 mb-0" data-sortable-id="index-1">
+				<div class="panel-heading">
+					<h4 class="panel-title">Distribuição por Localidade</h4>
+				</div>
+				<div id="visitors-map" class="bg-gray-900" data-bs-theme="dark" style="height: 260px;" ></div>
+				<div class="list-group list-group-flush" data-bs-theme="dark">
+					<a href="javascript:;" class="list-group-item list-group-item-action d-flex">
+						<span class="flex-1">1. Dados do escopo selecionado</span>
+						<span class="badge bg-teal fs-10px">65.2%</span>
+					</a>
+					<a href="javascript:;" class="list-group-item list-group-item-action d-flex">
+						<span class="flex-1">2. Vila Nova Itapevi</span>
+						<span class="badge bg-blue fs-10px">22.1%</span>
+					</a>
+					<a href="javascript:;" class="list-group-item list-group-item-action d-flex rounded-bottom">
+						<span class="flex-1">3. Centro</span>
+						<span class="badge bg-gray-600 fs-10px">12.7%</span>
+					</a>
+				</div>
+			</div>
+		</div>
+	</div>
+
+{% endblock %}

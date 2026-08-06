@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block title %}Cadastrar{% endblock %}
+
+{% block outter_content %}
+<!-- BEGIN register -->
+<div class="register register-with-news-feed">
+	<!-- BEGIN news-feed -->
+	<div class="news-feed">
+		<div class="news-image" style="background-image: url({% static 'css/default/images/cover-sidebar-user.jpg' %})"></div>
+		<div class="news-caption">
+			<h4 class="caption-title"><b>Regional Itapevi</b> Painel de Visitas</h4>
+			<p>
+				Sistema Regional de Visitas CCB. Cadastre-se para gerenciar visitas e indicadores.
+			</p>
+		</div>
+	</div>
+	<!-- END news-feed -->
+	
+	<!-- BEGIN register-container -->
+	<div class="register-container">
+		<!-- BEGIN register-header -->
+		<div class="register-header mb-25px h1">
+			<div class="mb-2 d-flex align-items-center">
+                <img src="{% static 'img/logo/ccb.png' %}" height="40" class="me-10px" alt="CCB Logo" />
+                <span class="mb-0">Cadastrar</span>
+            </div>
+			<small class="d-block fs-15px lh-16">Crie sua conta. Seu acesso será revisado por um administrador.</small>
+		</div>
+		<!-- END register-header -->
+		
+		<!-- BEGIN register-content -->
+		<div class="register-content">
+			<form id="register-form" class="fs-13px">
+				<div class="mb-3">
+					<label class="mb-2 fw-bold">Nome Completo <span class="text-danger">*</span></label>
+					<input type="text" class="form-control fs-13px" id="fullName" placeholder="Ex: João da Silva" required />
+				</div>
+				<div class="mb-3">
+					<label class="mb-2 fw-bold">Localidade (Comum) <span class="text-danger">*</span></label>
+					<input type="text" class="form-control fs-13px" id="comum" placeholder="Selecione sua comum" required />
+				</div>
+				<div class="mb-3">
+					<label class="mb-2 fw-bold">E-mail <span class="text-danger">*</span></label>
+					<input type="email" class="form-control fs-13px" id="emailAddress" placeholder="email@exemplo.com" required />
+				</div>
+				<div class="mb-4">
+					<label class="mb-2 fw-bold">Senha <span class="text-danger">*</span></label>
+					<input type="password" class="form-control fs-13px" id="password" placeholder="Mínimo 6 caracteres" required minlength="6" />
+				</div>
+				<div class="form-check mb-4">
+					<input class="form-check-input" type="checkbox" value="" id="agreementCheckbox" required />
+					<label class="form-check-label" for="agreementCheckbox">
+						Eu aceito os termos de uso e política de privacidade do sistema.
+					</label>
+				</div>
+				<div class="mb-4">
+					<button type="submit" class="btn btn-theme d-block w-100 btn-lg h-45px fs-13px fw-bold" id="btn-register">
+                        <i class="fa fa-save me-2"></i> Cadastrar
+                    </button>
+				</div>
+				<div class="mb-4 pb-5">
+					Já possui conta? Clique <a href="/user/login-v1">aqui</a> para entrar.
+				</div>
+				<hr class="bg-gray-600 opacity-2" />
+				<p class="text-center text-gray-600">
+					&copy; Regional Itapevi - Todos os direitos reservados 2026
+				</p>
+			</form>
+		</div>
+		<!-- END register-content -->
+	</div>
+	<!-- END register-container -->
+</div>
+<!-- END register -->
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.getElementById('register-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const full_name = document.getElementById('fullName').value;
+        const comum = document.getElementById('comum').value;
+        const email = document.getElementById('emailAddress').value;
+        const password = document.getElementById('password').value;
+        const btn = document.getElementById('btn-register');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> Processando...';
+
+        try {
+            const response = await fetch('/api/auth/?action=register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name, comum, email, password })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                Swal.fire({
+                    title: 'Solicitação Enviada!',
+                    text: result.message,
+                    icon: 'success',
+                    confirmButtonColor: '#348fe2'
+                }).then(() => {
+                    window.location.href = '/user/login-v1';
+                });
+            } else {
+                Swal.fire({
+                    title: 'Erro no Cadastro',
+                    text: result.error || 'Erro ao processar solicitação.',
+                    icon: 'error',
+                    confirmButtonColor: '#348fe2'
+                });
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-save me-2"></i> Cadastrar';
+            }
+        } catch (err) {
+            Swal.fire('Erro', 'Falha na comunicação com o servidor.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-save me-2"></i> Cadastrar';
+        }
+    });
+</script>
+{% endblock %}

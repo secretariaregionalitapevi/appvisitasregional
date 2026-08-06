@@ -1,0 +1,1476 @@
+from django.http import HttpResponseRedirect
+from django.shortcuts import get_object_or_404, render, redirect
+from django.urls import reverse
+from django.views import generic
+from django.http import HttpResponse
+from datetime import datetime, timedelta
+import json
+from .access_control import can_access, filter_rows, scope_details, user_scope, visible_commons
+
+def index(request):
+	return redirect('/dashboard/v3')
+
+def dashboardv1(request):
+	return render(request, "pages/index.html")
+
+def dashboardv2(request):
+	return render(request, "pages/index-v2.html")
+
+def dashboardv3(request):
+	scope = user_scope(request)
+	labels = {"local": "Acesso local", "municipal": "Acesso municipal", "regional": "Acesso regional", "global": "Acesso global"}
+	location = scope.get('comum') if scope.get('level') == 'local' else scope.get('municipio') if scope.get('level') == 'municipal' else 'Regional Itapevi'
+	return render(request, "pages/index-v3.html", {
+		'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+		'access_scope_label': labels.get(scope.get('level'), 'Acesso local'),
+		'access_scope_location': location or 'Escopo nao configurado',
+	})
+
+
+
+import requests
+from django.http import JsonResponse
+from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+import json
+
+def log_audit(request, action, module='GLOBAL', details=None):
+    """Utility to log user actions to the audit_logs table in Supabase."""
+    url = f"{settings.SUPABASE_URL}/rest/v1/audit_logs"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    user_id = request.session.get('user_id')
+    payload = {
+        "user_id": user_id,
+        "action": action,
+        "module": module,
+        "details": details or {},
+        "ip_address": request.META.get('REMOTE_ADDR'),
+        "user_agent": request.META.get('HTTP_USER_AGENT')
+    }
+    
+    try:
+        requests.post(url, headers=headers, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Failed to log audit: {e}")
+
+
+def update_profile_activity(profile, event):
+    """Atualiza a mesma public.profiles usada pelo login."""
+    user_id = (profile or {}).get('user_id')
+    if not user_id or event not in ('login', 'logout'):
+        return profile or {}
+    counter_field = f'contador_{event}s'
+    date_field = f'data_ultimo_{event}'
+    now = datetime.now().astimezone().isoformat()
+    updated = {
+        counter_field: int((profile or {}).get(counter_field) or 0) + 1,
+        date_field: now,
+        'updated_at': now,
+    }
+    try:
+        response = requests.patch(
+            f"{settings.SUPABASE_URL}/rest/v1/profiles",
+            headers={
+                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            },
+            params={"user_id": f"eq.{user_id}"}, json=updated, timeout=10,
+        )
+        if response.ok and response.json():
+            return response.json()[0]
+    except Exception as exc:
+        print(f"Failed to update profile activity: {exc}")
+    return {**(profile or {}), **updated}
+
+
+def start_access_session(request, profile):
+    """Abre uma sessão confiável de utilização para consulta administrativa."""
+    payload = {
+        "user_id": (profile or {}).get("user_id"),
+        "status": "active",
+        "details": {
+            "ip_address": request.META.get("REMOTE_ADDR"),
+            "user_agent": request.META.get("HTTP_USER_AGENT"),
+            "module": "VISITAS",
+            "comum": (profile or {}).get("comum"),
+            "municipio": (profile or {}).get("municipio") or (profile or {}).get("cidade"),
+        },
+    }
+    try:
+        response = requests.post(
+            f"{settings.SUPABASE_URL}/rest/v1/audit_access_sessions",
+            headers={
+                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                "Content-Type": "application/json", "Prefer": "return=representation",
+            }, json=payload, timeout=10,
+        )
+        if response.ok and response.json():
+            request.session["audit_access_session_id"] = response.json()[0].get("id")
+    except Exception as exc:
+        print(f"Failed to start audit access session: {exc}")
+
+
+def close_access_session(request, reason="user_logout"):
+    session_id = request.session.get("audit_access_session_id")
+    if not session_id:
+        return
+    now = datetime.now().astimezone().isoformat()
+    try:
+        requests.patch(
+            f"{settings.SUPABASE_URL}/rest/v1/audit_access_sessions",
+            headers={
+                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                "Content-Type": "application/json",
+            }, params={"id": f"eq.{session_id}"},
+            json={"status": "logged_out", "ended_at": now, "last_activity_at": now, "logout_reason": reason}, timeout=10,
+        )
+    except Exception as exc:
+        print(f"Failed to close audit access session: {exc}")
+
+@csrf_exempt
+def apiAuth(request):
+    """Proxy for Supabase Auth and Profiles management."""
+    action = request.GET.get('action')
+    
+    if request.method == 'POST':
+        data = json.loads(request.body) if request.body else {}
+        
+        if action == 'login':
+            try:
+                url = f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password"
+                headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
+                payload = {"email": data.get('email'), "password": data.get('password')}
+                
+                response = requests.post(url, headers=headers, json=payload, timeout=10)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    token = res_data.get('access_token')
+                    user_data = res_data.get('user', {})
+                    user_id = user_data.get('id')
+                    
+                    if not user_id:
+                        return JsonResponse({"error": "Usuário não encontrado no Supabase."}, status=404)
+                    
+                    # Fetch profile
+                    profile_url = f"{settings.SUPABASE_URL}/rest/v1/profiles?user_id=eq.{user_id}&select=*"
+                    profile_headers = {
+                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"
+                    }
+                    profile_res = requests.get(profile_url, headers=profile_headers, timeout=10)
+                    
+                    if profile_res.status_code != 200:
+                        return JsonResponse({"error": "Erro ao buscar perfil no banco de dados."}, status=profile_res.status_code)
+                    
+                    profiles = profile_res.json()
+                    if not profiles or len(profiles) == 0:
+                        return JsonResponse({"error": "Perfil não encontrado. Contate o administrador."}, status=404)
+                    
+                    profile = profiles[0]
+                    
+                    # Check status
+                    if profile.get('status') != 'approved':
+                        request.session['user_id'] = user_id
+                        log_audit(request, 'LOGIN_DENIED', 'AUTH', {
+                            "email": data.get('email'), "reason": "profile_not_approved",
+                            "status": profile.get('status')
+                        })
+                        request.session.pop('user_id', None)
+                        return JsonResponse({"error": "Sua conta está aguardando aprovação."}, status=403)
+                    
+                    # Save to session
+                    request.session['supabase_token'] = token
+                    request.session['user_id'] = user_id
+                    profile = update_profile_activity(profile, 'login')
+                    profile['email'] = data.get('email')
+                    request.session['user_profile'] = profile
+                    start_access_session(request, profile)
+                    
+                    log_audit(request, 'LOGIN', 'AUTH', {
+                        "email": data.get('email'), "role_id": profile.get('role_id'),
+                        "comum": profile.get('comum'),
+                        "municipio": profile.get('municipio') or profile.get('cidade')
+                    })
+                    return JsonResponse({"status": "ok", "user": profile})
+                
+                # Auth failure
+                try:
+                    err_msg = response.json().get('error_description') or response.json().get('msg') or "Credenciais inválidas."
+                except:
+                    err_msg = "Credenciais inválidas."
+                log_audit(request, 'LOGIN_FAILED', 'AUTH', {
+                    "email": data.get('email'), "reason": err_msg
+                })
+                return JsonResponse({"error": err_msg}, status=response.status_code)
+                
+            except Exception as e:
+                return JsonResponse({"error": f"Erro interno: {str(e)}"}, status=500)
+
+        elif action == 'register':
+            # 1. Sign up
+            url = f"{settings.SUPABASE_URL}/auth/v1/signup"
+            headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
+            payload = {
+                "email": data.get('email'), 
+                "password": data.get('password'),
+                "data": {
+                    "full_name": data.get('full_name'),
+                    "comum": data.get('comum'),
+                    "cadastro_origem": "app_visitas_regional",
+                    "cadastro_origem_label": "Aplicativo Regional de Visitas",
+                    "cadastro_origem_setor_sugerido": "Visitas",
+                    "cadastro_origem_rota": request.path,
+                }
+            }
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code in [200, 201]:
+                res_data = response.json()
+                user_id = res_data.get('id')
+                if user_id:
+                    requests.patch(
+                        f"{settings.SUPABASE_URL}/rest/v1/profiles",
+                        headers={
+                            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                            "Content-Type": "application/json",
+                        }, params={"user_id": f"eq.{user_id}"}, json={
+                            "cadastro_origem": "app_visitas_regional",
+                            "cadastro_origem_label": "Aplicativo Regional de Visitas",
+                            "cadastro_origem_setor_sugerido": "Visitas",
+                            "cadastro_origem_rota": request.path,
+                            "cadastro_origem_url": request.build_absolute_uri(),
+                            "sector": "Visitas",
+                        }, timeout=10,
+                    )
+                
+                # Note: The trigger on Supabase (handle_new_user_profile) will create the profile record.
+                # We just need to make sure level 7 is 'Usuário'.
+                
+                log_audit(request, 'REGISTER', details={"email": data.get('email'), "user_id": user_id})
+                return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
+            
+            return JsonResponse({"error": response.text}, status=response.status_code)
+
+        elif action == 'logout':
+            profile = update_profile_activity(request.session.get('user_profile') or {}, 'logout')
+            request.session['user_profile'] = profile
+            close_access_session(request)
+            log_audit(request, 'LOGOUT', 'AUTH', {
+                "email": profile.get('email'), "role_id": profile.get('role_id'),
+                "comum": profile.get('comum')
+            })
+            request.session.flush()
+            return JsonResponse({"status": "ok"})
+
+    elif request.method == 'GET':
+        if action == 'profile':
+            profile = request.session.get('user_profile')
+            if profile:
+                return JsonResponse(profile)
+            return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    return JsonResponse({"error": "Invalid action or method"}, status=400)
+
+@csrf_exempt
+def apiVisitas(request):
+    scope = user_scope(request)
+    if request.method == 'GET':
+        ano = request.GET.get('ano')
+        mes = request.GET.get('mes')
+        comum = request.GET.get('comum')
+
+        url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS}"
+        headers = {
+            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
+        }
+        
+        params = [
+            ("select", "*"),
+            ("order", "referencia_ano.desc,referencia_mes.desc")
+        ]
+        
+        if ano and ano != 'all':
+            params.append(("referencia_ano", f"eq.{ano}"))
+        if mes and mes != 'all':
+            params.append(("referencia_mes", f"eq.{mes}"))
+        if comum and comum != 'all':
+            params.append(("comum", f"ilike.*{comum}*"))
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            if response.status_code != 200:
+                return JsonResponse({"error": "Supabase Error", "status": response.status_code, "details": response.text}, status=response.status_code)
+            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            if not can_access(scope, data):
+                return JsonResponse({"error": "Localidade fora do seu escopo de acesso."}, status=403)
+            # Garantir calculo do total se não enviado
+            if 'total_visitas' not in data:
+                data['total_visitas'] = int(data.get('gvi', 0)) + int(data.get('gvm', 0)) + int(data.get('gve', 0)) + int(data.get('rf', 0)) + int(data.get('re', 0))
+            if 'total' not in data:
+                data['total'] = data['total_visitas']
+                
+            url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS}"
+            headers = {
+                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=representation"
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=10)
+            if response.status_code in [200, 201]:
+                log_audit(request, 'CREATE', 'VISITAS_LANCAMENTOS', {
+                    "scope": scope_details(scope), "novo": response.json()
+                })
+                return JsonResponse(response.json(), safe=False)
+            else:
+                return JsonResponse({"error": "Supabase Save Error", "status": response.status_code, "details": response.text}, status=response.status_code)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+def apiVisitasIrmandade(request):
+    scope = user_scope(request)
+    url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    if request.method == 'GET':
+        comum = request.GET.get('comum')
+        status = request.GET.get('status')
+
+        params = [("select", "*"), ("order", "nome.asc")]
+        
+        if comum and comum != 'all':
+            params.append(("comum", f"ilike.*{comum}*"))
+        if status and status != 'all':
+            params.append(("status", f"eq.{status}"))
+        
+        setor = request.GET.get('setor')
+        if setor and setor != 'all':
+            params.append(("setor", f"eq.{setor}"))
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            if response.status_code != 200:
+                return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
+            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST':
+        import json
+        try:
+            data = json.loads(request.body)
+            if not can_access(scope, data):
+                return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+            response = requests.post(url, headers=headers, json=data, timeout=10)
+            if response.status_code in [200, 201]:
+                log_audit(request, 'CREATE', 'VISITAS_IRMANDADE', {
+                    "scope": scope_details(scope), "novo": response.json()
+                })
+                return JsonResponse(response.json(), safe=False)
+            else:
+                return JsonResponse({"error": "Save Error", "details": response.text}, status=response.status_code)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'PATCH':
+        import json
+        try:
+            id = request.GET.get('id')
+            if not id:
+                return JsonResponse({"error": "ID is required"}, status=400)
+            
+            data = json.loads(request.body)
+            current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
+            if not current or not can_access(scope, current[0]) or not can_access(scope, {**current[0], **data}):
+                return JsonResponse({"error": "Registro fora do seu escopo de acesso."}, status=403)
+            params = [("id", f"eq.{id}")]
+            
+            response = requests.patch(url, headers=headers, params=params, json=data, timeout=10)
+            if response.status_code in [200, 201, 204]:
+                log_audit(request, 'UPDATE', 'VISITAS_IRMANDADE', {
+                    "scope": scope_details(scope), "anterior": current[0],
+                    "novo": response.json() if response.text else data
+                })
+                return JsonResponse(response.json() if response.text else {"status": "ok"}, safe=False)
+            else:
+                print(f"ERRO SUPABASE: {response.status_code} - {response.text}")
+                return JsonResponse({"error": "Update Error", "details": response.text}, status=response.status_code)
+        except Exception as e:
+            import traceback
+            print(f"ERRO INTERNO: {str(e)}\n{traceback.format_exc()}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+    elif request.method == 'DELETE':
+        id = request.GET.get('id')
+        if not id:
+            return JsonResponse({"error": "ID is required"}, status=400)
+            
+        params = [("id", f"eq.{id}")]
+        
+        try:
+            current = requests.get(url, headers=headers, params=params + [("select", "*")], timeout=10).json()
+            if not current or not can_access(scope, current[0]):
+                return JsonResponse({"error": "Registro fora do seu escopo de acesso."}, status=403)
+            response = requests.delete(url, headers=headers, params=params, timeout=10)
+            if response.status_code in [200, 204]:
+                log_audit(request, 'DELETE', 'VISITAS_IRMANDADE', {
+                    "scope": scope_details(scope), "anterior": current[0]
+                })
+                return JsonResponse({"status": "deleted"})
+            else:
+                return JsonResponse({"error": "Delete Error", "details": response.text}, status=response.status_code)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+def apiVisitasComuns(request):
+    if request.method == 'GET':
+        try:
+            return JsonResponse(visible_commons(user_scope(request)), safe=False)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+def visitasDashboard(request):
+    return render(request, "pages/visitas-dashboard.html")
+
+def visitasAnalytics(request):
+    return render(request, "pages/visitas-analytics.html")
+
+def visitasCadastro(request):
+    return render(request, "pages/visitas-cadastro.html")
+
+def visitasAgenda(request):
+    return render(request, 'pages/visitas-agenda.html')
+
+
+def visitasEquipes(request):
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    comum_padrao = scope.get('comum') or ''
+    comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
+    return render(request, 'pages/visitas-equipes.html', {
+        'comuns': comuns,
+        'municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+        'comum_padrao': comum_padrao,
+        'municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
+    })
+
+
+def apiVisitasEquipes(request):
+    """Atribui uma equipe aos membros já cadastrados em visitas_irmandade."""
+    scope = user_scope(request)
+    url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    def database_error(response):
+        try:
+            payload = response.json()
+        except Exception:
+            payload = {}
+        if payload.get('code') in {'PGRST204', '42703'} or 'equipe_visita' in str(payload):
+            return JsonResponse({
+                'error': 'O campo de equipe ainda não foi criado no cadastro da irmandade.',
+                'migration': 'scripts/migrations/001_visitas_equipes.sql',
+            }, status=503)
+        return JsonResponse({'error': payload.get('message') or response.text}, status=response.status_code)
+
+    try:
+        if request.method == 'GET':
+            comum = (request.GET.get('comum') or '').strip()
+            params = {
+                "select": "id,nome,comum,setor,status,cargo_outros,equipe_visita",
+                "order": "comum.asc,equipe_visita.asc,nome.asc",
+            }
+            if comum:
+                params['comum'] = f'eq.{comum}'
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            if response.status_code != 200:
+                return database_error(response)
+            rows = filter_rows(scope, response.json())
+            if comum:
+                rows = [row for row in rows if str(row.get('comum') or '').strip() == comum]
+            catalogo = {row.get('comum'): row.get('cidade') for row in visible_commons(scope)}
+            if request.GET.get('modo') == 'membros':
+                busca = (request.GET.get('busca') or '').strip().casefold()
+                listar_elegiveis = request.GET.get('elegiveis') == 'true'
+                if busca or listar_elegiveis:
+                    rows = [row for row in rows if 'grupo de visitas' in str(row.get('cargo_outros') or '').casefold()]
+                    if busca:
+                        rows = [row for row in rows if busca in str(row.get('nome') or '').casefold()]
+                else:
+                    rows = [row for row in rows if str(row.get('equipe_visita') or '').strip()]
+                return JsonResponse([{**row, 'municipio': catalogo.get(row.get('comum'), '')} for row in rows], safe=False)
+            somente_atribuidos = request.GET.get('atribuidos') != 'false'
+            if somente_atribuidos:
+                rows = [row for row in rows if str(row.get('equipe_visita') or '').strip()]
+            grupos = {}
+            for membro in rows:
+                equipe = str(membro.get('equipe_visita') or '').strip()
+                if not equipe:
+                    continue
+                chave = (membro.get('comum') or '', equipe)
+                grupo = grupos.setdefault(chave, {
+                    'id': f"{chave[0]}::{equipe}", 'nome': equipe, 'comum': chave[0],
+                    'municipio': catalogo.get(chave[0], ''), 'ativo': True,
+                    'integrantes': [], 'membros': [],
+                })
+                grupo['integrantes'].append(membro.get('nome') or '')
+                grupo['membros'].append({'id': membro.get('id'), 'nome': membro.get('nome') or '', 'status': membro.get('status')})
+            return JsonResponse(list(grupos.values()), safe=False)
+
+        if request.method not in {'POST', 'PATCH', 'DELETE'}:
+            return JsonResponse({'error': 'Método não permitido.'}, status=405)
+
+        member_id = request.GET.get('id')
+        current = []
+        if request.method in {'PATCH', 'DELETE'}:
+            if not member_id:
+                return JsonResponse({'error': 'Membro não informado.'}, status=400)
+            lookup = requests.get(url, headers=headers, params={'id': f'eq.{member_id}', 'select': '*'}, timeout=15)
+            if lookup.status_code != 200:
+                return database_error(lookup)
+            current = lookup.json()
+            if not current or not can_access(scope, current[0]):
+                return JsonResponse({'error': 'Equipe fora do seu escopo de acesso.'}, status=403)
+
+        if request.method == 'DELETE':
+            response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json={'equipe_visita': None}, timeout=15)
+            if response.status_code not in {200, 201, 204}:
+                return database_error(response)
+            log_audit(request, 'REMOVE_TEAM_MEMBER', 'VISITAS_EQUIPES', {'anterior': current[0], 'scope': scope_details(scope)})
+            return JsonResponse({'status': 'deleted'})
+
+        data = json.loads(request.body or '{}')
+        member_id = str(data.get('membro_id') or member_id or '').strip()
+        equipe = str(data.get('equipe') or '').strip()
+        if not member_id or not equipe:
+            return JsonResponse({'error': 'Selecione o membro e informe a equipe.'}, status=400)
+        if not current or str(current[0].get('id')) != member_id:
+            lookup = requests.get(url, headers=headers, params={'id': f'eq.{member_id}', 'select': '*'}, timeout=15)
+            if lookup.status_code != 200:
+                return database_error(lookup)
+            current = lookup.json()
+        if not current or not can_access(scope, current[0]):
+            return JsonResponse({'error': 'Membro fora do seu escopo de acesso.'}, status=403)
+        if 'grupo de visitas' not in str(current[0].get('cargo_outros') or '').casefold():
+            return JsonResponse({'error': 'Somente membros com o cargo Grupo de Visitas podem receber uma equipe.'}, status=400)
+        response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json={'equipe_visita': equipe}, timeout=15)
+        if response.status_code not in {200, 201}:
+            return database_error(response)
+        result = response.json()
+        log_audit(request, 'ASSIGN_TEAM_MEMBER', 'VISITAS_EQUIPES', {
+            'anterior': current[0], 'membro_id': member_id, 'equipe': equipe, 'scope': scope_details(scope),
+        })
+        return JsonResponse(result, safe=False)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Dados inválidos.'}, status=400)
+    except requests.RequestException as exc:
+        return JsonResponse({'error': 'Falha ao acessar as equipes.', 'details': str(exc)}, status=502)
+
+def visitasMapa(request):
+    google_maps_api_key = settings.GOOGLE_MAPS_API_KEY
+    context = {
+        'google_maps_api_key': google_maps_api_key,
+    }
+    return render(request, "pages/visitas-mapa.html", context)
+
+def visitasRoteiroForm(request):
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    comum_padrao = scope.get("comum") or ""
+    comum_row = next((item for item in comuns if item.get('comum') == comum_padrao), {})
+    return render(request, "pages/visitas-roteiro-form.html", {
+        "comuns": comuns,
+        "municipios": sorted({item.get('cidade') for item in comuns if item.get('cidade')}),
+        "comum_padrao": comum_padrao,
+        "municipio_padrao": comum_row.get('cidade') or scope.get('municipio') or '',
+    })
+
+
+def apiRoteiroBairros(request):
+    """Lista bairros da comum ordenados pela proximidade do ponto central."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Método não permitido."}, status=405)
+    comum = (request.GET.get("comum") or "").strip()
+    if not comum:
+        return JsonResponse({"bairros": [], "error": "Selecione uma comum."}, status=400)
+    scope = user_scope(request)
+    comum_row = next((row for row in visible_commons(scope) if str(row.get("comum") or "").strip() == comum), None)
+    if not comum_row:
+        return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+    try:
+        from .utils.routing import discover_nearby_neighborhoods
+        bairros = discover_nearby_neighborhoods(
+            comum, comum_row.get("cidade") or "", request.GET.get("data") or None
+        )
+        return JsonResponse({"bairros": bairros, "comum": comum, "cidade": comum_row.get("cidade") or ""})
+    except Exception as exc:
+        return JsonResponse({"error": "Não foi possível mapear os bairros.", "details": str(exc)}, status=502)
+
+def visitasRoteiro(request):
+    scope = user_scope(request)
+    equipe = request.GET.get('equipe')
+    data_filtro = request.GET.get('data') # formato YYYY-MM-DD
+    comum = (request.GET.get('comum') or scope.get('comum') or '').strip()
+    bairro = (request.GET.get('bairro') or '').strip()
+    comum_row = next((row for row in visible_commons(scope) if str(row.get('comum') or '').strip() == comum), None)
+    if comum and not comum_row:
+        return render(request, 'pages/visitas-roteiro-impresso.html', {
+            'error': 'A comum selecionada está fora do seu escopo de acesso.'
+        })
+    cidade_comum = (comum_row or {}).get('cidade') or ''
+    
+    # 1. Buscar Visitas da Agenda
+    url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    params = [("select", "*")]
+    if equipe:
+        params.append(("equipe_responsavel", f"eq.{equipe}"))
+    if data_filtro:
+        # Pega do inicio ao fim do dia
+        params.append(("data_inicio", f"gte.{data_filtro}T00:00:00"))
+        params.append(("data_inicio", f"lte.{data_filtro}T23:59:59"))
+        
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        visitas = filter_rows(scope, response.json()) if response.status_code == 200 else []
+        
+        # Filtrar apenas as que não estão canceladas/não realizadas
+        visitas_validas = [v for v in visitas if v.get('status') not in ['Cancelada', 'Não realizada']]
+        if bairro:
+            visitas_validas = [
+                v for v in visitas_validas
+                if str(v.get('setor') or '').strip().casefold() == bairro.casefold()
+            ]
+        
+        from .utils.routing import optimize_route, auto_dispatch_visits, get_common_coordinates
+        
+        # 2. Despacho Automático (preenche até 10 visitas caso existam menos)
+        if len(visitas_validas) < 10 and equipe and data_filtro:
+            novas_visitas = auto_dispatch_visits(
+                equipe, data_filtro, existing_visits=visitas_validas,
+                comum=comum or None, cidade=cidade_comum, bairro=bairro or None,
+            )
+            if novas_visitas:
+                visitas_validas.extend(filter_rows(scope, novas_visitas))
+                
+        # 3. Ajustar fuso horário de volta para o Brasil (-3) no que veio do banco (UTC)
+        from datetime import datetime, timezone, timedelta
+        from dateutil import parser
+        fuso_br = timezone(timedelta(hours=-3))
+        
+        for v in visitas_validas:
+            if v.get('data_inicio'):
+                try:
+                    dt = parser.parse(v['data_inicio'])
+                    if dt.tzinfo:
+                        dt = dt.astimezone(fuso_br)
+                    v['data_inicio'] = dt.strftime('%Y-%m-%dT%H:%M:%S')
+                except:
+                    pass
+            if v.get('data_fim'):
+                try:
+                    dt = parser.parse(v['data_fim'])
+                    if dt.tzinfo:
+                        dt = dt.astimezone(fuso_br)
+                    v['data_fim'] = dt.strftime('%Y-%m-%dT%H:%M:%S')
+                except:
+                    pass
+                    
+        # 4. Separar manhã e tarde
+        visitas_manha = []
+        visitas_tarde = []
+        for v in visitas_validas:
+            hora = 12
+            if v.get('data_inicio'):
+                try:
+                    hora = int(v['data_inicio'][11:13])
+                except:
+                    pass
+            if hora < 12:
+                visitas_manha.append(v)
+            else:
+                visitas_tarde.append(v)
+                
+        # 5. Otimizar Rota (separadamente)
+        ponto_comum = get_common_coordinates(comum, cidade_comum) if comum else None
+        roteiro_manha = optimize_route(visitas_manha, start_coords=ponto_comum)
+        roteiro_tarde = optimize_route(visitas_tarde, start_coords=ponto_comum)
+        roteiro_otimizado = roteiro_manha + roteiro_tarde
+        
+        data_br = data_filtro
+        if data_filtro and len(data_filtro) == 10:
+            data_br = f"{data_filtro[8:10]}/{data_filtro[5:7]}/{data_filtro[0:4]}"
+        
+        context = {
+            'roteiro': roteiro_otimizado,
+            'equipe': equipe,
+            'data': data_br,
+            'comum': comum,
+            'bairro': bairro,
+        }
+        return render(request, 'pages/visitas-roteiro-impresso.html', context)
+    except Exception as e:
+        print(f"Erro ao gerar roteiro: {e}")
+        return render(request, 'pages/visitas-roteiro-impresso.html', {'error': str(e)})
+
+def apiVisitasAgenda(request):
+    scope = user_scope(request)
+    url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    if request.method == 'GET':
+        try:
+            irmandade_id = request.GET.get('irmandade_id')
+            status = request.GET.get('status')
+            
+            params = [("select", "*"), ("order", "data_inicio.asc")]
+            if irmandade_id:
+                params.append(("irmandade_id", f"eq.{irmandade_id}")) # ID do membro
+            if status:
+                params.append(("status", f"eq.{status}")) # Ex: Realizada
+            
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            if start_date:
+                params.append(("data_inicio", f"gte.{start_date}"))
+            if end_date:
+                params.append(("data_inicio", f"lte.{end_date}"))
+                
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST' or request.method == 'PATCH':
+        import json
+        try:
+            id = request.GET.get('id') if request.method == 'PATCH' else None
+            data = json.loads(request.body)
+            current = []
+            if id:
+                current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
+            candidate = {**(current[0] if current else {}), **data}
+            if (id and not current) or not can_access(scope, candidate):
+                return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
+            
+            # Validação profissional: Se cancelada ou não realizada, exige motivo
+            status_visita = data.get('status')
+            if status_visita in ['Cancelada', 'Não realizada'] and not data.get('motivo_cancelamento'):
+                return JsonResponse({"error": "Justificativa obrigatória para visitas canceladas ou não realizadas."}, status=400)
+
+            if request.method == 'POST':
+                response = requests.post(url, headers=headers, json=data, timeout=10)
+            else:
+                response = requests.patch(url, headers=headers, params=[("id", f"eq.{id}")], json=data, timeout=10)
+            
+            if response.status_code in [200, 201, 204]:
+                log_audit(request, 'CREATE' if request.method == 'POST' else 'UPDATE', 'VISITAS_AGENDA', {
+                    "scope": scope_details(scope), "anterior": current[0] if current else None,
+                    "novo": response.json() if response.text else data
+                })
+                return JsonResponse(response.json() if response.text else {"status": "ok"}, safe=False)
+            
+            try:
+                err_content = response.json()
+                msg = err_content.get('message', response.text)
+                return JsonResponse({"error": msg}, status=response.status_code)
+            except:
+                return JsonResponse({"error": response.text}, status=response.status_code)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'DELETE':
+        id = request.GET.get('id')
+        try:
+            current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
+            if not current or not can_access(scope, current[0]):
+                return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
+            response = requests.delete(url, headers=headers, params=[("id", f"eq.{id}")], timeout=10)
+            log_audit(request, 'DELETE', 'VISITAS_AGENDA', {
+                "scope": scope_details(scope), "anterior": current[0]
+            })
+            return JsonResponse({"status": "deleted"}, safe=False)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+from django.views.decorators.csrf import csrf_exempt
+
+@csrf_exempt
+def apiGeocode(request):
+    if request.method in {'GET', 'POST'}:
+        try:
+            data = json.loads(request.body or '{}') if request.method == 'POST' else request.GET
+            address = data.get('address')
+
+            if not address:
+                return JsonResponse({'error': 'Address is required'}, status=400)
+
+            # Tenta usar Google Maps Geocoding API
+            api_key = settings.GOOGLE_MAPS_API_KEY
+            url = "https://maps.googleapis.com/maps/api/geocode/json"
+            params = {
+                "address": address,
+                "key": api_key,
+                "language": "pt-BR"
+            }
+            response = requests.get(url, params=params, timeout=10)
+            result = response.json()
+            
+            # Caso Google falhe, tenta Nominatim (OpenStreetMap) como fallback gratuito
+            if result.get('status') != 'OK':
+                try:
+                    headers = {'User-Agent': 'ColorAdmin-Ministerial-App/1.0'}
+                    url_osm = "https://nominatim.openstreetmap.org/search"
+                    params_osm = {'q': address, 'format': 'json', 'limit': 1}
+                    resp_osm = requests.get(url_osm, headers=headers, params=params_osm, timeout=5)
+                    result_osm = resp_osm.json()
+                    
+                    if result_osm and len(result_osm) > 0:
+                        return JsonResponse({
+                            'lat': float(result_osm[0]['lat']),
+                            'lng': float(result_osm[0]['lon']),
+                            'formatted_address': result_osm[0]['display_name'],
+                            'source': 'osm'
+                        })
+                except Exception as osm_e:
+                    print(f"Erro no fallback OSM: {osm_e}")
+
+            if result.get('status') == 'OK':
+                location = result['results'][0]['geometry']['location']
+                return JsonResponse({
+                    'lat': location['lat'],
+                    'lng': location['lng'],
+                    'formatted_address': result['results'][0]['formatted_address'],
+                    'source': 'google'
+                })
+
+            return JsonResponse({'error': f"Geocode falhou: Google({result.get('status')}) e Fallback falharam."}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+def apiStorageUpload(request):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    if not request.FILES.get('file'):
+        return JsonResponse({"error": "No file uploaded"}, status=400)
+    
+    file = request.FILES['file']
+    file_name = request.POST.get('name', file.name)
+    # Ensure a safe filename or use UUID
+    import uuid
+    import os
+    ext = os.path.splitext(file_name)[1]
+    safe_name = f"{uuid.uuid4()}{ext}"
+    
+    bucket = "irmandade_fotos"
+    url = f"{settings.SUPABASE_URL}/storage/v1/object/{bucket}/{safe_name}"
+    
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": file.content_type
+    }
+    
+    def upload_to_supabase(content, current_url, current_headers):
+        return requests.post(current_url, headers=current_headers, data=content, timeout=30)
+
+    try:
+        # Step 1: Upload the file
+        print(f"--- INICIO DEBUG UPLOAD ---")
+        file_content = file.read()
+        response = upload_to_supabase(file_content, url, headers)
+        
+        # Se falhar porque o bucket não existe (404 ou 400 com mensagem específica)
+        if response.status_code in [400, 404] and ("not found" in response.text.lower() or "not_found" in response.text.lower()):
+            print(f"DEBUG: Bucket '{bucket}' não encontrado. Tentando criar automaticamente...")
+            
+            create_bucket_url = f"{settings.SUPABASE_URL}/storage/v1/bucket"
+            create_headers = {
+                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                "Content-Type": "application/json"
+            }
+            create_data = {
+                "id": bucket,
+                "name": bucket,
+                "public": True
+            }
+            
+            create_res = requests.post(create_bucket_url, headers=create_headers, json=create_data, timeout=10)
+            print(f"DEBUG: Tentativa de criação do bucket: {create_res.status_code} - {create_res.text}")
+            
+            if create_res.status_code in [200, 201]:
+                print(f"DEBUG: Bucket criado com sucesso! Repetindo upload...")
+                response = upload_to_supabase(file_content, url, headers)
+
+        print(f"--- FIM DEBUG UPLOAD --- Status: {response.status_code} | Resposta: {response.text}")
+        
+        if response.status_code in [200, 201]:
+            # Step 2: Get public URL
+            public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket}/{safe_name}"
+            return JsonResponse({"url": public_url, "name": safe_name}, status=200)
+        else:
+            # Tentar identificar o erro amigável
+            try:
+                err_json = response.json()
+                msg = err_json.get('message') or err_json.get('error') or response.text
+                if "Bucket not found" in msg:
+                    msg = f"O bucket '{bucket}' não foi localizado no Storage. Por favor, crie um bucket chamado 'irmandade_fotos' manualmente no menu Storage do Supabase e marque como 'Public'."
+            except:
+                msg = response.text
+                
+            return JsonResponse({
+                "error": "Falha no Supabase Storage", 
+                "status": response.status_code, 
+                "details": msg or "Erro interno do Supabase"
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def aiChat(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0 d-flex position-relative bg-body"
+	}
+	return render(request, "pages/ai-chat.html", context)
+
+def aiImageGenerator(request):
+	return render(request, "pages/ai-image-generator.html")
+
+def emailInbox(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/email-inbox.html", context)
+
+def emailDetail(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/email-detail.html", context)
+
+def emailCompose(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/email-compose.html", context)
+
+def widgets(request):
+	return render(request, "pages/widgets.html")
+
+def uiGeneral(request):
+	return render(request, "pages/ui-general.html")
+
+def uiTypography(request):
+	return render(request, "pages/ui-typography.html")
+
+def uiTabsAccordions(request):
+	return render(request, "pages/ui-tabs-accordions.html")
+
+def uiUnlimitedNavTabs(request):
+	return render(request, "pages/ui-unlimited-nav-tabs.html")
+
+def uiModalNotifications(request):
+	return render(request, "pages/ui-modal-notifications.html")
+
+def uiWidgetBoxes(request):
+	return render(request, "pages/ui-widget-boxes.html")
+
+def uiMediaObject(request):
+	return render(request, "pages/ui-media-object.html")
+
+def uiButtons(request):
+	return render(request, "pages/ui-buttons.html")
+
+def uiIconFontawesome(request):
+	return render(request, "pages/ui-icon-fontawesome.html")
+
+def uiIconBootstrapIcons(request):
+	return render(request, "pages/ui-icon-bootstrap-icons.html")
+
+def uiIconDuotone(request):
+	return render(request, "pages/ui-icon-duotone.html")
+
+def uiIconSimpleLineIcons(request):
+	return render(request, "pages/ui-icon-simple-line-icons.html")
+
+def uiIconIonicons(request):
+	return render(request, "pages/ui-icon-ionicons.html")
+
+def uiTreeView(request):
+	return render(request, "pages/ui-tree-view.html")
+
+def uiLanguageBarIcon(request):
+	context = {
+		"appHeaderLanguageBar": 1
+	}
+	return render(request, "pages/ui-language-bar-icon.html", context)
+
+def uiSocialButtons(request):
+	return render(request, "pages/ui-social-buttons.html")
+
+def uiIntroJS(request):
+	return render(request, "pages/ui-intro-js.html")
+
+def uiOffcanvasToasts(request):
+	return render(request, "pages/ui-offcanvas-toasts.html")
+	
+def bootstrap5(request):
+	return render(request, "pages/bootstrap-5.html")
+
+def formElements(request):
+	return render(request, "pages/form-elements.html")
+
+def formPlugins(request):
+	return render(request, "pages/form-plugins.html")
+
+def formSliderSwitcher(request):
+	return render(request, "pages/form-slider-switcher.html")
+	
+def formValidation(request):
+	return render(request, "pages/form-validation.html")
+
+def formWizards(request):
+	return render(request, "pages/form-wizards.html")
+	
+def formWysiwyg(request):
+	return render(request, "pages/form-wysiwyg.html")
+	
+def formXEditable(request):
+	return render(request, "pages/form-x-editable.html")
+	
+def formMultipleFileUpload(request):
+	return render(request, "pages/form-multiple-file-upload.html")
+	
+def formSummernote(request):
+	return render(request, "pages/form-summernote.html")
+	
+def formDropzone(request):
+	return render(request, "pages/form-dropzone.html")
+
+def tableBasic(request):
+	return render(request, "pages/table-basic.html")
+
+def tableManageDefault(request):
+	return render(request, "pages/table-manage-default.html")
+
+def tableManageButtons(request):
+	return render(request, "pages/table-manage-buttons.html")
+
+def tableManageColReorder(request):
+	return render(request, "pages/table-manage-col-reorder.html")
+
+def tableManageFixedColumn(request):
+	return render(request, "pages/table-manage-fixed-column.html")
+
+def tableManageFixedHeader(request):
+	return render(request, "pages/table-manage-fixed-header.html")
+
+def tableManageKeytable(request):
+	return render(request, "pages/table-manage-keytable.html")
+
+def tableManageResponsive(request):
+	return render(request, "pages/table-manage-responsive.html")
+
+def tableManageRowReorder(request):
+	return render(request, "pages/table-manage-row-reorder.html")
+
+def tableManageScroller(request):
+	return render(request, "pages/table-manage-scroller.html")
+
+def tableManageSelect(request):
+	return render(request, "pages/table-manage-select.html")
+
+def tableManageExtensionCombination(request):
+	return render(request, "pages/table-manage-extension-combination.html")
+
+def posCustomerOrder(request):
+	context = {
+		"appSidebarHide": 1, 
+		"appHeaderHide": 1,  
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/pos-customer-order.html", context)
+
+def posKitchenOrder(request):
+	context = {
+		"appSidebarHide": 1, 
+		"appHeaderHide": 1,  
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/pos-kitchen-order.html", context)
+
+def posCounterCheckout(request):
+	context = {
+		"appSidebarHide": 1, 
+		"appHeaderHide": 1,  
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/pos-counter-checkout.html", context)
+
+def posTableBooking(request):
+	context = {
+		"appSidebarHide": 1, 
+		"appHeaderHide": 1,  
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/pos-table-booking.html", context)
+
+def posMenuStock(request):
+	context = {
+		"appSidebarHide": 1, 
+		"appHeaderHide": 1,  
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/pos-menu-stock.html", context)
+
+def chartFlot(request):
+	return render(request, "pages/chart-flot.html")
+
+def chartJs(request):
+	return render(request, "pages/chart-js.html")
+
+def chartD3(request):
+	return render(request, "pages/chart-d3.html")
+
+def chartApex(request):
+	return render(request, "pages/chart-apex.html")
+	
+def landing(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/landing.html", context)
+
+def calendar(request):
+	return render(request, "pages/calendar.html")
+
+def mapVector(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0 position-relative"
+	}
+	return render(request, "pages/map-vector.html", context)
+
+def mapGoogle(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0 position-relative"
+	}
+	return render(request, "pages/map-google.html", context)
+
+def galleryV1(request):
+	return render(request, "pages/gallery-v1.html")
+
+def galleryV2(request):
+	return render(request, "pages/gallery-v2.html")
+
+def pageOptionBlank(request):
+	return render(request, "pages/page-option-blank.html")
+
+def pageOptionWithFooter(request):
+	return render(request, "pages/page-option-with-footer.html")
+
+def pageOptionWithFixedFooter(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "d-flex flex-column p-0"
+	}
+	return render(request, "pages/page-option-with-fixed-footer.html", context)
+
+def pageOptionWithoutSidebar(request):
+	context = {
+		"appSidebarHide": 1
+	}
+	return render(request, "pages/page-option-without-sidebar.html", context)
+
+def pageOptionWithRightSidebar(request):
+	context = {
+		"appSidebarEnd": 1
+	}
+	return render(request, "pages/page-option-with-right-sidebar.html", context)
+
+def pageOptionWithMinifiedSidebar(request):
+	context = {
+		"appSidebarMinified": 1
+	}
+	return render(request, "pages/page-option-with-minified-sidebar.html", context)
+
+def pageOptionWithTwoSidebar(request):
+	context = {
+		"appSidebarTwo": 1,
+		"appSidebarEndToggled": 1
+	}
+	return render(request, "pages/page-option-with-two-sidebar.html", context)
+
+def pageOptionFullHeight(request):
+	context = {
+		"appContentFullHeight": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/page-option-full-height.html", context)
+
+def pageOptionWithWideSidebar(request):
+	context = {
+		"appSidebarWide": 1
+	}
+	return render(request, "pages/page-option-with-wide-sidebar.html", context)
+
+def pageOptionWithLightSidebar(request):
+	context = {
+		"appSidebarLight": 1
+	}
+	return render(request, "pages/page-option-with-light-sidebar.html", context)
+
+def pageOptionWithMegaMenu(request):
+	context = {
+		"appHeaderMegaMenu": 1
+	}
+	return render(request, "pages/page-option-with-mega-menu.html", context)
+
+def pageOptionWithTopMenu(request):
+	context = {
+		"appTopMenu": 1,
+		"appSidebarHide": 1
+	}
+	return render(request, "pages/page-option-with-top-menu.html", context)
+
+def pageOptionWithBoxedLayout(request):
+	context = {
+		"appBoxedLayout": 1
+	}
+	return render(request, "pages/page-option-with-boxed-layout.html", context)
+
+def pageOptionWithMixedMenu(request):
+	context = {
+		"appTopMenu": 1
+	}
+	return render(request, "pages/page-option-with-mixed-menu.html", context)
+
+def pageOptionBoxedLayoutWithMixedMenu(request):
+	context = {
+		"appBoxedLayout": 1,
+		"appTopMenu": 1
+	}
+	return render(request, "pages/page-option-boxed-layout-with-mixed-menu.html", context)
+
+def pageOptionWithTransparentSidebar(request):
+	context = {
+		"appSidebarTransparent": 1
+	}
+	return render(request, "pages/page-option-with-transparent-sidebar.html", context)
+
+def pageOptionWithSearchSidebar(request):
+	context = {
+		"appSidebarSearch": 1
+	}
+	return render(request, "pages/page-option-with-search-sidebar.html", context)
+
+def pageOptionWithHoverSidebar(request):
+	context = {
+		"appSidebarHover": 1
+	}
+	return render(request, "pages/page-option-with-hover-sidebar.html", context)
+
+def extraTimeline(request):
+	return render(request, "pages/extra-timeline.html")
+
+def extraComingSoon(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/extra-coming-soon.html", context)
+
+def extraSearch(request):
+	return render(request, "pages/extra-search.html")
+
+def extraInvoice(request):
+	return render(request, "pages/extra-invoice.html")
+
+def extraError(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/extra-error.html", context)
+
+def extraProfile(request):
+	context = {
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/extra-profile.html", context)
+
+def extraScrumBoard(request):
+	context = {
+		"appContentClass": "p-0",
+		"appContentFullHeight": 1
+	}
+	return render(request, "pages/extra-scrum-board.html", context)
+
+def extraCookieAcceptanceBanner(request):
+	return render(request, "pages/extra-cookie-acceptance-banner.html")
+
+def extraOrders(request):
+	return render(request, "pages/extra-orders.html")
+
+def extraOrderDetails(request):
+	return render(request, "pages/extra-order-details.html")
+
+def extraProducts(request):
+	return render(request, "pages/extra-products.html")
+
+def extraProductDetails(request):
+	return render(request, "pages/extra-product-details.html")
+
+def extraFileManager(request):
+	context = {
+		"appSidebarMinified": 1,
+		"appHeaderInverse": 1,
+		"appContentFullHeight": 1,
+		"appContentClass": "d-flex flex-column"
+	}
+	return render(request, "pages/extra-file-manager.html", context)
+
+def extraPricing(request):
+	return render(request, "pages/extra-pricing.html")
+
+def extraMessenger(request):
+	context = {
+		"appSidebarMinified": 1,
+		"appHeaderInverse": 1,
+		"appContentClass": "p-0",
+		"appContentFullHeight": 1
+	}
+	return render(request, "pages/extra-messenger.html", context)
+
+def extraDataManagement(request):
+	context = {
+		"appSidebarMinified": 1,
+		"appHeaderInverse": 1,
+		"appContentClass": "p-0 bg-component",
+		"appContentFullHeight": 1
+	}
+	return render(request, "pages/extra-data-management.html", context)
+
+def extraSettings(request):
+	return render(request, "pages/extra-settings.html")
+	
+def userLoginV1(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/user-login-v1.html", context)
+
+def userLoginV2(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/user-login-v2.html", context)
+
+def userLoginV3(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/user-login-v3.html", context)
+
+def userRegisterV3(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": "p-0"
+	}
+	return render(request, "pages/user-register-v3.html", context)
+
+def logout_view(request):
+    profile = update_profile_activity(request.session.get('user_profile') or {}, 'logout')
+    request.session['user_profile'] = profile
+    close_access_session(request)
+    log_audit(request, 'LOGOUT', 'AUTH', {
+        "email": profile.get('email'), "role_id": profile.get('role_id'),
+        "comum": profile.get('comum')
+    })
+    request.session.flush()
+    return redirect('/user/login-v1')
+
+def helperCss(request):
+	return render(request, "pages/helper-css.html")
+	
+def error404(request):
+	context = {
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
+		"appContentClass": 'p-0'
+	}
+	return render(request, "pages/extra-error.html", context)
+
+def handler404(request, exception = None):
+	return redirect('/404/')

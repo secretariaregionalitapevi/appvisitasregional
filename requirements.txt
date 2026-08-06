@@ -1,0 +1,5 @@
+django>=5.0
+requests
+python-dotenv
+supabase
+whitenoise>=6.0.0

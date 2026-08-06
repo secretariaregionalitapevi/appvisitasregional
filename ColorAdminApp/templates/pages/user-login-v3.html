@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block title %}Acessar Sistema{% endblock %}
+
+{% block outter_content %}
+	<!-- BEGIN login -->
+	<div class="login login-with-news-feed">
+		<!-- BEGIN news-feed -->
+		<div class="news-feed">
+			<div class="news-image" style="background-image: url({% static 'css/default/images/cover-sidebar-user.jpg' %})"></div>
+			<div class="news-caption">
+				<h4 class="caption-title"><b>Regional Itapevi</b> Painel de Visitas</h4>
+				<p>
+					Sistema Regional de Visitas CCB. Gerencie visitas e indicadores da sua localidade.
+				</p>
+			</div>
+		</div>
+		<!-- END news-feed -->
+		
+		<!-- BEGIN login-container -->
+		<div class="login-container">
+			<!-- BEGIN login-header -->
+			<div class="login-header mb-30px">
+				<div class="brand">
+					<div class="d-flex align-items-center">
+						<img src="{% static 'img/logo/ccb.png' %}" height="32" class="me-10px" alt="CCB Logo" />
+						<b>CCB</b> Regional Itapevi
+					</div>
+					<small>Sistema de Gestão Regional</small>
+				</div>
+				<div class="icon">
+					<i class="fa fa-sign-in-alt"></i>
+				</div>
+			</div>
+			<!-- END login-header -->
+			
+			<!-- BEGIN login-content -->
+			<div class="login-content">
+				<form id="login-form" class="fs-13px">
+					<div class="form-floating mb-15px">
+						<input type="email" class="form-control h-45px fs-13px" placeholder="E-mail" id="emailAddress" required />
+						<label for="emailAddress" class="d-flex align-items-center fs-13px text-gray-600">E-mail</label>
+					</div>
+					<div class="form-floating mb-15px">
+						<input type="password" class="form-control h-45px fs-13px" placeholder="Senha" id="password" required />
+						<label for="password" class="d-flex align-items-center fs-13px text-gray-600">Senha</label>
+					</div>
+					<div class="form-check mb-30px">
+						<input class="form-check-input" type="checkbox" value="1" id="rememberMe" />
+						<label class="form-check-label" for="rememberMe">
+							Lembrar-me
+						</label>
+					</div>
+					<div class="mb-15px">
+						<button type="submit" class="btn btn-theme d-block h-45px w-100 btn-lg fs-14px" id="btn-login">Acessar Sistema</button>
+					</div>
+					<div class="mb-40px pb-40px text-dark">
+						Ainda não tem conta? Clique <a href="/user/register-v3" class="text-primary">aqui</a> para cadastrar.
+					</div>
+					<hr class="bg-gray-600 opacity-2" />
+					<div class="text-gray-600 text-center  mb-0">
+						&copy; Regional Itapevi - Todos os direitos reservados 2026
+					</div>
+				</form>
+			</div>
+			<!-- END login-content -->
+		</div>
+		<!-- END login-container -->
+	</div>
+	<!-- END login -->
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('emailAddress').value;
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('btn-login');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> Verificando...';
+
+            try {
+                const response = await fetch('/api/auth/?action=login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    Swal.fire({
+                        title: 'Bem-vindo!',
+                        text: 'Login realizado com sucesso.',
+                        icon: 'success',
+                        timer: 2000,
+                        timerProgressBar: true,
+                        showConfirmButton: false
+                    }).then(() => {
+                        window.location.href = '/';
+                    });
+                } else {
+                    Swal.fire({
+                        title: 'Erro no Login',
+                        text: result.error || 'Erro desconhecido.',
+                        icon: 'error',
+                        confirmButtonColor: '#348fe2'
+                    });
+                    btn.disabled = false;
+                    btn.innerHTML = 'Acessar Sistema';
+                }
+            } catch (err) {
+                Swal.fire('Erro', 'Falha na comunicação com o servidor.', 'error');
+                btn.disabled = false;
+                btn.innerHTML = 'Sign me in';
+            }
+        });
+    </script>
+{% endblock %}

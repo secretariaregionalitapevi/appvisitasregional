@@ -1,0 +1,996 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block title %}Painel de Gestão - Visitas{% endblock %}
+
+{% block css %}
+<link href="{% static 'plugins/datatables.net-bs5/css/dataTables.bootstrap5.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/datatables.net-responsive-bs5/css/responsive.bootstrap5.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/datatables.net-buttons-bs5/css/buttons.bootstrap5.min.css' %}" rel="stylesheet" />
+<style>
+    .filter-section {
+        background: #fff;
+        padding: 20px;
+        border-radius: 4px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        margin-bottom: 20px;
+    }
+
+    .executive-summary {
+        border-left: 4px solid #2d353c;
+        background: #f8f9fa;
+        padding: 15px;
+        margin-bottom: 25px;
+        border-radius: 4px;
+    }
+
+    .kpi-card {
+        border: none;
+        border-radius: 4px;
+        transition: transform 0.2s;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .kpi-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .btn-action {
+        font-weight: 600;
+        border-radius: 4px;
+        padding: 8px 16px;
+    }
+
+    @media (max-width: 767.98px) {
+        div.dataTables_wrapper div.dataTables_length,
+        div.dataTables_wrapper div.dataTables_filter,
+        div.dataTables_wrapper div.dataTables_info,
+        div.dataTables_wrapper div.dataTables_paginate {
+            text-align: center;
+        }
+        div.dataTables_wrapper div.dataTables_length label,
+        div.dataTables_wrapper div.dataTables_filter label {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            text-align: left;
+            width: 100%;
+            font-size: 0; /* Oculta texto quebrado */
+            margin-bottom: 12px;
+        }
+        div.dataTables_wrapper div.dataTables_length select,
+        div.dataTables_wrapper div.dataTables_filter input {
+            font-size: 14px;
+            width: 100% !important;
+            margin: 5px 0 0 0 !important;
+            display: block;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            padding: 8px 12px;
+        }
+        div.dataTables_wrapper div.dataTables_length label::before {
+            content: "Resultados por página:";
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+        }
+        div.dataTables_wrapper div.dataTables_filter label::before {
+            content: "Pesquisar:";
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+        }
+        div.dataTables_wrapper div.dataTables_paginate ul.pagination {
+            justify-content: center !important;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 15px;
+        }
+        .page-item .page-link {
+            padding: 8px 14px;
+            font-size: 16px;
+            border-radius: 4px !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block js %}
+<!-- Plugins -->
+<script src="{% static 'plugins/moment/min/moment-with-locales.min.js' %}"></script>
+<script src="{% static 'plugins/apexcharts/dist/apexcharts.min.js' %}"></script>
+<script src="{% static 'plugins/datatables.net/js/dataTables.min.js' %}"></script>
+<script src="{% static 'plugins/datatables.net-bs5/js/dataTables.bootstrap5.min.js' %}"></script>
+<script src="{% static 'plugins/datatables.net-responsive/js/dataTables.responsive.min.js' %}"></script>
+<script src="{% static 'plugins/datatables.net-responsive-bs5/js/responsive.bootstrap5.min.js' %}"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<!-- Export Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+<script>
+    let currentData = [];
+    let trendChart = null;
+    let mixChart = null;
+
+    const formatNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
+
+    const renderDashboards = (data, agendaData = []) => {
+        if (!Array.isArray(data)) {
+            console.error('Dados inválidos recebidos:', data);
+            return;
+        }
+        
+        const getKey = (mes, ano, comum) => `${mes}-${ano}-${comum}`;
+        const agendaKeys = new Set();
+        let agendaGVI = 0, agendaGVM = 0, agendaGVE = 0, agendaRF = 0, agendaRE = 0;
+        agendaData.forEach(item => {
+            const dt = moment(item.data_inicio);
+            const mes = dt.month() + 1;
+            const ano = dt.year();
+            let comum = item.comum;
+            if (!comum || comum === 'null' || !comum.includes(' - ')) {
+                comum = 'COMUM NAO INFORMADA';
+            }
+            const k = getKey(mes, ano, comum);
+            agendaKeys.add(k);
+
+            const cat = (item.categoria || '').toUpperCase().trim();
+            if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) agendaGVI++;
+            else if (cat === 'GVM' || cat.includes('MOCIDADE')) agendaGVM++;
+            else if (cat === 'GVE' || cat.includes('ENCARREGADO') || cat.includes('MÚSICO') || cat.includes('MUSICO')) agendaGVE++;
+            else if (cat === 'RF' || cat.includes('REUNIÃO FAMILIAR') || cat.includes('REUNIAO FAMILIAR')) agendaRF++;
+            else if (cat === 'RE' || cat.includes('EVANGELIZAÇÃO') || cat.includes('EVANGELIZACAO')) agendaRE++;
+            else agendaGVI++;
+        });
+
+        let manualGVI = 0, manualGVM = 0, manualGVE = 0, manualRF = 0, manualRE = 0;
+        data.forEach(d => {
+            const k = getKey(d.referencia_mes, d.referencia_ano, d.comum);
+            if (!agendaKeys.has(k)) {
+                manualGVI += parseInt(d.gvi || 0, 10);
+                manualGVM += parseInt(d.gvm || 0, 10);
+                manualGVE += parseInt(d.gve || 0, 10);
+                manualRF += parseInt(d.rf || 0, 10);
+                manualRE += parseInt(d.re || 0, 10);
+            }
+        });
+
+        const totals = {
+            gvi: manualGVI + agendaGVI,
+            gvm: manualGVM + agendaGVM,
+            gve: manualGVE + agendaGVE,
+            rf: manualRF + agendaRF,
+            re: manualRE + agendaRE
+        };
+        totals.visitas = totals.gvi + totals.gvm + totals.gve + totals.rf + totals.re;
+
+        // Update KPIs
+        $('#kpi-total').text(formatNum(totals.visitas));
+        $('#kpi-gvi').text(formatNum(totals.gvi));
+        $('#kpi-gvm').text(formatNum(totals.gvm));
+        $('#kpi-gve').text(formatNum(totals.gve));
+        $('#kpi-rf').text(formatNum(totals.rf));
+        $('#kpi-re').text(formatNum(totals.re));
+
+        $('#exec-text').html(`<b>Dashboard Consolidado:</b> Exibindo o resumo de visitas. Para localidades que usam a Agenda, os apontamentos individuais sobrepõem o relatório manual para garantir precisão e evitar duplicidade. O volume total atingiu ${formatNum(totals.visitas)} atendimentos registrados no período.`);
+
+        // Mesclar data e agendaData para a Tabela
+        const tableMap = {};
+        
+        data.forEach(d => {
+            const k = getKey(d.referencia_mes, d.referencia_ano, d.comum);
+            if (!agendaKeys.has(k)) {
+                tableMap[k] = { ...d, 
+                    gvi: parseInt(d.gvi || 0, 10), 
+                    gvm: parseInt(d.gvm || 0, 10), 
+                    gve: parseInt(d.gve || 0, 10), 
+                    rf: parseInt(d.rf || 0, 10), 
+                    re: parseInt(d.re || 0, 10) 
+                };
+                tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
+            }
+        });
+
+        agendaData.forEach(item => {
+            const dt = moment(item.data_inicio);
+            const mes = dt.month() + 1;
+            const ano = dt.year();
+            
+            let comum = item.comum;
+            if (!comum || comum === 'null' || !comum.includes(' - ')) {
+                comum = 'COMUM NAO INFORMADA';
+            }
+            
+            const k = getKey(mes, ano, comum);
+
+            if (!tableMap[k]) {
+                tableMap[k] = { referencia_mes: mes, referencia_ano: ano, comum: comum, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, status: 'Consolidado' };
+            }
+            
+            const cat = (item.categoria || '').toUpperCase().trim();
+            if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) tableMap[k].gvi++;
+            else if (cat === 'GVM' || cat.includes('MOCIDADE')) tableMap[k].gvm++;
+            else if (cat === 'GVE' || cat.includes('ENCARREGADO') || cat.includes('MÚSICO') || cat.includes('MUSICO')) tableMap[k].gve++;
+            else if (cat === 'RF' || cat.includes('REUNIÃO FAMILIAR') || cat.includes('REUNIAO FAMILIAR')) tableMap[k].rf++;
+            else if (cat === 'RE' || cat.includes('EVANGELIZAÇÃO') || cat.includes('EVANGELIZACAO')) tableMap[k].re++;
+            else tableMap[k].gvi++;
+            
+            tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
+        });
+
+        const combinedTableData = Object.values(tableMap).sort((a, b) => {
+            if (a.referencia_ano !== b.referencia_ano) return a.referencia_ano - b.referencia_ano;
+            if (a.referencia_mes !== b.referencia_mes) return a.referencia_mes - b.referencia_mes;
+            return a.comum.localeCompare(b.comum);
+        });
+
+        renderTrendChart(agendaData, combinedTableData);
+        renderMixChart(totals);
+        renderTable(combinedTableData);
+    };
+
+    const renderTrendChart = (agendaData, combinedTableData = []) => {
+        const mesFiltro = $('#filter-mes').val();
+        const dataDe = $('#peridodo-de').val();
+        const dataAte = $('#peridodo-ate').val();
+        
+        // Se filtramos por um mês específico ou período, agrupamos por Dia. Senão, por Mês.
+        const agruparPorDia = (mesFiltro !== 'all') || (dataDe && dataAte);
+
+        const seriesData = {};
+        
+        if (agruparPorDia) {
+            // Relatórios mensais não têm dia exato, então no gráfico diário plotamos apenas a Agenda.
+            agendaData.forEach(d => {
+                const key = moment(d.data_inicio).format('DD/MM');
+                seriesData[key] = (seriesData[key] || 0) + 1;
+            });
+        } else {
+            // Gráfico Mensal: Plotamos a tabela combinada (Relatórios + Agenda)
+            combinedTableData.forEach(d => {
+                const mesStr = d.referencia_mes.toString().padStart(2, '0');
+                const key = `${mesStr}/${d.referencia_ano}`;
+                seriesData[key] = (seriesData[key] || 0) + (d.total_visitas || 0);
+            });
+        }
+        
+        const cats = Object.keys(seriesData).sort((a, b) => {
+            const formatStr = agruparPorDia ? 'DD/MM' : 'MM/YYYY';
+            return moment(a, formatStr) - moment(b, formatStr);
+        });
+        const vals = cats.map(c => seriesData[c]);
+
+        // Se houver apenas 1 ponto de dados, um gráfico de área fica invisível (apenas um ponto). Mudamos para barra.
+        const chartType = cats.length <= 1 ? 'bar' : 'area';
+
+        if (trendChart) trendChart.destroy();
+        trendChart = new ApexCharts(document.querySelector("#chart-evolution"), {
+            series: [{ name: 'Visitas', data: vals }],
+            chart: { type: chartType, height: 300, toolbar: { show: false } },
+            colors: ['#3498db'],
+            stroke: { curve: 'smooth', width: chartType === 'area' ? 2 : 0 },
+            plotOptions: { bar: { columnWidth: '15%', borderRadius: 4 } },
+            xaxis: { categories: cats },
+            dataLabels: { enabled: false },
+            tooltip: { theme: 'dark' }
+        });
+        trendChart.render();
+    };
+
+    const renderMixChart = (totals) => {
+        if (mixChart) mixChart.destroy();
+        mixChart = new ApexCharts(document.querySelector("#chart-mix"), {
+            series: [totals.gvi, totals.gvm, totals.gve, totals.rf, totals.re],
+            chart: { type: 'donut', height: 300 },
+            labels: ['Irmandade (GVI)', 'Mocidade (GVM)', 'Encarregados (GVE)', 'Família (RF)', 'Evangelização (RE)'],
+            colors: ['#348fe2', '#00acac', '#f5b041', '#2d353c', '#ff5b57'],
+            legend: { position: 'bottom' },
+            tooltip: {
+                custom: function({series, seriesIndex, dataPointIndex, w}) {
+                    return '<div style="background-color: #222 !important; color: #fff !important; padding: 6px 12px; border-radius: 4px; font-weight: bold; border: 1px solid #444; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">' +
+                           w.config.labels[seriesIndex] + ': ' + series[seriesIndex] +
+                           '</div>';
+                }
+            }
+        });
+        mixChart.render();
+    };
+
+    const renderTable = (data) => {
+        if ($.fn.DataTable.isDataTable('#table-visitas')) $('#table-visitas').DataTable().destroy();
+        const body = $('#table-visitas tbody').empty();
+
+        const mesesAbreviados = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+        data.forEach(item => {
+            const mesStr = mesesAbreviados[parseInt(item.referencia_mes) - 1] || item.referencia_mes;
+            body.append(`
+                    <tr>
+                        <td class="fw-bold text-nowrap">${mesStr}/${item.referencia_ano}</td>
+                        <td>${item.comum}</td>
+                        <td class="text-center">${item.gvi}</td>
+                        <td class="text-center">${item.gvm}</td>
+                        <td class="text-center">${item.gve || 0}</td>
+                        <td class="text-center">${item.rf}</td>
+                        <td class="text-center">${item.re}</td>
+                        <td class="text-center fw-bold text-primary">${item.total_visitas}</td>
+                        <td class="text-center">
+                            <span class="badge ${item.status === 'Lançado' ? 'bg-success' : 'bg-warning'}">${item.status}</span>
+                        </td>
+                    </tr>
+                `);
+        });
+        $('#table-visitas').DataTable({ 
+            responsive: true,
+            language: { 
+                url: 'https://cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json',
+                paginate: { first: "«", previous: "‹", next: "›", last: "»" }
+            }
+        });
+    };
+
+    const applyFilters = async () => {
+        let ano = $('#filter-ano').val();
+        let mes = $('#filter-mes').val();
+        const comum = $('#filter-comum').val();
+        const dataDe = $('#peridodo-de').val();
+        const dataAte = $('#peridodo-ate').val();
+
+        if (ano === 'undefined' || !ano) ano = new Date().getFullYear();
+        if (mes === 'undefined' || !mes) mes = 'all';
+
+        try {
+            const res = await fetch(`/visitas/api/dashboard/?ano=${ano}&mes=${mes}&comum=${comum}`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            currentData = Array.isArray(data) ? data : [];
+
+            let agendaUrl = `/visitas/api/agenda/`;
+            if (dataDe) agendaUrl += `?start_date=${dataDe}T00:00:00`;
+            else agendaUrl += `?limit=1000`; // Para formatar o resto com &
+
+            if (dataAte) agendaUrl += `&end_date=${dataAte}T23:59:59`;
+            
+            if (!dataDe && !dataAte) {
+                if (mes !== 'all') {
+                    const startOfMonth = moment(`${ano}-${mes}-01`, 'YYYY-M-DD').startOf('month').format('YYYY-MM-DD');
+                    const endOfMonth = moment(`${ano}-${mes}-01`, 'YYYY-M-DD').endOf('month').format('YYYY-MM-DD');
+                    agendaUrl = `/visitas/api/agenda/?start_date=${startOfMonth}T00:00:00&end_date=${endOfMonth}T23:59:59`;
+                } else {
+                    agendaUrl = `/visitas/api/agenda/?start_date=${ano}-01-01T00:00:00&end_date=${ano}-12-31T23:59:59`;
+                }
+            }
+            
+            const resAgenda = await fetch(agendaUrl);
+            const dataAgenda = await resAgenda.json();
+            let filteredAgenda = [];
+            if (!dataAgenda.error) {
+                // Apenas exibe/contabiliza eventos passados ou marcados (Realizada, Não realizada, Cancelada)
+                filteredAgenda = dataAgenda.filter(v => v.status !== 'Agendada');
+                
+                if (comum) {
+                    filteredAgenda = filteredAgenda.filter(v => (v.endereco_visitado || '').toLowerCase().includes(comum.toLowerCase()) || (v.comum || '').toLowerCase().includes(comum.toLowerCase()));
+                }
+                window.globalAgendaVisitas = filteredAgenda;
+                renderRealizedVisits(filteredAgenda);
+            }
+
+            renderDashboards(currentData, filteredAgenda);
+
+        } catch (err) {
+            console.error('Erro de Sincronização:', err);
+            Swal.fire({
+                icon: 'error',
+                title: 'Erro de Sincronização',
+                text: err.message,
+                confirmButtonColor: '#2c3e50',
+                timer: 3000
+            });
+            renderDashboards([]);
+            renderRealizedVisits([]);
+        }
+    };
+
+    const renderRealizedVisits = (data) => {
+        if ($.fn.DataTable.isDataTable('#table-visitas-realizadas')) $('#table-visitas-realizadas').DataTable().destroy();
+        const body = $('#table-visitas-realizadas tbody').empty();
+
+        data.forEach(item => {
+            const dataHora = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+            let statusBadge = '';
+            if (item.status === 'Cancelada') {
+                statusBadge = '<span class="badge bg-danger ms-2">Cancelada</span>';
+            } else if (item.status === 'Não realizada') {
+                statusBadge = '<span class="badge bg-warning text-dark ms-2">Não Realizada</span>';
+            }
+            body.append(`
+                    <tr>
+                        <td class="fw-bold">${dataHora}</td>
+                        <td>${item.titulo || '-'}</td>
+                        <td>${item.comum || item.endereco_visitado || '-'}</td>
+                        <td class="text-center"><span class="badge bg-primary">${item.categoria || '-'}</span>${statusBadge}</td>
+                        <td class="text-center">${item.equipe_responsavel || '-'}</td>
+                        <td>${item.observacoes || '-'}</td>
+                        <td class="text-center" style="white-space: nowrap;">
+                            <button onclick="viewVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #00acac;"><i class="fa fa-eye me-1"></i> VER</button>
+                            <button onclick="editVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #f5b041;"><i class="fa fa-edit me-1"></i> EDITAR</button>
+                            <button class="btn btn-xs fw-bold text-white shadow-sm px-2" style="background-color: #ff5b57;" onclick="deleteAgendaEvent('${item.id}')"><i class="fa fa-trash me-1"></i> APAGAR</button>
+                        </td>
+                    </tr>
+                `);
+        });
+        $('#table-visitas-realizadas').DataTable({ 
+            responsive: true, 
+            order: [[0, 'desc']],
+            language: { 
+                url: 'https://cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json',
+                emptyTable: "Nenhuma visita realizada encontrada para o período e filtros selecionados.",
+                paginate: { first: "«", previous: "‹", next: "›", last: "»" }
+            }
+        });
+    };
+
+    window.deleteAgendaEvent = async (id) => {
+        const { isConfirmed } = await Swal.fire({ title: 'Excluir?', text: "Remover este agendamento?", icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim, excluir', cancelButtonText: 'Cancelar' });
+        if (isConfirmed) {
+            const res = await fetch(`/visitas/api/agenda/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) {
+                applyFilters();
+                Swal.fire({ icon: 'success', title: 'Apagado com sucesso!', timer: 1500, showConfirmButton: false });
+            }
+        }
+    };
+
+    window.viewVisita = (id) => openVisitaModal(id, false);
+    window.editVisita = (id) => openVisitaModal(id, true);
+
+    const openVisitaModal = (id, isEdit) => {
+        const item = (window.globalAgendaVisitas || []).find(v => v.id == id);
+        if (!item) return;
+
+        $('#det-id').val(item.id);
+        $('#det-data').val(item.data_inicio ? item.data_inicio.slice(0, 16) : '');
+        $('#det-status').val(item.status || 'Agendada');
+        $('#det-titulo').val(item.titulo || '');
+        $('#det-categoria').val(item.categoria || 'GVI');
+        $('#det-comum').val(item.comum || '');
+        $('#det-equipe').val(item.equipe_responsavel || '');
+        $('#det-endereco').val(item.endereco_visitado || '');
+        $('#det-obs').val(item.observacoes || '');
+        $('#det-justificativa').val(item.motivo_cancelamento || '');
+        
+        // Trigger status change para exibir justificativa se necessário
+        setTimeout(() => $('#det-status').trigger('change'), 100);
+
+        const inputs = $('#form-detalhes-visita input, #form-detalhes-visita select, #form-detalhes-visita textarea');
+        if (isEdit) {
+            inputs.prop('disabled', false);
+            $('#btn-save-detalhes').removeClass('d-none');
+            $('#detalhes-modal-title').html('<i class="fa fa-edit me-2"></i> Editar Visita');
+            $('#modal-detalhes-visita .modal-header').removeClass('bg-teal').addClass('bg-warning');
+        } else {
+            inputs.prop('disabled', true);
+            $('#btn-save-detalhes').addClass('d-none');
+            $('#detalhes-modal-title').html('<i class="fa fa-info-circle me-2"></i> Detalhes da Visita');
+            $('#modal-detalhes-visita .modal-header').removeClass('bg-warning').addClass('bg-teal');
+        }
+        $('#modal-detalhes-visita').modal('show');
+    };
+
+    window.updateDetalhesVisita = async (e) => {
+        if (e) e.preventDefault();
+        const id = $('#det-id').val();
+        const data = {
+            data_inicio: $('#det-data').val() ? moment($('#det-data').val()).format('YYYY-MM-DDTHH:mm:ss-03:00') : null,
+            status: $('#det-status').val(),
+            titulo: $('#det-titulo').val(),
+            categoria: $('#det-categoria').val(),
+            equipe_responsavel: $('#det-equipe').val(),
+            endereco_visitado: $('#det-endereco').val(),
+            observacoes: $('#det-obs').val(),
+            motivo_cancelamento: $('#det-justificativa').val()
+        };
+
+        const btn = $('#btn-save-detalhes');
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
+
+        try {
+            const res = await fetch(`/visitas/api/agenda/?id=${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                $('#modal-detalhes-visita').modal('hide');
+                Swal.fire({ icon: 'success', title: 'Atualizado com sucesso!', timer: 1500, showConfirmButton: false });
+                applyFilters();
+            } else {
+                let errorMsg = 'Erro ao salvar no servidor';
+                try {
+                    const errData = await res.json();
+                    errorMsg = errData.error || errData.message || errorMsg;
+                } catch(e) {}
+                throw new Error(errorMsg);
+            }
+        } catch (err) {
+            Swal.fire({ icon: 'error', title: 'Erro', text: err.message });
+        } finally {
+            btn.prop('disabled', false).html('Salvar Alterações');
+        }
+    };
+
+    const saveVisit = async () => {
+        const formData = {
+            referencia_ano: parseInt($('#fv-ano').val()),
+            referencia_mes: parseInt($('#fv-mes').val()),
+            municipio: '{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',
+            cidade: '{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',
+            comum: $('#fv-comum').val(),
+            gvi: parseInt($('#fv-gvi').val() || 0),
+            gvm: parseInt($('#fv-gvm').val() || 0),
+            gve: parseInt($('#fv-gve').val() || 0),
+            rf: parseInt($('#fv-rf').val() || 0),
+            re: parseInt($('#fv-re').val() || 0),
+            observacoes: $('#fv-obs').val(),
+            status: 'Lançado'
+        };
+
+        const btn = $('#btn-save');
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
+
+        try {
+            const res = await fetch('/visitas/api/dashboard/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(formData)
+            });
+
+            if (res.ok) {
+                $('#modal-nova-visita').modal('hide');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Lançado!',
+                    text: 'Relatório de visitas gravado com sucesso.',
+                    confirmButtonColor: '#2c3e50',
+                    timer: 3000
+                });
+                applyFilters();
+            } else {
+                const err = await res.json();
+                throw new Error(err.details || 'Erro ao salvar');
+            }
+        } catch (err) {
+            Swal.fire({ icon: 'error', title: 'Erro ao Salvar', text: err.message });
+        } finally {
+            btn.prop('disabled', false).text('Salvar Lançamento');
+        }
+    };
+
+    const exportPDF = () => {
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('landscape');
+
+            doc.setFontSize(16);
+            doc.text('Relatório Consolidado de Visitas', 14, 15);
+
+            doc.setFontSize(10);
+            const dataStr = moment().format('DD/MM/YYYY HH:mm');
+            doc.text(`Gerado em: ${dataStr}`, 14, 22);
+
+            doc.autoTable({
+                html: '#table-visitas',
+                startY: 25,
+                theme: 'grid',
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [44, 62, 80], textColor: 255 }
+            });
+
+            doc.save(`Relatorio_Visitas_${moment().format('YYYYMMDD')}.pdf`);
+        } catch (err) {
+            console.error('Erro ao gerar PDF:', err);
+            Swal.fire('Erro', 'Ocorreu um erro ao gerar o PDF.', 'error');
+        }
+    };
+
+    const exportExcel = () => {
+        try {
+            const table = document.getElementById('table-visitas');
+            const wb = XLSX.utils.table_to_book(table, { sheet: "Visitas" });
+            XLSX.writeFile(wb, `Relatorio_Visitas_${moment().format('YYYYMMDD')}.xlsx`);
+        } catch (err) {
+            console.error('Erro ao gerar Excel:', err);
+            Swal.fire('Erro', 'Ocorreu um erro ao gerar o Excel.', 'error');
+        }
+    };
+
+    $(document).ready(function () {
+        // Auto-update on filter change
+        $('#filter-ano, #filter-mes, #filter-cidade, #peridodo-de, #peridodo-ate').on('change', applyFilters);
+
+        // Debounced search
+        let searchTimer;
+        $('#filter-comum').on('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(applyFilters, 500);
+        });
+
+        $('#btn-refresh').click(() => {
+            applyFilters().then(() => {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Painel Atualizado',
+                    text: `Sincronização concluída: ${currentData.length} registros de visitas processados.`,
+                    confirmButtonColor: '#2c3e50',
+                    timer: 3000
+                });
+            });
+        });
+
+        $('#btn-clear').click(() => {
+            $('#filter-mes').val('all');
+            $('#filter-ano').val(new Date().getFullYear());
+            $('#filter-comum').val('');
+            $('#peridodo-de, #peridodo-ate').val('');
+            applyFilters();
+        });
+
+        $('#btn-pdf').click(exportPDF);
+        $('#btn-excel').click(exportExcel);
+
+        $('#form-visita').on('submit', (e) => { e.preventDefault(); saveVisit(); });
+
+        $('#det-status').on('change', function() {
+            const status = $(this).val();
+            if (status === 'Cancelada' || status === 'Não realizada') {
+                $('#div-det-justificativa').removeClass('d-none');
+            } else {
+                $('#div-det-justificativa').addClass('d-none');
+            }
+        });
+
+        // Initial load with small delay to ensure DOM is ready
+        setTimeout(applyFilters, 100);
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<ol class="breadcrumb float-xl-end">
+    <li class="breadcrumb-item"><a href="/">Home</a></li>
+    <li class="breadcrumb-item active">Visitas</li>
+</ol>
+<h1 class="page-header mb-3">Relatórios e Filtros Rápidos</h1>
+
+<!-- FILTROS -->
+<div class="filter-section py-3 mb-4 bg-white shadow-sm border-0">
+    <div class="row g-3 align-items-end">
+        <div class="col-md-1">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Ano</label>
+            <select class="form-select border-gray-300 shadow-none" id="filter-ano">
+                <option value="2026" selected>2026</option>
+                <option value="2025">2025</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Mês</label>
+            <select class="form-select border-gray-300 shadow-none" id="filter-mes">
+                <option value="all" selected>Todos</option>
+                <option value="1">Janeiro</option>
+                <option value="2">Fevereiro</option>
+                <option value="3">Março</option>
+                <option value="4">Abril</option>
+                <option value="5">Maio</option>
+                <option value="6">Junho</option>
+                <option value="7">Julho</option>
+                <option value="8">Agosto</option>
+                <option value="9">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1"
+                style="font-size: 10px;">Período</label>
+            <div class="input-group">
+                <span class="input-group-text bg-light border-gray-300"><i class="fa fa-calendar-alt"></i></span>
+                <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-de">
+                <span class="input-group-text bg-white border-0 shadow-none small px-1">até</span>
+                <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1"
+                style="font-size: 10px;">Localidade</label>
+            <input type="text" class="form-control border-gray-300 shadow-none" id="filter-comum"
+                placeholder="Igreja ou Comum...">
+        </div>
+        <div class="col-md-4 mt-3 mt-md-0 d-flex flex-column flex-md-row justify-content-md-end gap-2 align-items-stretch align-items-md-center">
+            <div class="btn-group w-100 w-md-auto">
+                <button class="btn btn-white border-gray-400" id="btn-refresh" title="Atualizar"><i class="fa fa-sync-alt text-primary"></i><span class="d-none d-sm-inline ms-1">Atualizar</span></button>
+                <button class="btn btn-white border-gray-400" id="btn-excel" title="Excel"><i class="fa fa-file-excel text-success"></i><span class="d-none d-sm-inline ms-1">Excel</span></button>
+                <button class="btn btn-white border-gray-400" id="btn-pdf" title="PDF"><i class="fa fa-file-pdf text-danger"></i><span class="d-none d-sm-inline ms-1">PDF</span></button>
+                <button class="btn btn-white border-gray-400" id="btn-clear" title="Limpar"><i class="fa fa-eraser text-dark"></i><span class="d-none d-sm-inline ms-1">Limpar</span></button>
+            </div>
+            <button class="btn btn-primary fw-bold w-100 w-md-auto" data-bs-toggle="modal" data-bs-target="#modal-nova-visita"><i class="fa fa-plus me-1"></i> Novo lançamento</button>
+        </div>
+    </div>
+</div>
+
+<div class="executive-summary" id="exec-text">Analisando registros de visitas...</div>
+
+<!-- KPIs -->
+<div class="row g-2 mb-4">
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-indigo text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-users fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">IRMANDADE (GVI)</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-gvi">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-teal text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-user-friends fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">MOCIDADE (GVM)</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-gvm">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-orange text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-music fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">ENCARREGADOS (GVE)</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-gve">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-blue text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-home fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">FAMÍLIA (RF)</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-rf">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-red text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-bullhorn fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">EVANGELIZAÇÃO (RE)</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-re">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-lg-4 col-sm-6">
+        <div class="card kpi-card bg-dark text-white h-100">
+            <div class="card-body py-3">
+                <div class="float-end text-white-transparent-8"><i class="fa fa-chart-line fa-3x"></i></div>
+                <div class="small fw-bold text-white-transparent-8">TOTAL GERAL</div>
+                <h2 class="mb-0 mt-2 text-white" id="kpi-total">0</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CHARTS -->
+<div class="row g-4 mb-4">
+    <div class="col-xl-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold">Evolução do Trabalho</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-evolution"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold">Composição de Atendimentos</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-mix"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TABLE -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 border-0">
+        <h5 class="card-title fw-bold m-0"><i class="fa fa-list me-2"></i> Relatórios Mensais por Localidade</h5>
+    </div>
+    <div class="card-body">
+        <table class="table table-hover align-middle w-100" id="table-visitas">
+            <thead class="bg-light">
+                <tr>
+                    <th>REFERÊNCIA</th>
+                    <th>COMUM</th>
+                    <th class="text-center min-tablet">GVI</th>
+                    <th class="text-center min-tablet">GVM</th>
+                    <th class="text-center min-tablet">GVE</th>
+                    <th class="text-center min-tablet">RF</th>
+                    <th class="text-center min-tablet">RE</th>
+                    <th class="text-center min-tablet">TOTAL</th>
+                    <th class="text-center">STATUS</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- VISITAS REALIZADAS -->
+<div class="card border-0 shadow-sm mt-4 mb-4">
+    <div class="card-header bg-white py-3 border-0">
+        <h5 class="card-title fw-bold m-0"><i class="fa fa-check-circle text-success me-2"></i> Visitas Realizadas</h5>
+    </div>
+    <div class="card-body">
+        <table class="table table-hover align-middle w-100" id="table-visitas-realizadas">
+            <thead class="bg-light">
+                <tr>
+                    <th>DATA/HORA</th>
+                    <th>IRMÃO/FAMÍLIA</th>
+                    <th>LOCALIDADE</th>
+                    <th class="text-center min-tablet">CATEGORIA</th>
+                    <th class="text-center min-tablet">EQUIPE</th>
+                    <th class="min-tablet">OBSERVAÇÕES</th>
+                    <th class="text-center">AÇÕES</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL NOVA VISITA -->
+<div class="modal fade" id="modal-nova-visita" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0">
+            <div class="modal-header bg-indigo text-white">
+                <h5 class="modal-title fw-bold"><i class="fa fa-edit me-2"></i> Novo Lançamento de Visitas</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="form-visita">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">ANO REF.</label>
+                            <input type="number" class="form-control" id="fv-ano" value="2026" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">MÊS REF.</label>
+                            <input type="number" class="form-control" id="fv-mes" min="1" max="12" value="4" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">LOCALIDADE / COMUM</label>
+                            <input type="text" class="form-control" id="fv-comum" placeholder="Nome da Comum" value="{{ request.session.user_profile.comum|default:'' }}" required>
+                        </div>
+                        <hr class="my-3 opacity-10">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Irmandade (GVI)</label>
+                            <input type="number" class="form-control" id="fv-gvi" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Mocidade (GVM)</label>
+                            <input type="number" class="form-control" id="fv-gvm" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Encarregados (GVE)</label>
+                            <input type="number" class="form-control" id="fv-gve" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Família (RF)</label>
+                            <input type="number" class="form-control" id="fv-rf" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Evangelização (RE)</label>
+                            <input type="number" class="form-control" id="fv-re" value="0">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold">OBSERVAÇÕES</label>
+                            <textarea class="form-control" id="fv-obs" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light p-3">
+                    <button type="button" class="btn btn-white fw-bold" data-bs-dismiss="modal">Fechar</button>
+                    <button type="submit" class="btn btn-indigo fw-bold text-white" id="btn-save">Salvar
+                        Lançamento</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DETALHES VISITA -->
+<div class="modal fade" id="modal-detalhes-visita" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0">
+            <div class="modal-header bg-teal text-white">
+                <h5 class="modal-title fw-bold" id="detalhes-modal-title"><i class="fa fa-info-circle me-2"></i> Detalhes da Visita</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="form-detalhes-visita">
+                <input type="hidden" id="det-id">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Data/Hora</label>
+                            <input type="datetime-local" class="form-control" id="det-data">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Status</label>
+                            <select class="form-select" id="det-status">
+                                <option value="Agendada">Agendada</option>
+                                <option value="Realizada">Realizada</option>
+                                <option value="Não realizada">Não realizada</option>
+                                <option value="Cancelada">Cancelada</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Irmão/Família</label>
+                            <input type="text" class="form-control" id="det-titulo">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Categoria</label>
+                            <select class="form-select" id="det-categoria">
+                                <option value="GVI">GVI (Irmandade)</option>
+                                <option value="GVM">GVM (Mocidade)</option>
+                                <option value="GVE">GVE (Encarregados)</option>
+                                <option value="RF">RF (Reunião Familiar)</option>
+                                <option value="RE">RE (Reunião de Evangelização)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Localidade (Comum)</label>
+                            <input type="text" class="form-control" id="det-comum">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Equipe Responsável</label>
+                            <select class="form-select" id="det-equipe">
+                                <option value="">Sem Equipe</option>
+                                <option value="Equipe 01">Equipe 01</option>
+                                <option value="Equipe 02">Equipe 02</option>
+                                <option value="Equipe 03">Equipe 03</option>
+                                <option value="Equipe 04">Equipe 04</option>
+                                <option value="Grupo RF">Grupo RF</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold">Endereço Visitado</label>
+                            <input type="text" class="form-control" id="det-endereco">
+                        </div>
+                        <div class="col-md-12 d-none" id="div-det-justificativa">
+                            <label class="form-label small fw-bold text-danger">Justificativa do Cancelamento</label>
+                            <textarea class="form-control border-danger" id="det-justificativa" rows="2" placeholder="Motivo do cancelamento ou não realização..."></textarea>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold">Observações</label>
+                            <textarea class="form-control" id="det-obs" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light">
+                    <button type="button" class="btn btn-white fw-bold px-4" data-bs-dismiss="modal">Fechar</button>
+                    <button type="button" class="btn btn-warning fw-bold px-4 d-none" id="btn-save-detalhes" onclick="updateDetalhesVisita(event)">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

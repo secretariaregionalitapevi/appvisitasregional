@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Equipes de Visita{% endblock %}
+{% block css %}<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet"><style>#equipe-modal .select2-container,.equipes-comum-filtro .select2-container{width:100%!important}.select2-results__options{max-height:240px!important}.equipes-comum-filtro .select2-selection--single{height:34px}.equipes-comum-filtro .select2-selection__rendered{line-height:32px!important}.equipes-comum-filtro .select2-selection__arrow{height:32px!important}.equipes-comum-filtro .select2-dropdown{box-shadow:0 8px 20px rgba(0,0,0,.15)}.equipe-badge{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff;display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid color-mix(in srgb,var(--equipe-cor) 28%,transparent);border-radius:6px;background:var(--equipe-fundo);color:var(--equipe-cor);font-size:12px;font-weight:600;line-height:1;box-shadow:0 1px 2px rgba(15,23,42,.06)}.equipe-badge::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--equipe-cor);box-shadow:0 0 0 2px color-mix(in srgb,var(--equipe-cor) 14%,transparent)}.equipe-cor-0{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff}.equipe-cor-1{--equipe-cor:#0f766e;--equipe-fundo:#f0fdfa}.equipe-cor-2{--equipe-cor:#7c3aed;--equipe-fundo:#f5f3ff}.equipe-cor-3{--equipe-cor:#c2410c;--equipe-fundo:#fff7ed}.equipe-cor-4{--equipe-cor:#be123c;--equipe-fundo:#fff1f2}.equipe-cor-5{--equipe-cor:#4d7c0f;--equipe-fundo:#f7fee7}.equipe-cor-6{--equipe-cor:#a16207;--equipe-fundo:#fefce8}.equipe-cor-7{--equipe-cor:#0369a1;--equipe-fundo:#f0f9ff}</style>{% endblock %}
+
+{% block content %}
+<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item">Visitas</li><li class="breadcrumb-item active">Equipes</li></ol>
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h1 class="page-header mb-0"><i class="fa fa-people-group me-2 text-teal"></i>Equipes de Visita <small>Organização por comum</small></h1>
+    <button class="btn btn-teal" id="nova-equipe"><i class="fa fa-user-plus me-2"></i>Atribuir membro</button>
+</div>
+
+<div id="equipes-alerta"></div>
+<div class="panel panel-inverse">
+    <div class="panel-heading"><h4 class="panel-title">Equipes cadastradas</h4></div>
+    <div class="panel-body">
+        <div class="row g-3 mb-4">
+            <div class="col-lg-3"><label class="form-label">Município</label><select id="filtro-municipio" class="form-select"><option value="">Todos</option>{% for item in municipios %}<option {% if item == municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+            <div class="col-lg-4 equipes-comum-filtro"><label class="form-label">Comum</label><select id="filtro-comum" class="form-select"><option value="">Todas</option>{% for item in comuns %}<option value="{{ item.comum }}" data-municipio="{{ item.cidade }}" {% if item.comum == comum_padrao %}selected{% endif %}>{{ item.comum }}</option>{% endfor %}</select></div>
+            <div class="col-lg-5"><label class="form-label">Pesquisar membro do Grupo de Visitas</label><div class="input-group"><span class="input-group-text"><i class="fa fa-search"></i></span><input id="filtro-texto" class="form-control" placeholder="Digite o nome do membro..."></div></div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle"><thead><tr><th>Membro</th><th>Equipe atribuída</th><th>Município / comum</th><th>Status</th><th class="text-end">Ações</th></tr></thead><tbody id="equipes-lista"><tr><td colspan="5" class="text-center py-5"><i class="fa fa-spinner fa-spin"></i> Carregando...</td></tr></tbody></table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="equipe-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+    <form id="equipe-form"><div class="modal-header"><h5 class="modal-title">Atribuir membro à equipe</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Município</label><select id="equipe-municipio" class="form-select" required><option value="">Selecione...</option>{% for item in municipios %}<option>{{ item }}</option>{% endfor %}</select></div>
+            <div class="col-md-6"><label class="form-label">Comum Congregação</label><select id="equipe-comum" class="form-select" required><option value="">Selecione...</option>{% for item in comuns %}<option value="{{ item.comum }}" data-municipio="{{ item.cidade }}">{{ item.comum }}</option>{% endfor %}</select></div>
+            <div class="col-12"><label class="form-label">Membro cadastrado</label><select id="equipe-membro" class="form-select" required disabled><option value="">Selecione primeiro a comum...</option></select><div class="form-text">A lista utiliza os membros já cadastrados na comum.</div></div>
+            <div class="col-12"><label class="form-label">Equipe</label><input id="equipe-nome" class="form-control" list="nomes-equipes" placeholder="Ex.: Equipe 01" required><datalist id="nomes-equipes"></datalist></div>
+        </div>
+    </div><div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-teal" type="submit"><i class="fa fa-save me-1"></i>Salvar equipe</button></div></form>
+</div></div></div>
+{% endblock %}
+
+{% block js %}<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script><script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script><script src="{% static 'js/visitas/equipes.js' %}?v=20260805-4"></script>{% endblock %}

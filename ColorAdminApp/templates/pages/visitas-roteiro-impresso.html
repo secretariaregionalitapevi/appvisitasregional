@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Roteiro de Visitas - {{ equipe|default:"Equipe" }}{% endblock %}
+
+{% block css %}
+<style>
+    /* Estilos Premium para Impressão */
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+    @media print {
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        #header, #sidebar, .app-header, .app-sidebar, .breadcrumb, .btn-print, .theme-panel {
+            display: none !important;
+        }
+        .app-content {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+        }
+        body {
+            background: #fff !important;
+            font-family: 'Arial', sans-serif !important;
+            -webkit-font-smoothing: antialiased;
+            color: #000 !important;
+        }
+        .print-container {
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+        .text-muted, .text-secondary {
+            color: #333 !important;
+            font-weight: 500 !important;
+        }
+        h6.text-dark {
+            color: #000 !important;
+            font-weight: 900 !important;
+        }
+    }
+    
+    .print-container {
+        max-width: 21cm;
+        margin: 0 auto;
+        background: #fff;
+        padding: 20px;
+    }
+    
+    .roteiro-header {
+        border-bottom: 2px solid #1e4b7a;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        text-align: center;
+    }
+    
+    .visit-card {
+        border: 1px solid #e2e7eb;
+        border-left: 4px solid #348fe2;
+        border-radius: 5px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fdfdfd;
+        page-break-inside: avoid;
+    }
+    
+    .visit-number {
+        font-size: 20px;
+        font-weight: 900;
+        color: #1e4b7a;
+        width: 30px;
+        flex-shrink: 0;
+    }
+    
+    .visit-info {
+        flex-grow: 1;
+        padding: 0 10px;
+    }
+    
+    .qr-code-box {
+        text-align: center;
+        border-left: 1px dashed #ccc;
+        padding-left: 10px;
+        width: 70px;
+        flex-shrink: 0;
+    }
+    
+    .qr-code-box img {
+        width: 60px;
+        height: 60px;
+        border: 1px solid #eee;
+        border-radius: 3px;
+    }
+    
+    .shift-divider {
+        background: #f0f4f8;
+        padding: 5px;
+        text-align: center;
+        font-weight: bold;
+        color: #1e4b7a;
+        margin: 15px 0 8px 0;
+        border-radius: 4px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        font-size: 12px;
+    }
+    
+    .text-compact {
+        font-size: 11px !important;
+        margin-bottom: 2px !important;
+    }
+    .badge-compact {
+        padding: 3px 6px !important;
+        font-size: 9px !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3 d-flex justify-content-between align-items-center btn-print">
+    <a href="javascript:history.back()" class="btn btn-white shadow-sm"><i class="fa fa-arrow-left me-1"></i> Voltar</a>
+    <button onclick="window.print()" class="btn btn-primary shadow-sm fw-bold px-4"><i class="fa fa-print me-1"></i> Imprimir Roteiro</button>
+</div>
+
+<div class="print-container">
+    <div class="roteiro-header">
+        <img src="{% static 'img/logo/ccb-logo.png' %}" alt="CCB" style="height: 50px; margin-bottom: 10px;" onerror="this.style.display='none'">
+        <h2 class="fw-bolder text-dark mb-1">Roteiro Otimizado de Visitas</h2>
+        <h5 class="text-muted mb-0">Partida: {{ comum|default:request.session.user_profile.comum|default:'Regional Itapevi' }}</h5>
+        <div class="d-flex justify-content-center gap-4 mt-3">
+            <span class="badge bg-primary fs-14px py-2 px-3"><i class="fa fa-users me-1"></i> {{ equipe|default:"Todas as Equipes" }}</span>
+            <span class="badge bg-dark fs-14px py-2 px-3"><i class="fa fa-calendar me-1"></i> {{ data|default:"Data não especificada" }}</span>
+            {% if bairro %}<span class="badge bg-warning text-dark fs-14px py-2 px-3"><i class="fa fa-location-dot me-1"></i> {{ bairro }}</span>{% endif %}
+        </div>
+    </div>
+
+    {% if error %}
+        <div class="alert alert-danger">
+            <strong>Erro ao gerar roteiro:</strong> {{ error }}
+        </div>
+    {% elif not roteiro %}
+        <div class="alert alert-warning text-center py-5">
+            <i class="fa fa-map-marked-alt fa-3x mb-3 text-muted"></i>
+            <h5>Nenhuma visita encontrada para os filtros selecionados.</h5>
+        </div>
+    {% else %}
+        
+        {% for visit in roteiro %}
+            
+            {% if forloop.counter == 1 %}
+                <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã (Visitas 1 a 5)</div>
+            {% elif forloop.counter == 6 %}
+                <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde (Visitas 6 a 10)</div>
+            {% endif %}
+
+            <div class="visit-card">
+                <div class="visit-number">
+                    #{{ forloop.counter }}
+                </div>
+                <div class="visit-info">
+                    <h6 class="fw-bold mb-0 text-dark" style="font-size: 14px;">{{ visit.titulo }}</h6>
+                    <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_visitado|default:"Endereço não cadastrado" }}</p>
+                    
+                    <div class="d-flex gap-2 mt-1">
+                        <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-clock me-1"></i> {{ visit.data_inicio|slice:"11:16" }}</span>
+                        {% if visit.setor %}
+                            <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-map me-1"></i> Setor: {{ visit.setor }}</span>
+                        {% endif %}
+                        {% if visit.distance_meters %}
+                            <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_meters|floatformat:0 }}m do último ponto</span>
+                        {% endif %}
+                    </div>
+                    {% if visit.observacoes %}
+                        <p class="mb-0 mt-1 text-compact text-secondary"><strong>Obs:</strong> {{ visit.observacoes|truncatechars:60 }}</p>
+                    {% endif %}
+                </div>
+                <div class="qr-code-box">
+                    {% if visit.lat and visit.lng %}
+                        <!-- QR Code apontando para o Waze com coordenadas -->
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://waze.com/ul?ll={{ visit.lat|stringformat:"f" }},{{ visit.lng|stringformat:"f" }}%26navigate=yes" alt="QR Waze">
+                    {% else %}
+                        <!-- QR Code apontando para busca no Google Maps -->
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://maps.google.com/?q={{ visit.endereco_visitado|urlencode }}" alt="QR Maps">
+                    {% endif %}
+                    <div class="fw-bold text-muted mt-1" style="font-size: 8px;">ESCANEAR GPS</div>
+                </div>
+            </div>
+            
+        {% endfor %}
+        
+        <div class="text-center mt-5 pt-3 border-top">
+            <p class="small text-muted">Documento gerado automaticamente pelo Sistema de Visitas da Regional Itapevi. <br>Que Deus abençoe a visitação!</p>
+        </div>
+
+    {% endif %}
+
+</div>
+{% endblock %}

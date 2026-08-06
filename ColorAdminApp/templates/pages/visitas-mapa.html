@@ -1,0 +1,984 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block title %}Roteiro de Visitas - Google Maps{% endblock %}
+
+{% block css %}
+    <style>
+        .map-wrapper {
+            position: relative;
+            height: calc(100vh - 85px);
+            margin: -20px;
+            overflow: hidden;
+        }
+        #google-map {
+            width: 100%;
+            height: 100%;
+        }
+        .map-float-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1020;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+            width: 260px;
+            transition: all 0.3s ease;
+        }
+        .map-float-info.minimized {
+            width: 50px;
+            height: 50px;
+            overflow: hidden;
+            padding: 12px;
+            cursor: pointer;
+        }
+        .map-float-info.minimized > *:not(.toggle-btn) {
+            display: none;
+        }
+        .toggle-btn {
+            float: right;
+            cursor: pointer;
+            color: #999;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .shadow-base { box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important; }
+        .fw-800 { font-weight: 800; }
+        .section-title { letter-spacing: 0.5px; }
+
+        [data-bs-theme="dark"] .map-float-info {
+            background: rgba(26, 32, 38, 0.95);
+            color: white;
+            border: 1px solid #444;
+        }
+
+        /* Aesthetics 4.0 Styles */
+        .widget-header-premium {
+            background: linear-gradient(135deg, #1e4b7a 0%, #348fe2 100%);
+            padding: 60px 160px 45px 30px; /* Reduzido topo, aumentado direita para balancear */
+            position: relative;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            overflow: visible; /* CRÍTICO: Permitir Pop-Out */
+        }
+        .widget-header-premium:after {
+            content: ""; position: absolute; top: -20%; right: -10%; width: 200px; height: 200px;
+            background: rgba(255,255,255,0.1); border-radius: 50%;
+        }
+        .widget-profile-img {
+            width: 130px; height: 130px; border-radius: 50%; border: 6px solid #fff;
+            background: #fff; display: flex; align-items: center; justify-content: center;
+            position: absolute; top: -45px; right: 40px !important; z-index: 50;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+            color: #348fe2;
+        }
+
+        /* Timeline Inspinia Style (Precision Aligned) */
+        .timeline-v2 { position: relative; padding: 25px 0; list-style: none; }
+        .timeline-v2:before { 
+            content: ""; position: absolute; top: 0; bottom: 0; left: 100px; 
+            width: 2px; border-left: 2px dashed #cbd5e0;
+        }
+        .timeline-item-v2 { position: relative; margin-bottom: 45px; display: flex; align-items: flex-start; }
+        
+        .timeline-time-v2 { width: 85px; text-align: right; padding-right: 25px; flex-shrink: 0; padding-top: 8px; }
+        .timeline-time-v2 .date { display: block; font-size: 13px; font-weight: 800; color: #2d353c; }
+        .timeline-time-v2 .time { display: block; font-size: 11px; color: #707478; }
+        
+        .timeline-icon-v2 { 
+            position: absolute; left: 86px; top: 4px; width: 32px; height: 32px; 
+            border-radius: 50%; background: #fff; border: 4px solid #fff; 
+            z-index: 10; display: flex; align-items: center; justify-content: center;
+            color: #fff !important; font-size: 12px; box-shadow: 0 0 0 2px #e2e7eb;
+        }
+        
+        .timeline-content-v2 { 
+            margin-left: 50px; flex: 1; background: #fff; padding: 20px; 
+            border-radius: 12px; border: 1px solid #e2e7eb; position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .timeline-content-v2:before {
+            content: ""; position: absolute; left: -9px; top: 12px;
+            width: 16px; height: 16px; background: #fff; border-left: 1px solid #e2e7eb;
+            border-bottom: 1px solid #e2e7eb; transform: rotate(45deg);
+        }
+
+        /* Cores da Agenda Sincronizadas */
+        .bg-gvi { background-color: #348fe2 !important; }
+        .bg-gvm { background-color: #00acac !important; }
+        .bg-gve { background-color: #f59c1a !important; }
+        .badge-enfermo { background: linear-gradient(135deg, #dc3545 0%, #721c24 100%); color: #fff; }
+        .badge-porteiro { background: #2c3e50 !important; color: white !important; border: 1px solid #1a252f; }
+        .badge-auxiliar { background: #3498db !important; color: white !important; border: 1px solid #2980b9; }
+        .badge-estacionamento { background: #4b148c !important; color: white !important; border: 1px solid #311b92; }
+        .badge-irmandade { background: #ecf0f1 !important; color: #7f8c8d !important; border: 1px solid #bdc3c7; }
+        .badge-ebi { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: #fff; border: 1px solid #0072ff; }
+        .badge-emi { background: linear-gradient(135deg, #f83600 0%, #f9d423 100%); color: #fff; border: 1px solid #f83600; }
+        .badge-som { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: #fff; border: 1px solid #1e3c72; }
+        .badge-manutencao { background: linear-gradient(135deg, #5c258d 0%, #4389a2 100%); color: #fff; border: 1px solid #5c258d; }
+        .badge-reuniao { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); color: #fff; border: 1px solid #ff5e62; }
+        
+        .text-gvi { color: #348fe2 !important; }
+        .text-gvm { color: #00acac !important; }
+        .text-gve { color: #f59c1a !important; }
+        .text-re { color: #ff5b57 !important; }
+        .bg-rf { background-color: #727cb6 !important; }
+        .bg-re { background-color: #ff5b57 !important; }
+
+        .badge-premium {
+            padding: 5px 12px; font-weight: 800; font-size: 10px; text-transform: uppercase;
+            letter-spacing: 0.8px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            color: #fff !important;
+        }
+        .timeline-content-v2 .badge-premium {
+            display: inline-flex; align-items: center; margin-bottom: 12px;
+        }
+    </style>
+{% endblock %}
+
+{% block js %}
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&key={{ google_maps_api_key }}&libraries=geometry"></script>
+    <script src="{% static 'plugins/moment/min/moment-with-locales.min.js' %}"></script>
+    <script>
+        moment.locale('pt-br');
+        let map;
+        let geocoder;
+        let markers = [];
+        let infoWindow;
+        let agendaEvents = [];
+        let autoSyncInterval;
+        
+        const CARGO_COLORS = {
+            'Ancião': '#1a1a1a',
+            'Diácono': '#007bff',
+            'Cooperador': '#28a745',
+            'Músico': '#6610f2',
+            'Organista': '#e83e8c',
+            'Mocidade': '#ffc107',
+            'Irmandade': '#6c757d',
+            'Origin': '#dc3545'
+        };
+
+        const CHURCH_COORDS = { lat: -23.538263, lng: -46.926524 };
+
+        const initMap = async () => {
+            geocoder = new google.maps.Geocoder();
+            infoWindow = new google.maps.InfoWindow();
+            
+            map = new google.maps.Map(document.getElementById('google-map'), {
+                zoom: 17,
+                center: CHURCH_COORDS,
+                styles: [{ featureType: "all", elementType: "all", stylers: [{ saturation: -20 }] }],
+                mapTypeControl: true,
+                streetViewControl: true
+            });
+
+            // Fechar janela ao clicar fora (no mapa)
+            map.addListener('click', () => {
+                if (infoWindow) infoWindow.close();
+            });
+
+            // Marcador da Igreja
+            new google.maps.Marker({
+                position: CHURCH_COORDS,
+                map: map,
+                title: 'Comum Congregacao',
+                zIndex: 1000,
+                icon: {
+                    path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                    scale: 10,
+                    fillColor: CARGO_COLORS.Origin,
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: '#fff'
+                }
+            });
+
+            // RAIO DE COBERTURA (Visual)
+            const circles = [
+                { r: 500, color: '#00BCD4', op: 0.1 },
+                { r: 1000, color: '#2d353c', op: 0.05 }
+            ];
+
+            circles.forEach(c => {
+                new google.maps.Circle({
+                    strokeColor: c.color,
+                    strokeOpacity: 0.2,
+                    strokeWeight: 1,
+                    fillColor: c.color,
+                    fillOpacity: c.op,
+                    map: map,
+                    center: CHURCH_COORDS,
+                    radius: c.r,
+                    clickable: false
+                });
+            });
+
+            // Primeira carga completa
+            await loadInitialData();
+            
+            // Iniciar sincronismo automático otimizado (sem travar)
+            startAutoSync();
+        };
+
+        const startAutoSync = () => {
+            if (autoSyncInterval) clearInterval(autoSyncInterval);
+            autoSyncInterval = setInterval(async () => {
+                // Sincronismo leve: apenas busca a agenda e atualiza ícones
+                const resAgenda = await fetch('/visitas/api/agenda/');
+                agendaEvents = await resAgenda.json();
+                markers.forEach(updateMarkerStatus);
+            }, 5000); // A cada 5 segundos para ser "tempo real"
+        };
+
+        const loadInitialData = async () => {
+            try {
+                // LIMPAR PINS EXISTENTES PARA EVITAR DUPLICIDADE
+                if (window.markers && markers.length > 0) {
+                    markers.forEach(m => m.setMap(null));
+                }
+                markers = [];
+
+                const [resIrmandade, resAgenda] = await Promise.all([
+                    fetch('/visitas/api/irmandade/'),
+                    fetch('/visitas/api/agenda/')
+                ]);
+
+                const members = await resIrmandade.json();
+                agendaEvents = await resAgenda.json();
+
+                if (!Array.isArray(members)) {
+                    console.error('API Irmandade retornou erro:', members);
+                    return;
+                }
+                if (!Array.isArray(agendaEvents)) {
+                    console.error('API Agenda retornou erro:', agendaEvents);
+                    agendaEvents = []; // Fallback para não quebrar
+                }
+
+                let delay = 0;
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend(CHURCH_COORDS); // Sempre incluir a igreja
+                
+                members.forEach(member => {
+                    setTimeout(() => { 
+                        geocodeMember(member, (location) => {
+                            if (location) bounds.extend(location);
+                            // Se for o último membro, ajusta o mapa
+                            if (delay >= (members.length - 1) * 250) {
+                                map.fitBounds(bounds);
+                                // Evitar zoom excessivo se houver poucos pontos
+                                const listener = google.maps.event.addListener(map, "idle", function() { 
+                                    if (map.getZoom() > 17) map.setZoom(17); 
+                                    google.maps.event.removeListener(listener); 
+                                });
+                            }
+                        }); 
+                    }, delay);
+                    delay += 250;
+                });
+
+            } catch (err) {
+                console.error('Erro no carregamento inicial:', err);
+                Swal.fire({ icon: 'error', title: 'Erro de Conexão', text: 'Não foi possível carregar os dados. Verifique o console.' });
+            }
+        };
+
+        const geocodeMember = async (member, callback) => {
+            if (!member.endereco) {
+                if (callback) callback(null);
+                return;
+            }
+
+            // 1. Tentar extrair coordenadas já salvas no endereço [lat, lng]
+            const coordMatch = member.endereco.match(/^\[([-.\d]+),\s*([-.\d]+)\]/);
+            if (coordMatch) {
+                const location = { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
+                createMarker(member, location);
+                if (callback) callback(location);
+                return;
+            }
+
+            // 2. Tentar geocodificador do Google do navegador
+            geocoder.geocode({ address: member.endereco }, async (results, status) => {
+                if (status === 'OK') { 
+                    const loc = results[0].geometry.location;
+                    createMarker(member, loc); 
+                    if (callback) callback(loc);
+                } else {
+                    // 3. PLANO B: Se o Google do navegador falhar (ex: Billing Error), tentar nossa API interna
+                    console.warn(`Geocode Navegador falhou (${status}) para ${member.nome}. Tentando API Interna...`);
+                    try {
+                        const cleanAddr = member.endereco.split('] ').pop();
+                        // Mudança para POST para casar com o novo servidor seguro
+                        const res = await fetch('/visitas/api/geocode/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                            body: JSON.stringify({ address: cleanAddr + ', Itapevi - SP' })
+                        });
+                        const data = await res.json();
+                        if (data.lat && data.lng) {
+                            const loc = { lat: data.lat, lng: data.lng };
+                            createMarker(member, loc);
+                            if (callback) callback(loc);
+                        } else {
+                            console.error(`Falha total de geolocalização para ${member.nome}:`, data);
+                            if (callback) callback(null);
+                        }
+                    } catch (err) {
+                        console.error(`Erro ao chamar API interna para ${member.nome}:`, err);
+                        if (callback) callback(null);
+                    }
+                }
+            });
+        };
+
+        const getBestVisit = (memberId) => {
+            const memberVisits = agendaEvents.filter(e => e.irmandade_id == memberId || e.id_membro == memberId);
+            if (memberVisits.length === 0) return null;
+            
+            // Prioridade 1: Agendada/Marcada (a mais próxima do futuro)
+            const future = memberVisits.filter(v => ['Agendada', 'Marcada'].includes(v.status))
+                                     .sort((a,b) => new Date(a.data_inicio) - new Date(b.data_inicio))[0];
+            if (future) return future;
+            
+            // Prioridade 2: Realizada (a mais recente do passado)
+            const sortedPast = memberVisits.filter(v => v.status === 'Realizada')
+                                         .sort((a,b) => new Date(b.data_inicio) - new Date(a.data_inicio));
+            return sortedPast.length > 0 ? sortedPast[0] : null; // Pega o mais recente
+        };
+
+        const updateMarkerStatus = (marker) => {
+            const member = marker.memberData;
+            const visit = getBestVisit(member.id);
+            const color = getMemberColor(member);
+            
+            // Se já tem foto, apenas atualiza a foto (que já cuida da borda interna)
+            if (member.url_foto) {
+                createPhotoIcon(member, color, visit, (icon) => {
+                    marker.setIcon(icon);
+                });
+            } else {
+                marker.setIcon(getMarkerIcon(color, visit));
+            }
+        };
+
+        const getMarkerIcon = (color, visit) => {
+            const status = visit ? visit.status : 'Nenhuma';
+            const iconPath = "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z";
+            let strokeColor = '#fff';
+            let strokeWeight = 2;
+            let scale = 1.6;
+
+            if (status === 'Realizada') { 
+                strokeWeight = 4;
+                if (visit && visit.data_inicio) {
+                    const monthsAgo = moment().diff(moment(visit.data_inicio), 'months', true);
+                    strokeColor = monthsAgo > 3 ? '#f44336' : '#4CAF50';
+                } else {
+                    strokeColor = '#4CAF50';
+                }
+            }
+            else if (status === 'Não realizada') { strokeColor = '#fd7e14'; strokeWeight = 4; }
+            else if (status === 'Cancelada') { strokeColor = '#f44336'; strokeWeight = 4; }
+            else if (status === 'Marcada' || status === 'Agendada') { strokeColor = '#00BCD4'; strokeWeight = 3; }
+
+            return {
+                path: iconPath,
+                fillColor: color,
+                fillOpacity: 1,
+                strokeWeight: strokeWeight,
+                strokeColor: strokeColor,
+                scale: scale,
+                anchor: new google.maps.Point(12, 24)
+            };
+        };
+
+        const createPhotoIcon = (member, color, visit, callback) => {
+            const status = visit ? visit.status : 'Nenhuma';
+            if (!member.url_foto) {
+                callback(getMarkerIcon(color, visit));
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 44;
+            canvas.height = 44;
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            
+            img.onload = () => {
+                // Sombra
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetY = 2;
+
+                // Círculo Borda
+                ctx.beginPath();
+                ctx.arc(22, 22, 20, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                
+                // Cor da borda baseada no status
+                let strokeColor = '#fff';
+                let strokeWidth = 3;
+                
+                // Destaque Especial para Encarregados/Organistas (Roxo Vibrante)
+                const isMusico = (member.cargo_outros || '').includes('Músico') || member.cargo_organista;
+                if (isMusico) {
+                    strokeColor = '#8e44ad'; // Roxo Royal
+                    strokeWidth = 4;
+                }
+
+                if (status === 'Realizada') { 
+                    strokeWidth = 4;
+                    if (visit && visit.data_inicio) {
+                        const monthsAgo = moment().diff(moment(visit.data_inicio), 'months', true);
+                        strokeColor = monthsAgo > 3 ? '#e74c3c' : '#27ae60';
+                    } else {
+                        strokeColor = '#27ae60';
+                    }
+                }
+                else if (status === 'Não realizada') { strokeColor = '#fd7e14'; strokeWidth = 4; }
+                else if (status === 'Cancelada') { strokeColor = '#f44336'; strokeWidth = 4; }
+                else if (status === 'Marcada' || status === 'Agendada') { strokeColor = '#2980b9'; strokeWidth = 4; }
+                
+                ctx.fill();
+                ctx.lineWidth = strokeWidth;
+                ctx.strokeStyle = strokeColor;
+                ctx.stroke();
+
+                // Círculo Recorte Foto
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(22, 22, 18, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(img, 4, 4, 36, 36);
+                ctx.restore();
+
+                callback({
+                    url: canvas.toDataURL(),
+                    scaledSize: new google.maps.Size(44, 44),
+                    anchor: new google.maps.Point(22, 22)
+                });
+            };
+
+            img.onerror = () => callback(getMarkerIcon(color, visit));
+            img.src = member.url_foto;
+        };
+
+        // ANIMAÇÃO DE PULSAÇÃO
+        let pulseScale = 1.6;
+        let pulseDirection = 1;
+        setInterval(() => {
+            pulseScale += 0.05 * pulseDirection;
+            if (pulseScale > 2.0) pulseDirection = -1;
+            if (pulseScale < 1.6) pulseDirection = 1;
+
+            markers.forEach(marker => {
+                const visit = agendaEvents.find(e => e.irmandade_id == marker.memberData.id);
+                if (visit && (visit.status === 'Marcada' || visit.status === 'Agendada')) {
+                    const icon = marker.getIcon();
+                    // Só pulsa se for um ícone de PATH (pin padrão), não fotos
+                    if (icon && icon.path) {
+                        icon.scale = pulseScale;
+                        marker.setIcon(icon);
+                    }
+                }
+            });
+        }, 100);
+
+        const createMarker = (member, location) => {
+            const color = getMemberColor(member);
+            const visit = getBestVisit(member.id);
+            const status = visit ? visit.status : 'Nenhuma';
+            
+            // Jitter: Pequeno deslocamento se as coordenadas forem idênticas
+            let finalLat = typeof location.lat === 'function' ? location.lat() : location.lat;
+            let finalLng = typeof location.lng === 'function' ? location.lng() : location.lng;
+            const duplicate = markers.find(m => m.getPosition().lat() === finalLat && m.getPosition().lng() === finalLng);
+            if (duplicate) {
+                finalLat += (Math.random() - 0.5) * 0.0001;
+                finalLng += (Math.random() - 0.5) * 0.0001;
+            }
+
+            const marker = new google.maps.Marker({
+                position: {lat: finalLat, lng: finalLng},
+                map: map,
+                title: member.nome,
+                baseColor: color,
+                memberData: member,
+                icon: getMarkerIcon(color, status) // Placeholder inicial
+            });
+
+            // IMPORTANTE: Adicionar à lista global ANTES de qualquer lógica de parentesco
+            markers.push(marker);
+
+            // Tentar carregar ícone de foto premium
+            createPhotoIcon(member, color, status, (icon) => {
+                marker.setIcon(icon);
+            });
+
+            // CÁLCULO DE DISTÂNCIA
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(
+                new google.maps.LatLng(CHURCH_COORDS.lat, CHURCH_COORDS.lng),
+                new google.maps.LatLng(finalLat, finalLng)
+            );
+            const distanceText = distance > 1000 ? (distance/1000).toFixed(1) + ' km' : Math.round(distance) + ' m';
+
+            marker.addListener('click', () => {
+                // BUSCAR DADOS REAIS NA HORA DO CLIQUE COM PRIORIDADE (REATIVIDADE TOTAL)
+                const visit = getBestVisit(member.id);
+                const status = visit ? visit.status : 'Nenhuma';
+
+                let statusBadge = '';
+                if (status === 'Realizada') statusBadge = '<span class="badge bg-success">REALIZADA</span>';
+                else if (status === 'Não realizada') statusBadge = '<span class="badge text-white" style="background-color: #fd7e14 !important;">NÃO REALIZADA</span>';
+                else if (status === 'Cancelada') statusBadge = '<span class="badge bg-danger">CANCELADA</span>';
+                else if (status === 'Marcada' || status === 'Agendada') statusBadge = '<span class="badge bg-info">AGENDADA</span>';
+
+                const groupBadgesHtml = (visit && visit.categoria) ? getGroupBadge(visit.categoria) : (member ? getMemberBadges(member) : '');
+
+                const visitHtml = visit ? `
+                    <div class="mt-2 py-3 px-3 rounded bg-light border shadow-sm">
+                        <small class="d-block fw-bold text-uppercase text-muted mb-2" style="font-size: 9px; letter-spacing: 0.5px;">Status Visita:</small>
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            ${statusBadge}
+                            <div class="d-flex gap-1">${groupBadgesHtml}</div>
+                        </div>
+                    </div>
+                ` : '';
+
+                const content = `
+                    <div class="p-2" style="min-width: 250px;">
+                        <h6 class="mb-1 fw-bold text-dark fs-14px">${member.nome}</h6>
+                        <div class="d-flex align-items-center text-muted mb-3" style="font-size: 11px;">
+                            <i class="fa fa-map-marker-alt me-2 text-danger"></i>
+                            <span>${member.endereco.split('] ').pop()}</span>
+                        </div>
+                        
+                        <div class="d-flex align-items-center bg-blue-100 text-blue-800 p-2 rounded mb-2 border border-blue-200">
+                            <i class="fa fa-road me-2"></i>
+                            <small class="fw-bold">Distância da Comum: ${distanceText}</small>
+                        </div>
+
+                        ${visitHtml}
+                        
+                        ${(() => {
+                            const relativesArr = markers.filter(m => {
+                                const md = m.memberData;
+                                if (md.id === member.id) return false;
+                                return (md.id_chefe_familia === member.id) || 
+                                       (member.id_chefe_familia === md.id) || 
+                                       (md.id_chefe_familia && md.id_chefe_familia === member.id_chefe_familia);
+                            }).map(m => m.memberData);
+                            
+                            // Garantir UNICIDADE absoluta por ID
+                            const relatives = Array.from(new Map(relativesArr.map(r => [r.id, r])).values());
+                            
+                            if (relatives.length === 0) return '';
+                            return `
+                                <div class="mt-2 p-2 rounded bg-gray-100 border-start border-3 border-blue-500">
+                                    <small class="d-block fw-bold text-blue-700" style="font-size: 9px; letter-spacing: 0.5px;">NÚCLEO FAMILIAR:</small>
+                                    ${relatives.map(r => `
+                                        <div class="fw-bold text-dark d-flex align-items-center justify-content-between" style="font-size: 11px;">
+                                            <div><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</div>
+                                            <span class="badge bg-white text-muted fw-normal border" style="font-size: 8px;">${r.id === (member.id_chefe_familia || member.id) ? 'Chefe' : (r.vinculo_tipo || 'Membro')}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `;
+                        })()}
+                        
+                        <div class="mt-3 pt-3 border-top d-grid gap-2 d-sm-flex justify-content-center">
+                            <button class="btn btn-sm btn-white border px-3 fw-bold" onclick="viewDossie('${member.id}')">
+                                <i class="fa fa-id-badge me-1 text-primary"></i> Dossiê
+                            </button>
+                            <button class="btn btn-sm btn-primary px-3 fw-bold shadow-sm" onclick="viewHistory('${member.id}')">
+                                <i class="fa fa-history me-1"></i> Histórico
+                            </button>
+                        </div>
+                    </div>
+                `;
+                infoWindow.setContent(content);
+                infoWindow.open(map, marker);
+            });
+            markers.push(marker);
+        };
+
+        const getMemberColor = (member) => {
+            const cargosArr = (member.cargo_outros || '').toLowerCase();
+            const profiles = { musico: member.perfil_musico, organista: member.cargo_organista, mocidade: member.perfil_mocidade };
+            if (cargosArr.includes('anciao')) return CARGO_COLORS['Ancião'];
+            if (cargosArr.includes('diacono')) return CARGO_COLORS['Diácono'];
+            if (cargosArr.includes('cooperador')) return CARGO_COLORS['Cooperador'];
+            if (profiles.musico) return CARGO_COLORS['Músico'];
+            if (profiles.organista) return CARGO_COLORS['Organista'];
+            return profiles.mocidade ? CARGO_COLORS['Mocidade'] : CARGO_COLORS['Irmandade'];
+        };
+
+        const CATEGORY_MAP = {
+            'GVI': { label: 'GVI: Irmandade', bg: 'bg-gvi', text: 'text-gvi', icon: 'fa-users' },
+            'GVM': { label: 'GVM: Mocidade', bg: 'bg-gvm', text: 'text-gvm', icon: 'fa-child' },
+            'GVE': { label: 'GVE: Encarregados', bg: 'bg-gve', text: 'text-gve', icon: 'fa-music' },
+            'RF': { label: 'RF: Reunião Familiar', bg: 'bg-rf', text: 'text-rf', icon: 'fa-home' },
+            'RE': { label: 'RE: Reunião de Evangelização', bg: 'bg-re', text: 'text-re', icon: 'fa-bullhorn' }
+        };
+
+        const getGroupBadge = (categoria) => {
+            const cfg = CATEGORY_MAP[categoria] || { label: categoria, bg: 'bg-gray', text: 'text-gray', icon: 'fa-bookmark' };
+            return `<span class="badge badge-premium ${cfg.bg}"><i class="fa ${cfg.icon} me-1"></i> ${cfg.label}</span>`;
+        };
+
+        const getMemberBadges = (member) => {
+            let badges = [];
+            if (member.perfil_musico || member.cargo_organista) badges.push(getGroupBadge('GVE'));
+            if (member.perfil_mocidade) badges.push(getGroupBadge('GVM'));
+            
+            // Se não tiver nenhum dos acima, ele é pelo menos GVI
+            if (badges.length === 0) badges.push(getGroupBadge('GVI'));
+            
+            return badges.join(' ');
+        };
+
+        const toggleLegend = () => {
+            $('.map-float-info').toggleClass('minimized');
+        };
+
+        // FUNÇÕES GLOBAIS PARA OS BOTÕES DO INFOWINDOW
+        window.viewDossie = (id) => {
+            const foundMarker = markers.find(m => m.memberData && (m.memberData.id == id || m.memberData.id === id));
+            if (!foundMarker) {
+                console.warn("Membro não encontrado nos marcadores, tentando busca profunda...", id);
+                return;
+            }
+            const member = foundMarker.memberData;
+
+            $('#dossie-nome').text(member.nome);
+            $('#dossie-comum-container').html(`<i class="fa fa-place-of-worship me-1"></i> ${member.comum || 'Comum nao informada'}`);
+            $('#dossie-setor').text(member.setor || 'N/D');
+            $('#dossie-endereco').text(member.endereco.split('] ').pop());
+            
+            // Renderizar Parentesco/Família se houver
+            $('#dossie-familia-container').addClass('d-none');
+            $('#dossie-familia-list').empty();
+
+            const relatives = markers.filter(m => {
+                const md = m.memberData;
+                if (!md || md.id === member.id) return false;
+                return (md.id_chefe_familia === member.id) || 
+                       (member.id_chefe_familia === md.id) || 
+                       (md.id_chefe_familia && md.id_chefe_familia === member.id_chefe_familia);
+            }).map(m => m.memberData);
+            
+            // Unicidade
+            const uniqueRelatives = Array.from(new Map(relatives.map(r => [r.id, r])).values());
+
+            if (uniqueRelatives.length > 0) {
+                $('#dossie-familia-container').removeClass('d-none');
+                uniqueRelatives.forEach(r => {
+                    $('#dossie-familia-list').append(`
+                        <div class="d-flex align-items-center justify-content-between p-2 bg-white rounded border border-light">
+                            <span class="fw-bold small text-dark"><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</span>
+                            <span class="badge bg-light text-muted border" style="font-size: 8px;">${r.id === (member.id_chefe_familia || member.id) ? 'Chefe' : (r.vinculo_tipo || 'Membro')}</span>
+                        </div>
+                    `);
+                });
+            }
+
+            // Fotos
+            if (member.url_foto) {
+                $('#dossie-photo-container').html(`<img src="${member.url_foto}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`);
+            } else {
+                $('#dossie-photo-container').html('<i class="fa fa-user-circle fa-5x" style="color: #cbd5e0;"></i>');
+            }
+
+            // Cargos
+            let cargosArr = (member.cargo_outros || '').split(',').map(c => c.trim()).filter(c => c !== '');
+            if (member.perfil_musico) cargosArr.push('Músico');
+            if (member.cargo_organista) cargosArr.push('Organista');
+            if (member.perfil_mocidade) cargosArr.push('Mocidade');
+            cargosArr = [...new Set(cargosArr)];
+
+            const getColor = (f) => {
+                const low = f.toLowerCase();
+                if (low.includes('encarregados') || low.includes('organista')) return 'bg-gve';
+                if (low.includes('mocidade')) return 'bg-gvm';
+                return 'bg-gvi';
+            };
+
+            let badges = cargosArr.length > 0 ? cargosArr.map(c => `<span class="badge shadow-sm ${getColor(c)} me-1">${c}</span>`).join('') : '<span class="badge bg-gvi shadow-sm">Irmandade</span>';
+            $('#dossie-cargos').html(badges);
+
+            console.log("Tentando abrir modal-dossie via Bootstrap 5 nativo...");
+            const modalEl = document.getElementById('modal-dossie');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else {
+                console.error("ERRO CRÍTICO: Elemento #modal-dossie não encontrado no DOM!");
+            }
+        };
+
+        const getBadgeInfo = (cargo) => {
+            const raw = cargo || '';
+            const c = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const match = (str) => c.includes(str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+            
+            if (match('anciao')) return { class: 'badge-anciao', icon: 'fa-user-tie' };
+            if (match('diacono')) return { class: 'badge-diacono', icon: 'fa-user-check' };
+            if (match('piedade')) return { class: 'badge-piedade', icon: 'fa-hand-holding-heart' };
+            if (match('cooperador')) return { class: 'badge-cooperador', icon: 'fa-hands-helping' };
+            if (match('encarregado')) return { class: 'badge-encarregado', icon: 'fa-star' };
+            if (match('musico')) return { class: 'badge-musico', icon: 'fa-music' };
+            if (match('organista')) return { class: 'badge-organista', icon: 'fa-keyboard' };
+            if (match('examinadora')) return { class: 'badge-examinadora', icon: 'fa-clipboard-check' };
+            if (match('instrutor')) return { class: 'badge-instrutor', icon: 'fa-chalkboard-teacher' };
+            if (match('secretar')) return { class: 'badge-secretaria', icon: 'fa-file-signature' };
+            if (match('auxiliar de jovens')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('mocidade') || match('jovens')) return { class: 'badge-mocidade', icon: 'fa-child' };
+            if (match('enfermo')) return { class: 'badge-enfermo', icon: 'fa-heartbeat' };
+            if (match('porteiro')) return { class: 'badge-porteiro', icon: 'fa-door-open' };
+            if (match('auxiliar da porta')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('estacionamento')) return { class: 'badge-estacionamento', icon: 'fa-car' };
+            if (match('ebi')) return { class: 'badge-ebi', icon: 'fa-child' };
+            if (match('emi')) return { class: 'badge-emi', icon: 'fa-music' };
+            if (match('som')) return { class: 'badge-som', icon: 'fa-volume-up' };
+            if (match('manutencao') || match('manutenção')) return { class: 'badge-manutencao', icon: 'fa-tools' };
+            if (match('reuniao') || match('reunião')) return { class: 'badge-reuniao', icon: 'fa-home' };
+            
+            return { class: 'badge-irmandade', icon: 'fa-user' };
+        };
+
+        window.viewHistory = async (id) => {
+            const foundMarker = markers.find(m => m.memberData && (m.memberData.id == id || m.memberData.id === id));
+            if (!foundMarker) {
+                console.warn("Membro não encontrado para histórico:", id);
+                return;
+            }
+            const member = foundMarker.memberData;
+
+            $('#hist-nome').text(member.nome);
+            $('#timeline-container').html('<div class="text-center p-4"><i class="fa fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted fw-bold">Sincronizando Histórico...</p></div>');
+            
+            console.log("Tentando abrir modal-historico via Bootstrap 5 nativo...");
+            const modalEl = document.getElementById('modal-historico');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else {
+                console.error("ERRO CRÍTICO: Elemento #modal-historico não encontrado no DOM!");
+            }
+
+            try {
+                const res = await fetch(`/visitas/api/agenda/?irmandade_id=${id}`);
+                let history = await res.json();
+                
+                // Filtro defensivo (Garante que se vier algo a mais do servidor, descartamos)
+                history = history.filter(v => v.irmandade_id == id);
+                
+                if (history.length === 0) {
+                    $('#timeline-container').html('<div class="alert alert-light text-center py-5 border-dashed"><i class="fa fa-folder-open fa-3x text-gray-300 mb-3 d-block"></i>Nenhuma visita realizada registrada para este membro.</div>');
+                    return;
+                }
+
+                const getHistoryStyle = (categoria, equipe) => {
+                    const cfg = CATEGORY_MAP[categoria] || CATEGORY_MAP['GVI'];
+                    return { icon: cfg.icon, bg: cfg.bg, label: cfg.label, text: cfg.text, eq: equipe || 'Equipe Ministerial' };
+                };
+
+                let html = '<div class="timeline-v2">';
+                history.sort((a,b) => new Date(b.data_inicio) - new Date(a.data_inicio)).forEach(v => {
+                    const data = moment(v.data_inicio).format('DD/MM/YY');
+                    const hora = moment(v.data_inicio).format('HH:mm');
+                    const style = getHistoryStyle(v.categoria, v.equipe_responsavel);
+                    
+                    const diffDays = moment().diff(moment(v.data_inicio), 'days');
+                    let timeColor = 'success';
+                    if (diffDays > 30) timeColor = 'warning';
+                    if (diffDays > 60) timeColor = 'danger';
+                    if (diffDays < 0) timeColor = 'indigo';
+                    
+                    let displayStatus = v.status || 'Marcada';
+                    let isPast = moment(v.data_inicio).isBefore(moment());
+                    if ((displayStatus === 'Marcada' || displayStatus === 'Agendada') && isPast) {
+                        displayStatus = 'Não realizada';
+                    }
+
+                    let statusLabel = 'Agendada';
+                    let statusIcon = 'fa-clock';
+                    let statusColor = 'text-info';
+
+                    if (displayStatus === 'Realizada') {
+                        statusLabel = 'Concluída';
+                        statusIcon = 'fa-check-circle';
+                        statusColor = 'text-success';
+                    } else if (displayStatus === 'Não realizada') {
+                        statusLabel = 'Não Realizada';
+                        statusIcon = 'fa-exclamation-circle';
+                        statusColor = 'text-warning';
+                    } else if (displayStatus === 'Cancelada') {
+                        statusLabel = 'Cancelada';
+                        statusIcon = 'fa-times-circle';
+                        statusColor = 'text-danger';
+                    }
+
+                    let obsText = v.observacoes || (displayStatus === 'Marcada' || displayStatus === 'Agendada' ? 'Aguardando data.' : (displayStatus === 'Realizada' ? 'Visita concluída com sucesso.' : 'Sem observações.'));
+
+                    html += `
+                        <div class="timeline-item-v2">
+                            <div class="timeline-time-v2">
+                                <span class="date">${data}</span>
+                                <span class="time">${hora}</span>
+                                <span class="mt-2 badge bg-${timeColor}-100 text-${timeColor} border border-${timeColor}" style="font-size: 8px; display: inline-block;">${moment(v.data_inicio).fromNow()}</span>
+                            </div>
+                            <div class="timeline-icon-v2 ${style.bg}">
+                                <i class="fa ${style.icon}"></i>
+                            </div>
+                            <div class="timeline-content-v2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <div class="fw-bold text-dark fs-13px">Visita Ministerial</div>
+                                    <small class="${statusColor} fw-bold" style="font-size: 10px;" ${statusColor === 'text-warning' ? 'style="color: #fd7e14 !important;"' : ''}><i class="fa ${statusIcon} me-1"></i> ${statusLabel}</small>
+                                </div>
+                                <div class="badge-premium ${style.bg} mb-2">
+                                    <i class="fa ${style.icon} me-1"></i> ${style.label}
+                                </div>
+                                <div class="small text-muted mb-2 fst-italic">"${obsText}"</div>
+                                <div class="mt-2 pt-2 border-top border-light d-flex align-items-center">
+                                    <i class="fa fa-users-cog me-2 text-muted" style="font-size: 10px;"></i>
+                                    <small class="fw-bold text-uppercase text-muted" style="font-size: 9px;">Efetuada Por: ${style.eq}</small>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                $('#timeline-container').html(html);
+            } catch (err) {
+                $('#timeline-container').html('<div class="alert alert-danger">Erro técnico ao carregar histórico. Tente novamente.</div>');
+            }
+        };
+
+        $(document).ready(() => { initMap(); });
+    </script>
+{% endblock %}
+
+{% block content %}
+    <div class="map-wrapper">
+        <div id="google-map"></div>
+        
+        <div class="map-float-info shadow-base">
+            <div class="toggle-btn" onclick="toggleLegend()"><i class="fa fa-bars"></i></div>
+            <h5 class="mb-3 fw-bold">Roteiro de Visitas</h5>
+
+            <div class="section-title mb-2 text-muted fw-800 text-uppercase" style="font-size: 9px; letter-spacing: 1px;">Status (Borda/Pulse)</div>
+            <div class="legend mb-3">
+                <div class="legend-item"><div class="legend-color" style="border: 3px solid #4CAF50; background: #fff;"></div><span>Realizada (< 3 meses)</span></div>
+                <div class="legend-item"><div class="legend-color" style="border: 3px solid #f44336; background: #fff;"></div><span>Realizada (> 3 meses) / Cancelada</span></div>
+                <div class="legend-item"><div class="legend-color" style="border: 3px solid #00BCD4; background: #fff;"></div><span>Agendada (Pulsante)</span></div>
+                <div class="legend-item"><div class="legend-color" style="border: 1px solid #ccc; background: #fff;"></div><span>Sem Agendamento</span></div>
+            </div>
+
+            <div class="section-title mb-2 text-muted fw-800 text-uppercase" style="font-size: 9px; letter-spacing: 1px;">Ministério (Cor Interna)</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background: #6c757d;"></div><span>Irmandade</span></div>
+                <div class="legend-item"><div class="legend-color" style="background: #6610f2;"></div><span>Músico</span></div>
+                <div class="legend-item"><div class="legend-color" style="background: #e83e8c;"></div><span>Organista</span></div>
+                <div class="legend-item"><div class="legend-color" style="background: #ffc107;"></div><span>Mocidade</span></div>
+                <div class="legend-item"><div class="legend-color" style="background: #1a1a1a;"></div><span>Ministério</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DOSSIÊ RÁPIDO -->
+    <div class="modal fade" id="modal-dossie" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; transform: translateY(15px);">
+                <div class="widget-header-premium">
+                    <div class="d-flex align-items-center justify-content-between position-relative z-10">
+                        <div>
+                            <h5 class="text-white fw-bold mb-0">Dossiê Ministerial</h5>
+                            <small class="text-white text-opacity-50">Registro Consolidado da Comum</small>
+                        </div>
+                    </div>
+                    <div class="widget-profile-img shadow-lg" id="dossie-photo-container">
+                        <i class="fa fa-user-circle fa-5x" style="color: #cbd5e0;"></i>
+                    </div>
+                </div>
+                
+                <div class="modal-body p-4 pt-5 mt-2">
+                    <div class="mb-4">
+                        <h4 class="fw-bold mb-0 text-dark" id="dossie-nome">-</h4>
+                        <div class="text-primary fw-bold" style="font-size: 11px;" id="dossie-comum-container">-</div>
+                    </div>
+                    
+                    <div id="dossie-familia-container" class="mt-4 pt-3 border-top d-none">
+                        <div class="fw-bold text-uppercase text-muted mb-2" style="font-size: 9px; letter-spacing: 1px;">Residentes no mesmo endereço</div>
+                        <div id="dossie-familia-list" class="d-flex flex-column gap-2"></div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="small text-muted fw-bold d-block mb-1">LOCALIDADE / SETOR</label>
+                            <div class="p-2 bg-light rounded fw-bold text-dark" id="dossie-setor">-</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="small text-muted fw-bold d-block mb-1">QUALIFICAÇÃO</label>
+                            <div class="p-2 bg-light rounded fw-bold text-success"><i class="fa fa-check-circle me-1"></i> Cadastro Ativo</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="small text-muted fw-bold d-block mb-1">ENDEREÇO RESIDENCIAL</label>
+                            <div class="p-3 bg-light rounded small border-start border-4 border-primary" id="dossie-endereco">-</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="small text-muted fw-bold d-block mb-1">MINISTÉRIOS E FUNÇÕES</label>
+                            <div id="dossie-cargos" class="d-flex flex-wrap gap-1"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-3 bg-light">
+                    <button type="button" class="btn btn-dark w-100 fw-bold shadow-sm py-2" data-bs-dismiss="modal">CONCLUIR CONSULTA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL HISTÓRICO DE VISITAS -->
+    <div class="modal fade" id="modal-historico" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+                <div class="widget-header-premium" style="background: linear-gradient(135deg, #00468c 0%, #007bff 100%);">
+                    <div class="d-flex align-items-center justify-content-between position-relative" style="z-index: 10;">
+                        <div>
+                            <h5 class="text-white fw-bold mb-0">Memória de Visitação</h5>
+                            <small class="text-white text-opacity-50">Histórico detalhado por grupo</small>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="bg-gray-800 text-white p-2 px-3 d-flex justify-content-between align-items-center">
+                    <div class="fw-bold fs-12px" id="hist-nome">-</div>
+                    <div class="badge bg-white text-dark small">Total: Histórico Consolidado</div>
+                </div>
+                <div class="modal-body p-4 bg-light bg-opacity-50" style="max-height: 550px; overflow-y: auto;">
+                    <div id="timeline-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
