@@ -1,0 +1,10 @@
+ColorAdminApp/gulp/
+scratch/
+testproj/
+*.sqlite3
+*.sqlite3.bak
+ColorAdmin/settings-VANESSA.py
+static/**/*.map
+static/**/*.zip
+static/**/test/
+static/**/tests/
