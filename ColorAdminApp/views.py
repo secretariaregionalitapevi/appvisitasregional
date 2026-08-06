@@ -5,6 +5,7 @@ from django.views import generic
 from django.http import HttpResponse
 from datetime import datetime, timedelta
 import json
+import unicodedata
 from .access_control import can_access, filter_rows, scope_details, user_scope, visible_commons
 
 def index(request):
@@ -145,6 +146,10 @@ def apiAuth(request):
         data = json.loads(request.body) if request.body else {}
         
         if action == 'login':
+            if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+                return JsonResponse({
+                    "error": "Serviço de autenticação não configurado. Contate o administrador."
+                }, status=503)
             try:
                 url = f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password"
                 headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
@@ -212,8 +217,14 @@ def apiAuth(request):
                 })
                 return JsonResponse({"error": err_msg}, status=response.status_code)
                 
-            except Exception as e:
-                return JsonResponse({"error": f"Erro interno: {str(e)}"}, status=500)
+            except requests.RequestException:
+                return JsonResponse({
+                    "error": "Não foi possível conectar ao serviço de autenticação. Tente novamente."
+                }, status=502)
+            except (ValueError, KeyError, TypeError):
+                return JsonResponse({
+                    "error": "O serviço de autenticação retornou uma resposta inválida."
+                }, status=502)
 
         elif action == 'register':
             # 1. Sign up
@@ -362,10 +373,15 @@ def apiVisitasIrmandade(request):
         comum = request.GET.get('comum')
         status = request.GET.get('status')
 
+        if comum and comum != 'all':
+            allowed_commons = {str(item.get('comum') or '').strip() for item in visible_commons(scope)}
+            if comum.strip() not in allowed_commons:
+                return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+
         params = [("select", "*"), ("order", "nome.asc")]
         
         if comum and comum != 'all':
-            params.append(("comum", f"ilike.*{comum}*"))
+            params.append(("comum", f"eq.{comum}"))
         if status and status != 'all':
             params.append(("status", f"eq.{status}"))
         
@@ -374,6 +390,20 @@ def apiVisitasIrmandade(request):
             params.append(("setor", f"eq.{setor}"))
 
         try:
+            if request.GET.get('export') == '1':
+                rows = []
+                page_size = 1000
+                for start in range(0, 100000, page_size):
+                    page_headers = {**headers, "Range": f"{start}-{start + page_size - 1}"}
+                    response = requests.get(url, headers=page_headers, params=params, timeout=30)
+                    if response.status_code not in {200, 206}:
+                        return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
+                    page = response.json()
+                    rows.extend(page)
+                    if len(page) < page_size:
+                        break
+                return JsonResponse(filter_rows(scope, rows), safe=False)
+
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
                 return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
@@ -385,13 +415,69 @@ def apiVisitasIrmandade(request):
         import json
         try:
             data = json.loads(request.body)
-            if not can_access(scope, data):
+            records = data if isinstance(data, list) else [data]
+            if not records or len(records) > 500:
+                return JsonResponse({"error": "Envie entre 1 e 500 registros por lote."}, status=400)
+            nullable_fields = {
+                "id_chefe_familia", "ultima_visita", "data_nascimento", "data_batismo",
+                "data_inicio_ensaios", "data_culto_oficial", "data_oficializacao",
+            }
+            for item in records:
+                if isinstance(item, dict):
+                    for field in nullable_fields:
+                        if field in item and (item[field] is None or str(item[field]).strip() == ""):
+                            item[field] = None
+            if isinstance(data, list):
+                # O PostgREST exige as mesmas chaves em todos os objetos do lote.
+                batch_fields = set().union(*(item.keys() for item in records if isinstance(item, dict)))
+                for item in records:
+                    if isinstance(item, dict):
+                        for field in batch_fields:
+                            item.setdefault(field, None)
+            data = records if isinstance(data, list) else records[0]
+            if any(not isinstance(item, dict) or not can_access(scope, item) for item in records):
                 return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
-            response = requests.post(url, headers=headers, json=data, timeout=10)
+            skipped = 0
+            if isinstance(data, list) and request.GET.get('smart') == '1':
+                def identity(value):
+                    normalized = unicodedata.normalize('NFKD', str(value or ''))
+                    return ' '.join(''.join(char for char in normalized if not unicodedata.combining(char)).casefold().split())
+
+                existing_keys = set()
+                for comum in sorted({str(item.get('comum') or '').strip() for item in records}):
+                    lookup = requests.get(
+                        url,
+                        headers={**headers, "Range": "0-9999"},
+                        params={"select": "nome,comum", "comum": f"eq.{comum}"},
+                        timeout=30,
+                    )
+                    if lookup.status_code not in {200, 206}:
+                        return JsonResponse({"error": "Não foi possível comparar os cadastros existentes.", "details": lookup.text}, status=lookup.status_code)
+                    existing_keys.update((identity(row.get('comum')), identity(row.get('nome'))) for row in lookup.json())
+
+                new_records = []
+                seen_in_file = set()
+                for item in records:
+                    key = (identity(item.get('comum')), identity(item.get('nome')))
+                    if key in existing_keys or key in seen_in_file:
+                        skipped += 1
+                        continue
+                    seen_in_file.add(key)
+                    new_records.append(item)
+                records = new_records
+                data = records
+                if not records:
+                    return JsonResponse({"created": 0, "skipped": skipped, "smart_import": True})
+
+            response = requests.post(url, headers=headers, json=data, timeout=30 if isinstance(data, list) else 10)
             if response.status_code in [200, 201]:
                 log_audit(request, 'CREATE', 'VISITAS_IRMANDADE', {
-                    "scope": scope_details(scope), "novo": response.json()
+                    "scope": scope_details(scope),
+                    "quantidade": len(records), "ignorados_existentes": skipped,
+                    "novo": response.json() if not isinstance(data, list) else {"importacao_em_lote": True},
                 })
+                if isinstance(data, list) and request.GET.get('smart') == '1':
+                    return JsonResponse({"created": len(records), "skipped": skipped, "smart_import": True})
                 return JsonResponse(response.json(), safe=False)
             else:
                 return JsonResponse({"error": "Save Error", "details": response.text}, status=response.status_code)
@@ -466,10 +552,30 @@ def visitasAnalytics(request):
     return render(request, "pages/visitas-analytics.html")
 
 def visitasCadastro(request):
-    return render(request, "pages/visitas-cadastro.html")
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    comum_padrao = scope.get('comum') or ''
+    comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
+    return render(request, "pages/visitas-cadastro.html", {
+        'cadastro_access_level': scope.get('level'),
+        'cadastro_comum_padrao': comum_padrao,
+        'cadastro_municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
+        'cadastro_comuns': comuns,
+        'cadastro_municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+    })
 
 def visitasAgenda(request):
-    return render(request, 'pages/visitas-agenda.html')
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    comum_padrao = scope.get('comum') or ''
+    comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
+    return render(request, 'pages/visitas-agenda.html', {
+        'agenda_access_level': scope.get('level'),
+        'agenda_comum_padrao': comum_padrao,
+        'agenda_municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
+        'agenda_comuns': comuns,
+        'agenda_municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+    })
 
 
 def visitasEquipes(request):
@@ -528,7 +634,8 @@ def apiVisitasEquipes(request):
                 busca = (request.GET.get('busca') or '').strip().casefold()
                 listar_elegiveis = request.GET.get('elegiveis') == 'true'
                 if busca or listar_elegiveis:
-                    rows = [row for row in rows if 'grupo de visitas' in str(row.get('cargo_outros') or '').casefold()]
+                    if listar_elegiveis:
+                        rows = [row for row in rows if str(row.get('status') or 'Ativo').casefold() == 'ativo']
                     if busca:
                         rows = [row for row in rows if busca in str(row.get('nome') or '').casefold()]
                 else:
@@ -586,9 +693,11 @@ def apiVisitasEquipes(request):
             current = lookup.json()
         if not current or not can_access(scope, current[0]):
             return JsonResponse({'error': 'Membro fora do seu escopo de acesso.'}, status=403)
-        if 'grupo de visitas' not in str(current[0].get('cargo_outros') or '').casefold():
-            return JsonResponse({'error': 'Somente membros com o cargo Grupo de Visitas podem receber uma equipe.'}, status=400)
-        response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json={'equipe_visita': equipe}, timeout=15)
+        cargos = [cargo.strip() for cargo in str(current[0].get('cargo_outros') or '').split(',') if cargo.strip()]
+        if not any(cargo.casefold() == 'grupo de visitas' for cargo in cargos):
+            cargos.append('Grupo de Visitas')
+        update_data = {'equipe_visita': equipe, 'cargo_outros': ','.join(cargos)}
+        response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json=update_data, timeout=15)
         if response.status_code not in {200, 201}:
             return database_error(response)
         result = response.json()
@@ -602,9 +711,15 @@ def apiVisitasEquipes(request):
         return JsonResponse({'error': 'Falha ao acessar as equipes.', 'details': str(exc)}, status=502)
 
 def visitasMapa(request):
-    google_maps_api_key = settings.GOOGLE_MAPS_API_KEY
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
     context = {
-        'google_maps_api_key': google_maps_api_key,
+        'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY,
+        'map_access_level': scope.get('level'),
+        'map_default_comum': scope.get('comum') or '',
+        'map_default_municipio': scope.get('municipio') or '',
+        'map_comuns': comuns,
+        'map_municipios': sorted({item.get('cidade') for item in comuns if item.get('cidade')}),
     }
     return render(request, "pages/visitas-mapa.html", context)
 
@@ -682,7 +797,7 @@ def visitasRoteiro(request):
                 if str(v.get('setor') or '').strip().casefold() == bairro.casefold()
             ]
         
-        from .utils.routing import optimize_route, auto_dispatch_visits, get_common_coordinates
+        from .utils.routing import optimize_route, auto_dispatch_visits, get_common_coordinates, limit_daily_route
         
         # 2. Despacho Automático (preenche até 10 visitas caso existam menos)
         if len(visitas_validas) < 10 and equipe and data_filtro:
@@ -735,7 +850,8 @@ def visitasRoteiro(request):
         ponto_comum = get_common_coordinates(comum, cidade_comum) if comum else None
         roteiro_manha = optimize_route(visitas_manha, start_coords=ponto_comum)
         roteiro_tarde = optimize_route(visitas_tarde, start_coords=ponto_comum)
-        roteiro_otimizado = roteiro_manha + roteiro_tarde
+        # Limite operacional diário: 5 visitas de manhã e 5 à tarde.
+        roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
         
         data_br = data_filtro
         if data_filtro and len(data_filtro) == 10:
@@ -767,22 +883,58 @@ def apiVisitasAgenda(request):
         try:
             irmandade_id = request.GET.get('irmandade_id')
             status = request.GET.get('status')
+            comum = (request.GET.get('comum') or '').strip()
+            if comum:
+                allowed_commons = {str(item.get('comum') or '').strip() for item in visible_commons(scope)}
+                if comum not in allowed_commons:
+                    return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
             
             params = [("select", "*"), ("order", "data_inicio.asc")]
             if irmandade_id:
                 params.append(("irmandade_id", f"eq.{irmandade_id}")) # ID do membro
             if status:
                 params.append(("status", f"eq.{status}")) # Ex: Realizada
-            
             start_date = request.GET.get('start_date')
             end_date = request.GET.get('end_date')
             if start_date:
                 params.append(("data_inicio", f"gte.{start_date}"))
             if end_date:
-                params.append(("data_inicio", f"lte.{end_date}"))
+                params.append(("data_inicio", f"lt.{end_date}"))
                 
             response = requests.get(url, headers=headers, params=params, timeout=10)
-            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+            response.raise_for_status()
+            rows = response.json()
+
+            # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
+            # diretamente pela coluna `comum` deixava registros antigos invisiveis,
+            # pois essa coluna nem sempre existe/esta preenchida na agenda.
+            if comum:
+                members_url = (
+                    f"{settings.SUPABASE_URL}/rest/v1/"
+                    f"{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+                )
+                member_ids = set()
+                offset = 0
+                page_size = 1000
+                while True:
+                    page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
+                    members_response = requests.get(
+                        members_url,
+                        headers=page_headers,
+                        params=[("select", "id"), ("comum", f"eq.{comum}")],
+                        timeout=15,
+                    )
+                    members_response.raise_for_status()
+                    member_page = members_response.json()
+                    member_ids.update(str(item.get("id")) for item in member_page if item.get("id"))
+                    if len(member_page) < page_size:
+                        break
+                    offset += page_size
+                rows = [row for row in rows if str(row.get("irmandade_id") or "") in member_ids]
+            else:
+                rows = filter_rows(scope, rows)
+
+            return JsonResponse(rows, safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
@@ -797,6 +949,33 @@ def apiVisitasAgenda(request):
             candidate = {**(current[0] if current else {}), **data}
             if (id and not current) or not can_access(scope, candidate):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
+
+            # Reserva territorial também para criações e edições manuais.
+            candidate_day = str(candidate.get('data_inicio') or '')[:10]
+            candidate_sector = str(candidate.get('setor') or '').strip()
+            candidate_team = str(candidate.get('equipe_responsavel') or '').strip()
+            if candidate_day and candidate_sector and candidate_team:
+                day_visits_response = requests.get(url, headers=headers, params=[
+                    ("select", "id,setor,equipe_responsavel,status"),
+                    ("data_inicio", f"gte.{candidate_day}T00:00:00"),
+                    ("data_inicio", f"lte.{candidate_day}T23:59:59"),
+                ], timeout=10)
+                if day_visits_response.status_code == 200:
+                    from .utils.routing import normalize_text
+                    conflicting_team = next((
+                        item.get('equipe_responsavel') for item in day_visits_response.json()
+                        if str(item.get('id')) != str(id or '')
+                        and item.get('status') != 'Cancelada'
+                        and normalize_text(item.get('setor')) == normalize_text(candidate_sector)
+                        and str(item.get('equipe_responsavel') or '').strip() != candidate_team
+                    ), None)
+                    if conflicting_team:
+                        return JsonResponse({
+                            "error": (
+                                f"O bairro {candidate_sector} já está reservado para {conflicting_team} "
+                                f"em {candidate_day}. Mantenha todo o bairro com a mesma equipe."
+                            )
+                        }, status=409)
             
             # Validação profissional: Se cancelada ou não realizada, exige motivo
             status_visita = data.get('status')
@@ -852,46 +1031,16 @@ def apiGeocode(request):
             if not address:
                 return JsonResponse({'error': 'Address is required'}, status=400)
 
-            # Tenta usar Google Maps Geocoding API
-            api_key = settings.GOOGLE_MAPS_API_KEY
-            url = "https://maps.googleapis.com/maps/api/geocode/json"
-            params = {
-                "address": address,
-                "key": api_key,
-                "language": "pt-BR"
-            }
-            response = requests.get(url, params=params, timeout=10)
-            result = response.json()
-            
-            # Caso Google falhe, tenta Nominatim (OpenStreetMap) como fallback gratuito
-            if result.get('status') != 'OK':
-                try:
-                    headers = {'User-Agent': 'ColorAdmin-Ministerial-App/1.0'}
-                    url_osm = "https://nominatim.openstreetmap.org/search"
-                    params_osm = {'q': address, 'format': 'json', 'limit': 1}
-                    resp_osm = requests.get(url_osm, headers=headers, params=params_osm, timeout=5)
-                    result_osm = resp_osm.json()
-                    
-                    if result_osm and len(result_osm) > 0:
-                        return JsonResponse({
-                            'lat': float(result_osm[0]['lat']),
-                            'lng': float(result_osm[0]['lon']),
-                            'formatted_address': result_osm[0]['display_name'],
-                            'source': 'osm'
-                        })
-                except Exception as osm_e:
-                    print(f"Erro no fallback OSM: {osm_e}")
-
-            if result.get('status') == 'OK':
-                location = result['results'][0]['geometry']['location']
+            from .utils.routing import geocode_address_fallback
+            coordinates = geocode_address_fallback(address)
+            if coordinates:
                 return JsonResponse({
-                    'lat': location['lat'],
-                    'lng': location['lng'],
-                    'formatted_address': result['results'][0]['formatted_address'],
-                    'source': 'google'
+                    'lat': coordinates[0],
+                    'lng': coordinates[1],
+                    'formatted_address': address,
+                    'source': 'google-or-arcgis',
                 })
-
-            return JsonResponse({'error': f"Geocode falhou: Google({result.get('status')}) e Fallback falharam."}, status=400)
+            return JsonResponse({'error': 'Não foi possível localizar o endereço.'}, status=404)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
 

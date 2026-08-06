@@ -11,11 +11,15 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
 import os
+import ast
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Local Vercel credentials are stored outside version control. Load them before
+# the conventional .env so local development matches the deployed project.
+load_dotenv(BASE_DIR / '.env.local')
 load_dotenv(BASE_DIR / '.env')
 
 
@@ -23,7 +27,7 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-development-key-change-me')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or 'unsafe-development-key-change-me'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in {'1', 'true', 'yes'}
@@ -136,11 +140,7 @@ STORAGES = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": (
-            "django.contrib.staticfiles.storage.StaticFilesStorage"
-            if os.getenv("VERCEL")
-            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        ),
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
 
@@ -157,11 +157,40 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Supabase Configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
+legacy_values = {}
+
+# Compatibilidade local: instalações anteriores guardavam as credenciais no
+# settings-VANESSA.py (arquivo ignorado pelo Git). Use-o apenas quando as
+# variáveis locais/da hospedagem estiverem vazias.
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    legacy_settings_paths = [
+        BASE_DIR.parent / 'DASHBOARD_REGIT' / 'ColorAdmin' / 'settings.py',
+        BASE_DIR / 'ColorAdmin' / 'settings-VANESSA.py',
+    ]
+    for legacy_settings_path in legacy_settings_paths:
+        if not legacy_settings_path.exists():
+            continue
+        legacy_tree = ast.parse(legacy_settings_path.read_text(encoding='utf-8-sig'))
+        for node in legacy_tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_MAPS_API_KEY'}
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                legacy_values.setdefault(node.targets[0].id, node.value.value)
+        SUPABASE_URL = SUPABASE_URL or legacy_values.get('SUPABASE_URL', '')
+        SUPABASE_SERVICE_ROLE_KEY = (
+            SUPABASE_SERVICE_ROLE_KEY
+            or legacy_values.get('SUPABASE_SERVICE_ROLE_KEY', '')
+        )
 SUPABASE_TABLE_VISITAS = 'visitas_lancamentos'
 SUPABASE_TABLE_VISITAS_IRMANDADE = 'visitas_irmandade'
 SUPABASE_TABLE_VISITAS_AGENDA = 'visitas_agenda'
 
 # External API Keys
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY') or legacy_values.get('GOOGLE_MAPS_API_KEY', '')
 
 WHITENOISE_MANIFEST_STRICT = False

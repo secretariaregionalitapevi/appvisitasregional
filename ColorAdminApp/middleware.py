@@ -12,7 +12,7 @@ class SupabaseAuthMiddleware:
         # Using hardcoded paths to avoid NoReverseMatch errors during template rendering/middleware execution
         exempt_paths = [
             '/user/login-v1',
-            '/user/register-v3',
+            '/user/cadastro',
             '/api/auth/',
             '/static/',
         ]

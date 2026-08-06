@@ -1,10 +1,12 @@
+import json
 from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, TestCase
 
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data
-from .views import apiRoteiroBairros, apiVisitasEquipes, apiVisitasIrmandade
+from .views import apiRoteiroBairros, apiVisitasEquipes, apiVisitasIrmandade, visitasAgenda, visitasCadastro, visitasMapa
+from .utils.routing import limit_daily_route, optimize_route, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -71,16 +73,129 @@ class IntelligentRouteTests(TestCase):
         return request
 
     @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    @patch("ColorAdminApp.access_control.common_catalog", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
     @patch("ColorAdminApp.utils.routing.discover_nearby_neighborhoods", return_value=[{"nome": "Centro", "quantidade": 3, "distancia_metros": 450}])
-    def test_neighborhoods_are_returned_for_common_in_scope(self, _discover, _commons):
+    def test_neighborhoods_are_returned_for_common_in_scope(self, _discover, _catalog, _commons):
         response = apiRoteiroBairros(self.request("COMUM A"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Centro")
 
     @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
-    def test_neighborhoods_reject_common_outside_scope(self, _commons):
+    @patch("ColorAdminApp.access_control.common_catalog", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    def test_neighborhoods_reject_common_outside_scope(self, _catalog, _commons):
         response = apiRoteiroBairros(self.request("COMUM B"))
         self.assertEqual(response.status_code, 403)
+
+    def test_route_finishes_neighborhood_before_starting_another(self):
+        visits = [
+            {"titulo": "Casa A 20", "setor": "Bairro A", "endereco_visitado": "[-23.5383, -46.9265] Rua Um, 20"},
+            {"titulo": "Casa B", "setor": "Bairro B", "endereco_visitado": "[-23.6000, -47.0000] Rua Dois, 5"},
+            {"titulo": "Casa A 10", "setor": "Bairro A", "endereco_visitado": "[-23.5384, -46.9266] Rua Um, 10"},
+        ]
+        route = optimize_route(visits)
+        self.assertEqual([item["setor"] for item in route], ["Bairro A", "Bairro A", "Bairro B"])
+
+    def test_same_street_stays_together_and_numbers_are_sequential(self):
+        visits = [
+            {"titulo": "N 30", "setor": "Centro", "endereco_visitado": "[-23.5403, -46.9265] Rua das Flores, 30"},
+            {"titulo": "Outra", "setor": "Centro", "endereco_visitado": "[-23.5383, -46.9265] Rua Azul, 1"},
+            {"titulo": "N 10", "setor": "Centro", "endereco_visitado": "[-23.5401, -46.9265] Rua das Flores, 10"},
+            {"titulo": "N 20", "setor": "Centro", "endereco_visitado": "[-23.5402, -46.9265] Rua das Flores, 20"},
+        ]
+        route = optimize_route(visits)
+        flower_positions = [index for index, item in enumerate(route) if street_key(item) == "RUA DAS FLORES"]
+        self.assertEqual(flower_positions, list(range(min(flower_positions), max(flower_positions) + 1)))
+        self.assertEqual(
+            [route[index]["endereco_visitado"] for index in flower_positions],
+            [
+                "[-23.5401, -46.9265] Rua das Flores, 10",
+                "[-23.5402, -46.9265] Rua das Flores, 20",
+                "[-23.5403, -46.9265] Rua das Flores, 30",
+            ],
+        )
+
+    def test_printed_route_is_limited_to_five_visits_per_shift(self):
+        morning = [{"id": f"m-{index}"} for index in range(8)]
+        afternoon = [{"id": f"t-{index}"} for index in range(8)]
+        route = limit_daily_route(morning, afternoon)
+        self.assertEqual(len(route), 10)
+        self.assertEqual([item["id"] for item in route[:5]], [f"m-{index}" for index in range(5)])
+        self.assertEqual([item["id"] for item in route[5:]], [f"t-{index}" for index in range(5)])
+
+
+class MapScopeFilterTests(TestCase):
+    commons = [
+        {"comum": "COMUM A", "cidade": "ITAPEVI"},
+        {"comum": "COMUM B", "cidade": "ITAPEVI"},
+        {"comum": "COMUM C", "cidade": "JANDIRA"},
+    ]
+
+    def map_request(self, role_id, comum="COMUM A", municipio="ITAPEVI"):
+        request = RequestFactory().get("/visitas/mapa/")
+        request.session = {"user_profile": {
+            "role_id": role_id, "role": "USUARIO", "comum": comum, "municipio": municipio,
+        }}
+        return request
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    def test_local_map_has_no_scope_selectors(self, _commons):
+        response = visitasMapa(self.map_request(4))
+        self.assertNotContains(response, 'id="map-municipio-filter"')
+        self.assertNotContains(response, 'id="map-common-filter"')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons[:2])
+    def test_municipal_map_only_has_common_selector(self, _commons):
+        response = visitasMapa(self.map_request(3))
+        self.assertNotContains(response, 'id="map-municipio-filter"')
+        self.assertContains(response, 'id="map-common-filter"')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons)
+    def test_regional_map_has_municipality_and_common_selectors(self, _commons):
+        response = visitasMapa(self.map_request(2, comum="", municipio=""))
+        self.assertContains(response, 'id="map-municipio-filter"')
+        self.assertContains(response, 'id="map-common-filter"')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons[:2])
+    def test_members_api_rejects_common_outside_municipal_scope(self, _commons):
+        request = RequestFactory().get("/visitas/api/irmandade/", {"comum": "COMUM C"})
+        request.session = {"user_profile": {
+            "role_id": 3, "role": "USUARIO", "comum": "COMUM A", "municipio": "ITAPEVI",
+        }}
+        response = apiVisitasIrmandade(request)
+        self.assertEqual(response.status_code, 403)
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons)
+    def test_regional_registration_has_municipality_and_searchable_common(self, _commons):
+        response = visitasCadastro(self.map_request(2, comum="", municipio=""))
+        self.assertContains(response, 'id="cadastro-municipio-filter"')
+        self.assertContains(response, 'id="cadastro-common-filter"')
+        self.assertContains(response, 'change.cadastroScope')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons[:2])
+    def test_municipal_registration_has_fixed_city_and_common_filter(self, _commons):
+        response = visitasCadastro(self.map_request(3))
+        self.assertNotContains(response, 'id="cadastro-municipio-filter"')
+        self.assertContains(response, 'id="cadastro-common-filter"')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[commons[0]])
+    def test_local_registration_uses_own_common_without_scope_filters(self, _commons):
+        response = visitasCadastro(self.map_request(4))
+        self.assertNotContains(response, 'id="cadastro-municipio-filter"')
+        self.assertNotContains(response, 'id="cadastro-common-filter"')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=commons)
+    def test_regional_calendar_has_hierarchical_searchable_filters(self, _commons):
+        response = visitasAgenda(self.map_request(2, comum="", municipio=""))
+        self.assertContains(response, 'id="agenda-municipio-filter"')
+        self.assertContains(response, 'id="agenda-comum-filter"')
+        self.assertContains(response, "dayMaxEvents: 4")
+        self.assertContains(response, "moreLinkClick: 'popover'")
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[commons[0]])
+    def test_local_calendar_uses_own_common_without_filters(self, _commons):
+        response = visitasAgenda(self.map_request(4))
+        self.assertNotContains(response, 'id="agenda-municipio-filter"')
+        self.assertNotContains(response, 'id="agenda-comum-filter"')
 
 
 class VisitTeamsTests(TestCase):
@@ -90,9 +205,9 @@ class VisitTeamsTests(TestCase):
         get.return_value = Mock(status_code=200)
         get.return_value.json.return_value = [{
             "id": "1", "nome": "Rodrigo", "comum": "COMUM A",
-            "status": "Ativo", "equipe_visita": None, "cargo_outros": "Grupo de Visitas",
+            "status": "Ativo", "equipe_visita": None, "cargo_outros": "",
         }]
-        request = RequestFactory().get("/visitas/api/equipes/?modo=membros&busca=Rodrigo")
+        request = RequestFactory().get("/visitas/api/equipes/?modo=membros&elegiveis=true&comum=COMUM A")
         request.session = {"user_profile": {"role_id": 4, "comum": "COMUM A", "municipio": "ITAPEVI"}}
         response = apiVisitasEquipes(request)
         self.assertEqual(response.status_code, 200)
@@ -114,10 +229,66 @@ class VisitTeamsTests(TestCase):
         request.session = {"user_id": "user-1", "user_profile": {"role_id": 4, "comum": "COMUM A", "municipio": "ITAPEVI"}}
         response = apiVisitasEquipes(request)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(patch_request.call_args.kwargs["json"], {"equipe_visita": "Equipe 01"})
+        self.assertEqual(patch_request.call_args.kwargs["json"], {
+            "equipe_visita": "Equipe 01", "cargo_outros": "Grupo de Visitas",
+        })
 
 
 class BrotherhoodUpdateTests(TestCase):
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_smart_import_preserves_existing_and_deduplicates_file(self, get, post, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{"nome": "José da Silva", "comum": "COMUM A"}]
+        post.return_value = Mock(status_code=201)
+        post.return_value.json.return_value = [{"id": "new-1"}]
+        payload = [
+            {"nome": "Jose da Silva", "comum": "COMUM A"},
+            {"nome": "Ana Souza", "comum": "COMUM A"},
+            {"nome": "  ANA   SOUZA ", "comum": "COMUM A"},
+        ]
+        request = RequestFactory().post("/visitas/api/irmandade/?smart=1", data=payload, content_type="application/json")
+        request.session = {"user_profile": {"role_id": 1}}
+        response = apiVisitasIrmandade(request)
+        result = json.loads(response.content)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result, {"created": 1, "skipped": 2, "smart_import": True})
+        self.assertEqual(len(post.call_args.kwargs["json"]), 1)
+        self.assertEqual(post.call_args.kwargs["json"][0]["nome"], "Ana Souza")
+
+    @patch("ColorAdminApp.views.requests.get")
+    def test_export_reads_all_supabase_pages(self, get):
+        first = Mock(status_code=206)
+        first.json.return_value = [{"id": str(index), "nome": f"Membro {index}", "comum": "COMUM A"} for index in range(1000)]
+        second = Mock(status_code=200)
+        second.json.return_value = [{"id": "1000", "nome": "Membro 1000", "comum": "COMUM A"}]
+        get.side_effect = [first, second]
+        request = RequestFactory().get("/visitas/api/irmandade/?export=1")
+        request.session = {"user_profile": {"role_id": 1}}
+        response = apiVisitasIrmandade(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(json.loads(response.content)), 1001)
+        self.assertEqual(get.call_count, 2)
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.post")
+    def test_bulk_import_accepts_a_valid_batch(self, post, _audit):
+        post.return_value = Mock(status_code=201)
+        post.return_value.json.return_value = [{"id": "1"}, {"id": "2"}]
+        payload = [
+            {"nome": "Maria", "comum": "COMUM A", "cargo_outros": "Organista", "id_chefe_familia": ""},
+            {"nome": "João", "comum": "COMUM B", "cargo_outros": "Músico"},
+        ]
+        request = RequestFactory().post("/visitas/api/irmandade/", data=payload, content_type="application/json")
+        request.session = {"user_profile": {"role_id": 1}}
+        response = apiVisitasIrmandade(request)
+        self.assertEqual(response.status_code, 200)
+        sent = post.call_args.kwargs["json"]
+        self.assertIsNone(sent[0]["id_chefe_familia"])
+        self.assertIsNone(sent[1]["id_chefe_familia"])
+        self.assertEqual(set(sent[0]), set(sent[1]))
+
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.patch")
     @patch("ColorAdminApp.views.requests.get")

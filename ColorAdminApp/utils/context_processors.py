@@ -182,7 +182,7 @@ def sidebar_menu(request):
 			{ 'url': '/user/login-v1', 'title': 'Login', 'name': 'userLoginV1' },
 			{ 'url': '/user/login-v2', 'title': 'Login v2', 'name': 'userLoginV2' },
 			{ 'url': '/user/login-v3', 'title': 'Login v3', 'name': 'userLoginV3' },
-			{ 'url': '/user/register-v3', 'title': 'Register v3', 'name': 'userRegisterV3' }
+			{ 'url': '/user/cadastro', 'title': 'Cadastro', 'name': 'cadastro' }
 		]
 	},
 	{ 'url': '/helper', 'icon': 'fa fa-medkit', 'title': 'Helper',

@@ -13,11 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function alerta(message, type = 'danger') { $('#equipes-alerta').innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`; }
-  function filtrarComuns(select, municipio, manter = '') {
-    Array.from(select.options).forEach((item, index) => { if (index) item.hidden = Boolean(municipio && item.dataset.municipio !== municipio); });
-    select.value = manter || ''; if (select.selectedOptions[0]?.hidden) select.value = '';
+  function toast(message, icon = 'success') {
+    const element = $('#equipes-toast');
+    $('#equipes-toast-message').textContent = message;
+    element.classList.toggle('border-danger', icon === 'error');
+    element.classList.toggle('border-success', icon !== 'error');
+    return bootstrap.Toast.getOrCreateInstance(element, { delay: 3200 }).show();
   }
-
   function configurarPesquisaComum(municipio, manter = '') {
     const select = $('#filtro-comum'), $select = jQuery(select);
     if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
@@ -29,6 +31,19 @@ document.addEventListener('DOMContentLoaded', () => {
     select.value = filtroComumCatalogo.some((item) => item.value === manter && (!municipio || item.municipio === municipio)) ? manter : '';
     $select.select2({width:'100%', language:'pt-BR', placeholder:'Pesquise a comum...', allowClear:true, dropdownParent:jQuery('.equipes-comum-filtro')});
     $select.off('select2:select.equipes select2:clear.equipes').on('select2:select.equipes select2:clear.equipes', () => carregar($('#filtro-texto').value.trim()));
+  }
+
+  function configurarPesquisaComumModal(municipio, manter = '') {
+    const select = $('#equipe-comum'), $select = jQuery(select);
+    if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+    select.replaceChildren();
+    const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Selecione...'; select.append(placeholder);
+    filtroComumCatalogo.filter((item) => !municipio || item.municipio === municipio).forEach((item) => {
+      const option = document.createElement('option'); option.value = item.value; option.textContent = item.value; select.append(option);
+    });
+    select.value = filtroComumCatalogo.some((item) => item.value === manter && (!municipio || item.municipio === municipio)) ? manter : '';
+    $select.select2({width:'100%', language:'pt-BR', placeholder:'Digite o código ou nome da comum...', allowClear:true, dropdownParent:jQuery('#equipe-modal')});
+    $select.off('change.equipesModal').on('change.equipesModal', () => carregarMembros(select.value));
   }
 
   function achatar(grupos) {
@@ -90,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function abrir(item = null) {
     $('#equipe-form').reset(); $('#equipe-municipio').value = item?.municipio || '';
-    filtrarComuns($('#equipe-comum'), $('#equipe-municipio').value, item?.comum || '');
+    configurarPesquisaComumModal($('#equipe-municipio').value, item?.comum || '');
     $('#equipe-nome').value = item?.equipe || '';
     await carregarMembros(item?.comum || '', item?.id || ''); modal.show();
   }
@@ -103,14 +118,40 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(buscaTimer);
     buscaTimer = setTimeout(() => carregar(event.target.value.trim()), 300);
   });
-  $('#equipe-municipio').addEventListener('change', () => { filtrarComuns($('#equipe-comum'), $('#equipe-municipio').value); carregarMembros(''); });
-  $('#equipe-comum').addEventListener('change', (event) => carregarMembros(event.target.value));
+  $('#equipe-municipio').addEventListener('change', () => { configurarPesquisaComumModal($('#equipe-municipio').value); carregarMembros(''); });
   $('#equipes-lista').addEventListener('click', async (event) => {
     const edit = event.target.closest('.editar'), remove = event.target.closest('.remover');
     if (edit) abrir(state.atribuicoes.find((item) => item.id === edit.dataset.id));
-    if (remove && confirm('Remover este membro da equipe?')) {
-      const response = await fetch(`/visitas/api/equipes/?id=${remove.dataset.id}`, {method:'DELETE', headers:{'X-CSRFToken':csrf()}});
-      const payload = await response.json(); if (!response.ok) return alerta(payload.error || 'Falha ao remover.'); alerta('Membro removido da equipe.', 'success'); carregar($('#filtro-texto').value.trim());
+    if (remove) {
+      const membro = state.atribuicoes.find((item) => item.id === remove.dataset.id);
+      const confirmacao = await swal({
+        icon: 'warning',
+        title: 'Desvincular da equipe?',
+        text: `${membro?.nome || 'Este membro'} deixará de fazer parte da ${membro?.equipe || 'equipe atual'}.`,
+        buttons: {
+          cancel: { text: 'Manter na equipe', visible: true, value: false },
+          confirm: { text: 'Desvincular', visible: true, value: true, closeModal: true },
+        },
+        dangerMode: true,
+      });
+      if (!confirmacao) return;
+
+      try {
+        remove.disabled = true;
+        const response = await fetch(`/visitas/api/equipes/?id=${remove.dataset.id}`, {method:'DELETE', headers:{'X-CSRFToken':csrf()}});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Não foi possível desvincular o membro.');
+        await carregar($('#filtro-texto').value.trim());
+        toast(`${membro?.nome || 'Membro'} foi desvinculado da equipe.`);
+      } catch (error) {
+        remove.disabled = false;
+        swal({
+          icon: 'error',
+          title: 'Não foi possível desvincular',
+          text: error.message || 'Tente novamente em alguns instantes.',
+          button: 'Entendi',
+        });
+      }
     }
   });
   $('#equipe-form').addEventListener('submit', async (event) => {

@@ -141,6 +141,11 @@
             <span class="badge bg-dark fs-14px py-2 px-3"><i class="fa fa-calendar me-1"></i> {{ data|default:"Data não especificada" }}</span>
             {% if bairro %}<span class="badge bg-warning text-dark fs-14px py-2 px-3"><i class="fa fa-location-dot me-1"></i> {{ bairro }}</span>{% endif %}
         </div>
+        <p class="small text-muted mt-3 mb-0">
+            <i class="fa fa-clock me-1"></i>
+            Referência operacional: 5 visitas pela manhã e 5 visitas à tarde.
+            A quantidade pode ser ajustada para manter o mesmo bairro e a mesma rua com uma única equipe.
+        </p>
     </div>
 
     {% if error %}
@@ -157,9 +162,9 @@
         {% for visit in roteiro %}
             
             {% if forloop.counter == 1 %}
-                <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã (Visitas 1 a 5)</div>
+                <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã — referência de 5 visitas</div>
             {% elif forloop.counter == 6 %}
-                <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde (Visitas 6 a 10)</div>
+                <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde — referência de 5 visitas</div>
             {% endif %}
 
             <div class="visit-card">

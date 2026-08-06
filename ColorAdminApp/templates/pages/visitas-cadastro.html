@@ -7,7 +7,37 @@
 	<link href="{% static 'plugins/datatables.net-bs5/css/dataTables.bootstrap5.min.css' %}" rel="stylesheet" />
 	<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <style>
-        .filter-section { background: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .filter-section { background: #fff; padding: 20px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            width: 100%;
+            padding-top: 0;
+            margin-top: 0;
+            border-top: 0;
+        }
+        .filter-actions .btn { min-height: 36px; white-space: nowrap; border-radius: 5px !important; padding-left: 11px !important; padding-right: 11px !important; }
+        .filter-actions .btn-primary { margin-left: 0; }
+        .filter-period .form-control { min-width: 135px; }
+        @media (max-width: 1199.98px) {
+            .filter-actions { justify-content: flex-start; padding-top: 14px; margin-top: 2px; border-top: 1px solid #e9ecef; }
+            .filter-actions .btn-primary { margin-left: 0; }
+        }
+        @media (max-width: 575.98px) {
+            .filter-section { padding: 14px !important; }
+            .filter-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+            .filter-actions .btn { width: 100%; padding-left: 8px !important; padding-right: 8px !important; }
+            .filter-actions .btn-primary { grid-column: 1 / -1; grid-row: 1; }
+            .filter-period { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; }
+            .filter-period .input-group-text:first-child { display: flex; border: 1px solid #d5dbe0 !important; border-radius: 5px; }
+            .filter-period .form-control { min-width: 0; width: 100%; border-radius: 5px !important; }
+            .filter-period .period-separator { display: none; }
+            .page-header { font-size: 20px; }
+            .kpi-card:hover { transform: none; }
+        }
         .executive-summary { border-left: 4px solid #2d353c; background: #f8f9fa; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
         .kpi-card { border: none; border-radius: 4px; transition: transform 0.2s; position: relative; overflow: hidden; }
         .kpi-card:hover { transform: translateY(-5px); }
@@ -152,43 +182,39 @@
 	<h1 class="page-header mb-3">Relatórios e Filtros Rápidos</h1>
 
     <!-- FILTROS (LAYOUT DASHBOARD) -->
+    {{ cadastro_comuns|json_script:"cadastro-commons-data" }}
     <div class="filter-section p-3 bg-white shadow-sm mb-4">
         <div class="row g-3 align-items-end">
-            <div class="col-md-1">
-                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Ano</label>
-                <select class="form-select border-gray-300 shadow-none" id="filter-ano">
-                    <option value="2026" selected>2026</option>
+            {% if cadastro_access_level == 'regional' or cadastro_access_level == 'global' %}
+            <div class="col-12 col-md-4 col-xl-3">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Município</label>
+                <select class="form-select border-gray-300 shadow-none" id="cadastro-municipio-filter">
+                    <option value="">Selecione o município...</option>
+                    {% for municipio in cadastro_municipios %}<option value="{{ municipio }}">{{ municipio }}</option>{% endfor %}
                 </select>
             </div>
-            <div class="col-md-1">
-                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Mês</label>
-                <select class="form-select border-gray-300 shadow-none" id="filter-mes">
-                    <option value="all">Sempre</option>
-                    <option value="4" selected>Abril</option>
-                </select>
+            {% elif cadastro_access_level == 'municipal' %}
+            <div class="col-12 col-md-4 col-xl-3">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Município</label>
+                <input class="form-control border-gray-300 bg-light" value="{{ cadastro_municipio_padrao }}" readonly>
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Período</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-gray-300"><i class="fa fa-calendar-alt"></i></span>
-                    <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-de">
-                    <span class="input-group-text bg-white border-0 shadow-none small px-1">até</span>
-                    <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate">
-                </div>
+            {% endif %}
+            {% if cadastro_access_level != 'local' %}
+            <div class="col-12 col-md-8 col-xl-4">
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Comum</label>
+                <select class="form-select border-gray-300 shadow-none" id="cadastro-common-filter"></select>
             </div>
-            <div class="col-md-2">
-                <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size: 10px;">Localidade</label>
-                <input type="text" class="form-control border-gray-300 shadow-none" id="filter-comum" placeholder="Igreja ou Comum...">
-            </div>
-            <div class="col-md-5 text-end">
-                <div class="btn-group me-2">
+            {% endif %}
+            <div class="col-12 col-xl-5 ms-xl-auto">
+                <div class="filter-actions">
                     <button class="btn btn-white border-gray-400 px-3" onclick="loadContent()"><i class="fa fa-sync-alt text-primary me-1"></i> Atualizar</button>
                     <button class="btn btn-white border-gray-400 px-3" onclick="exportExcel()"><i class="fa fa-file-excel text-success me-1"></i> Excel</button>
                     <button class="btn btn-white border-gray-400 px-3" onclick="exportPDF()"><i class="fa fa-file-pdf text-danger me-1"></i> PDF</button>
                     <button class="btn btn-white border-gray-400 px-3" onclick="importCSV()"><i class="fa fa-upload text-indigo me-1"></i> Importar</button>
+                    <input type="file" id="import-file" class="d-none" accept=".xlsx,.xls,.csv" onchange="processImport(this.files[0])">
                     <button class="btn btn-white border-gray-400 px-3" onclick="location.reload()"><i class="fa fa-eraser text-dark me-1"></i> Limpar</button>
+                    <button class="btn btn-primary px-3 fw-bold" onclick="openModalCadastro()"><i class="fa fa-plus me-1"></i> Novo Registro</button>
                 </div>
-                <button class="btn btn-primary px-3 fw-bold" onclick="openModalCadastro()"><i class="fa fa-plus me-1"></i> Novo Registro</button>
             </div>
         </div>
     </div>
@@ -337,17 +363,21 @@
                                     <option value="Dorme no Senhor">Dorme no Senhor</option>
                                 </select>
                             </div>
-                            <div class="col-md-5">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">LOCALIDADE (COMUM)</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-comum" value="{{ request.session.user_profile.comum|default:'' }}" required>
                             </div>
-							<div class="col-md-4">
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">CIDADE</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-cidade" placeholder="Ex: Itapevi" value="{{ cadastro_municipio_padrao }}" required>
+                            </div>
+							<div class="col-md-3">
                                 <label class="form-label fw-bold small">SETOR / BAIRRO</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-setor" placeholder="Ex: Setor 1 ou Jardim Rosemeire">
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label class="form-label fw-bold small">CELULAR DE CONTATO</label>
-                                <input type="tel" class="form-control border-0 bg-light" id="irm-celular" placeholder="(11) 99999-9999" maxlength="15" inputmode="numeric" autocomplete="tel">
+                                <input type="tel" class="form-control border-0 bg-light" id="irm-celular" placeholder="(11) 9 1234-5678" maxlength="16" inputmode="numeric" autocomplete="tel">
                             </div>
                             <div class="col-md-8">
                                 <label class="form-label fw-bold small text-primary"><i class="fa fa-map-marker-alt me-1"></i> ENDEREÇO RESIDENCIAL COMPLETO</label>
@@ -452,14 +482,29 @@
         const userName = '{{ request.session.user_profile.full_name|default:"Usuário do Sistema"|escapejs }}';
         let irmandadeData = [];
         let agendaData = [];
+        const CADASTRO_ACCESS_LEVEL = '{{ cadastro_access_level|escapejs }}';
+        const CADASTRO_DEFAULT_COMMON = '{{ cadastro_comum_padrao|escapejs }}';
+        const CADASTRO_DEFAULT_CITY = '{{ cadastro_municipio_padrao|escapejs }}';
+        const CADASTRO_COMMONS = JSON.parse(document.getElementById('cadastro-commons-data')?.textContent || '[]');
+        let cadastroSelectedCity = ['regional', 'global'].includes(CADASTRO_ACCESS_LEVEL) ? '' : CADASTRO_DEFAULT_CITY;
+        let cadastroSelectedCommon = ['regional', 'global'].includes(CADASTRO_ACCESS_LEVEL) ? '' : CADASTRO_DEFAULT_COMMON;
 
         // Inicialização Profissional
         const loadContent = async () => {
             moment.locale('pt-br');
+            if (!cadastroSelectedCommon) {
+                irmandadeData = [];
+                agendaData = [];
+                updateWidgets([]);
+                updateSelects();
+                renderItems([]);
+                $('#exec-text').html('<b>Selecione uma comum</b> para visualizar os membros cadastrados.');
+                return;
+            }
             try {
                 const [resIrm, resAge] = await Promise.all([
-                    fetch(`/visitas/api/irmandade/`),
-                    fetch(`/visitas/api/agenda/`)
+                    fetch(`/visitas/api/irmandade/?comum=${encodeURIComponent(cadastroSelectedCommon)}`),
+                    fetch(`/visitas/api/agenda/?comum=${encodeURIComponent(cadastroSelectedCommon)}`)
                 ]);
                 
                 irmandadeData = await resIrm.json();
@@ -473,7 +518,60 @@
             }
         };
 
-        const exportExcel = () => {
+        const EXPORT_COLUMNS = [
+            ['nome', 'Nome completo'], ['comum', 'Comum'], ['codigo_comum', 'Código da comum'], ['cidade', 'Cidade'], ['status', 'Status'],
+            ['cargo_ministerio', 'Cargo / Ministério'], ['setor', 'Bairro / Setor'], ['endereco_limpo', 'Endereço'],
+            ['complemento', 'Complemento'], ['cep', 'CEP'], ['latitude', 'Latitude'], ['longitude', 'Longitude'],
+            ['celular_formatado', 'Celular'], ['ultima_visita', 'Última visita'],
+            ['frequencia_visita', 'Frequência de visita'], ['data_nascimento', 'Data de nascimento'],
+            ['data_batismo', 'Data de batismo'], ['data_inicio_ensaios', 'Início nos ensaios'],
+            ['data_culto_oficial', 'Culto oficial'], ['data_oficializacao', 'Oficialização'], ['familia', 'Família'],
+            ['id_chefe_familia', 'ID chefe da família'], ['vinculo_tipo', 'Vínculo familiar'], ['categoria', 'Categoria'],
+            ['equipe_visita', 'Equipe de visita'], ['observacoes', 'Observações'],
+            ['referencia_geografica', 'Referência geográfica'], ['url_foto', 'URL da foto'],
+            ['origem_registro', 'Origem do registro'], ['data_cadastro', 'Data do cadastro'],
+            ['created_at', 'Data do registro'], ['updated_at', 'Data da atualização'], ['id', 'ID do sistema']
+        ];
+        const cargoMinisterio = item => {
+            const values = (item.cargo_outros || '').split(',').map(v => v.trim()).filter(Boolean);
+            [['perfil_musico','Músico'],['cargo_organista','Organista'],['perfil_mocidade','Mocidade'],['perfil_enfermo','Enfermo'],['cargo_porteiro','Porteiro'],['cargo_auxiliar_porta','Auxiliar da Porta'],['cargo_cozinha','Cozinha'],['cargo_limpeza','Limpeza']].forEach(([key,label]) => { if (item[key]) values.push(label); });
+            return [...new Set(values)].join(', ') || '-';
+        };
+        const formatCellPhone = value => {
+            let digits = String(value || '').replace(/\D/g, '');
+            if (digits.length === 13 && digits.startsWith('55')) digits = digits.slice(2);
+            if (digits.length === 11) return `(${digits.slice(0,2)}) ${digits[2]} ${digits.slice(3,7)}-${digits.slice(7)}`;
+            if (digits.length === 10) return `(${digits.slice(0,2)}) ${digits.slice(2,6)}-${digits.slice(6)}`;
+            return digits;
+        };
+        const formatBrazilianDateTime = value => value && moment(value).isValid() ? moment(value).format('DD/MM/YYYY HH:mm') : (value || '');
+        const formatBrazilianDate = value => value && moment(value).isValid() ? moment(value).format('DD/MM/YYYY') : (value || '');
+        const exportRecord = item => {
+            const match = String(item.endereco || '').match(/^\[\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\]\s*(.*)$/);
+            const commonCode = String(item.codigo_comum || item.comum || '').toUpperCase().match(/BR-\d{2}-\d{3,4}/)?.[0] || '';
+            return {...item,
+                codigo_comum: commonCode,
+                cargo_ministerio: cargoMinisterio(item),
+                celular_formatado: formatCellPhone(item.celular || item.telefone),
+                latitude: match ? Number(match[1]) : '', longitude: match ? Number(match[2]) : '',
+                endereco_limpo: match ? match[3] : (item.endereco || ''),
+                ultima_visita: formatBrazilianDateTime(item.ultima_visita),
+                data_nascimento: formatBrazilianDate(item.data_nascimento), data_batismo: formatBrazilianDate(item.data_batismo),
+                data_inicio_ensaios: formatBrazilianDate(item.data_inicio_ensaios), data_culto_oficial: formatBrazilianDate(item.data_culto_oficial),
+                data_oficializacao: formatBrazilianDate(item.data_oficializacao),
+                data_cadastro: formatBrazilianDateTime(item.data_cadastro), created_at: formatBrazilianDateTime(item.created_at),
+                updated_at: formatBrazilianDateTime(item.updated_at)
+            };
+        };
+        const getAllExportRecords = async () => {
+            if (!cadastroSelectedCommon) throw new Error('Selecione uma comum antes de exportar.');
+            const response = await fetch(`/visitas/api/irmandade/?export=1&comum=${encodeURIComponent(cadastroSelectedCommon)}`);
+            const data = await response.json();
+            if (!response.ok || !Array.isArray(data)) throw new Error(data.error || 'Não foi possível carregar os registros.');
+            return data.map(exportRecord);
+        };
+
+        const exportExcel = async () => {
             const dataDe = $('#peridodo-de').val();
             const dataAte = $('#peridodo-ate').val();
             const periodText = dataDe && dataAte ? `${moment(dataDe).format('DD/MM/YYYY')} a ${moment(dataAte).format('DD/MM/YYYY')}` : 'Todos os registros';
@@ -490,14 +588,11 @@
                 ['Membro', 'Localidade', 'Cargos / Ministério', 'Status']
             ];
 
-            irmandadeData.forEach(i => {
-                rows.push([
-                    i.nome,
-                    i.comum || 'Comum nao informada',
-                    i.cargos || '-',
-                    i.status || 'Ativo'
-                ]);
-            });
+            try {
+                Swal.fire({title: 'Preparando Excel...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+                const records = await getAllExportRecords();
+                rows[8] = EXPORT_COLUMNS.map(([, label]) => label);
+                records.forEach(item => rows.push(EXPORT_COLUMNS.map(([key]) => item[key] ?? '')));
 
             const ws = XLSX.utils.aoa_to_sheet(rows);
             
@@ -514,13 +609,17 @@
                 }
             }
 
-            ws['!cols'] = [ { wch: 40 }, { wch: 30 }, { wch: 40 }, { wch: 15 } ];
+            ws['!cols'] = EXPORT_COLUMNS.map(([, label]) => ({wch: Math.min(45, Math.max(14, label.length + 3))}));
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Irmandade");
             XLSX.writeFile(wb, "Cadastro_Irmandade.xlsx");
+                Swal.close();
+            } catch (error) {
+                Swal.fire('Erro na exportação', error.message, 'error');
+            }
         };
 
-        const exportPDF = () => {
+        const exportPDF = async () => {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -557,11 +656,19 @@
             doc.setTextColor(100, 100, 100);
             doc.text(`${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`, pageWidth - 14, 29, { align: 'right' });
 
-            const headers = [["Membro", "Localidade", "Cargos / Ministério", "Status"]];
-            const tableData = irmandadeData.map(i => [
+            Swal.fire({title: 'Preparando PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            let pdfRecords;
+            try { pdfRecords = await getAllExportRecords(); } catch (error) {
+                return Swal.fire('Erro na exportação', error.message, 'error');
+            }
+            Swal.close();
+            const headers = [["Membro", "Comum", "Cargo / Ministério", "Celular", "Última visita", "Status"]];
+            const tableData = pdfRecords.map(i => [
                 i.nome,
                 i.comum || 'Comum nao informada',
-                i.cargos || '-',
+                i.cargo_ministerio,
+                i.celular_formatado || '-',
+                i.ultima_visita || '-',
                 i.status || 'Ativo'
             ]);
 
@@ -579,6 +686,129 @@
             });
 
             doc.save("Cadastro_Irmandade.pdf");
+        };
+
+        const MATRIX_COLUMNS = [
+            ['nome','Nome completo'], ['comum','Comum'], ['codigo_comum','Código da comum'], ['cidade','Cidade'], ['status','Status'],
+            ['cargo_outros','Cargo / Ministério'], ['setor','Bairro / Setor'], ['endereco','Endereço'],
+            ['complemento','Complemento'], ['cep','CEP'], ['latitude','Latitude'], ['longitude','Longitude'],
+            ['celular','Celular'], ['ultima_visita','Última visita'],
+            ['frequencia_visita','Frequência de visita'], ['data_nascimento','Data de nascimento'],
+            ['data_batismo','Data de batismo'], ['data_inicio_ensaios','Início nos ensaios'],
+            ['data_culto_oficial','Culto oficial'], ['data_oficializacao','Oficialização'], ['familia','Família'],
+            ['id_chefe_familia','ID chefe da família'], ['vinculo_tipo','Vínculo familiar'], ['categoria','Categoria'],
+            ['equipe_visita','Equipe de visita'], ['observacoes','Observações'],
+            ['referencia_geografica','Referência geográfica'], ['url_foto','URL da foto']
+        ];
+        const downloadMatrix = () => {
+            const headers = MATRIX_COLUMNS.map(([, label]) => label);
+            const ws = XLSX.utils.aoa_to_sheet([headers]);
+            ws['!cols'] = headers.map(h => ({wch: Math.min(42, Math.max(16, h.length + 3))}));
+            const instructions = XLSX.utils.aoa_to_sheet([
+                ['PLANILHA MATRIZ - CADASTRO DA IRMANDADE'],
+                ['Preencha uma pessoa por linha. Não altere os títulos das colunas.'],
+                ['Nome completo e Comum são obrigatórios. Latitude e Longitude devem ser números decimais.'],
+                ['Cargo / Ministério: informe múltiplos cargos separados por vírgula.'],
+                ['Status sugeridos: Ativo ou Inativo. Datas: DD/MM/AAAA ou AAAA-MM-DD.'],
+                [],
+                ['EXEMPLOS DE PREENCHIMENTO'],
+                ['Campo', 'Exemplo'],
+                ['Comum', 'BR-22-0673 - VILA DOUTOR CARDOSO'],
+                ['Código da comum', 'BR-22-0673'],
+                ['Cidade', 'Itapevi'],
+                ['Celular', '(11) 9 1234-5678'],
+                ['Cargo / Ministério', 'Músico, Grupo de Visitas'],
+                ['Data', '06/08/2026']
+            ]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Cadastro');
+            XLSX.utils.book_append_sheet(wb, instructions, 'Instruções');
+            XLSX.writeFile(wb, 'Planilha_Matriz_Irmandade.xlsx');
+        };
+        const importCSV = () => { const input = document.getElementById('import-file'); input.value = ''; input.click(); };
+        const normalizeHeader = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const friendlyImportError = (result, start, end) => {
+            const raw = typeof result?.details === 'string' ? result.details : JSON.stringify(result?.details || result || {});
+            let parsed = {};
+            try { parsed = JSON.parse(raw); } catch (_) {}
+            const code = parsed.code || result?.code || '';
+            const message = String(parsed.message || result?.error || raw || '').toLowerCase();
+            const batch = `linhas ${start + 2} a ${end + 1}`;
+            if (code === '22P02' || message.includes('uuid')) return `Há um vínculo familiar inválido nas ${batch}. Deixe “ID chefe da família” vazio ou informe um ID válido do sistema.`;
+            if (code === '23505' || message.includes('duplicate')) return `Um ou mais membros das ${batch} já estão cadastrados. Revise possíveis duplicidades.`;
+            if (code === '23502' || message.includes('not-null')) return `Falta uma informação obrigatória nas ${batch}. Confira principalmente Nome completo e Comum.`;
+            if (code === 'PGRST102' || message.includes('object keys')) return `As linhas da planilha possuem estruturas diferentes nas ${batch}. O sistema já tentou uniformizá-las; atualize a página e repita a importação.`;
+            if (code === '22007' || message.includes('date')) return `Há uma data inválida nas ${batch}. Utilize o formato dd/mm/aaaa.`;
+            if (code === 'PGRST204' || message.includes('schema cache')) return 'A estrutura da planilha não corresponde à versão atual do sistema. Atualize a página e tente novamente.';
+            if (code === '42501' || message.includes('permission')) return 'Seu usuário não possui permissão para importar registros nessa localidade.';
+            return `Não foi possível importar as ${batch}. Revise os dados preenchidos e tente novamente.`;
+        };
+        const processImport = async file => {
+            if (!file) return;
+            try {
+                const workbook = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {defval:'', raw:false});
+                const headerMap = new Map(MATRIX_COLUMNS.map(([key,label]) => [normalizeHeader(label), key]));
+                const records = rows.map((row, rowIndex) => {
+                    const item = {};
+                    Object.entries(row).forEach(([header,value]) => { const key = headerMap.get(normalizeHeader(header)); if (key) item[key] = value; });
+                    const lat = String(item.latitude || '').replace(',', '.'); const lng = String(item.longitude || '').replace(',', '.');
+                    if ((lat && !lng) || (!lat && lng)) throw new Error(`Preencha Latitude e Longitude juntas na linha ${rowIndex + 2}.`);
+                    if (lat && lng) item.endereco = `[${lat}, ${lng}] ${item.endereco || ''}`;
+                    delete item.latitude; delete item.longitude;
+                    const code = String(item.codigo_comum || item.comum || '').toUpperCase().match(/BR-\d{2}-\d{3,4}/)?.[0] || '';
+                    item.codigo_comum = code;
+                    if (code && !String(item.comum || '').toUpperCase().startsWith(code)) item.comum = `${code} - ${item.comum || ''}`.trim();
+                    item.celular = formatCellPhone(item.celular);
+                    ['ultima_visita','data_nascimento','data_batismo','data_inicio_ensaios','data_culto_oficial','data_oficializacao'].forEach(key => {
+                        if (!item[key]) { delete item[key]; return; }
+                        const parsed = moment(item[key], ['DD/MM/YYYY','YYYY-MM-DD','DD-MM-YYYY'], true);
+                        if (!parsed.isValid()) throw new Error(`A data da coluna “${MATRIX_COLUMNS.find(([field]) => field === key)?.[1] || key}” está inválida na linha ${rowIndex + 2}. Use dd/mm/aaaa.`);
+                        item[key] = parsed.format('YYYY-MM-DD');
+                    });
+                    if (item.id_chefe_familia) {
+                        const familyId = String(item.id_chefe_familia).trim();
+                        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(familyId)) throw new Error(`O “ID chefe da família” está inválido na linha ${rowIndex + 2}. Deixe vazio ou copie um ID válido do sistema.`);
+                        item.id_chefe_familia = familyId;
+                    } else {
+                        delete item.id_chefe_familia;
+                    }
+                    const cargos = String(item.cargo_outros || '').split(',').map(value => value.trim()).filter(Boolean);
+                    const hasCargo = label => cargos.some(value => normalizeHeader(value) === normalizeHeader(label));
+                    item.perfil_musico = hasCargo('Músico'); item.cargo_organista = hasCargo('Organista');
+                    item.perfil_mocidade = hasCargo('Mocidade') || hasCargo('Auxiliar de Jovens') || hasCargo('Cooperador de Jovens');
+                    item.perfil_enfermo = hasCargo('Enfermo'); item.cargo_porteiro = hasCargo('Porteiro');
+                    item.cargo_auxiliar_porta = hasCargo('Auxiliar da Porta'); item.cargo_cozinha = hasCargo('Cozinha'); item.cargo_limpeza = hasCargo('Limpeza');
+                    item.status = item.status || 'Ativo'; item.cargo_outros = cargos.join(',');
+                    Object.keys(item).forEach(key => {
+                        if (typeof item[key] === 'string') item[key] = item[key].trim();
+                        if (item[key] === '') delete item[key];
+                    });
+                    return item;
+                }).filter(item => item.nome && item.comum);
+                if (!records.length) throw new Error('Nenhuma linha válida. Preencha ao menos Nome completo e Comum.');
+                const confirmation = await Swal.fire({
+                    icon:'question', title:`Sincronizar ${records.length} linhas?`,
+                    html:'O sistema cadastrará somente nomes novos.<br><small>Quem já estiver cadastrado na mesma comum será preservado sem alterações.</small>',
+                    showCancelButton:true, confirmButtonText:'Sincronizar planilha', cancelButtonText:'Cancelar'
+                });
+                if (!confirmation.isConfirmed) return;
+                let createdTotal = 0;
+                let skippedTotal = 0;
+                for (let start=0; start<records.length; start+=250) {
+                    Swal.fire({title:'Sincronizando...', text:`Analisando ${Math.min(start+250, records.length)} de ${records.length}`, allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
+                    const response = await fetch('/visitas/api/irmandade/?smart=1', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token }}'}, body:JSON.stringify(records.slice(start,start+250))});
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(friendlyImportError(result, start, Math.min(start + 250, records.length)));
+                    createdTotal += Number(result.created || 0);
+                    skippedTotal += Number(result.skipped || 0);
+                }
+                await Swal.fire({
+                    icon:'success', title:'Sincronização concluída',
+                    html:`<b>${createdTotal}</b> novo(s) membro(s) cadastrado(s).<br><b>${skippedTotal}</b> registro(s) já existente(s) foram preservados.`
+                });
+                loadContent();
+            } catch (error) { Swal.fire('Erro na importação', error.message, 'error'); }
         };
 
         const updateWidgets = (data) => {
@@ -795,6 +1025,8 @@
         const openModalCadastro = () => {
             $('#form-cadastro')[0].reset();
             $('#irm-id').val('');
+            $('#irm-comum').val(cadastroSelectedCommon || CADASTRO_DEFAULT_COMMON);
+            $('#irm-cidade').val(cadastroSelectedCity || CADASTRO_DEFAULT_CITY);
             $('#irm-url-foto').val('');
             $('#photo-preview').html('<i class="fa fa-user-circle fa-7x text-muted opacity-2"></i>');
             $('#irm-chefe-select').val('').trigger('change');
@@ -817,6 +1049,7 @@
 
                 $('#irm-endereco').val(`${data.logradouro}, ${data.localidade} - ${data.uf}`);
                 $('#irm-setor').val(data.bairro);
+                $('#irm-cidade').val(data.localidade);
                 
                 // Disparar Geocodificação Automática com endereço completo para melhor precisão
                 const fullAddress = `${data.logradouro}, ${data.bairro}, ${data.localidade}, ${data.uf}, Brasil`;
@@ -906,9 +1139,9 @@
             $('#irm-celular').on('input', function() {
                 const digits = $(this).val().replace(/\D/g, '').substring(0, 11);
                 let formatted = digits;
-                if (digits.length > 2) formatted = `(${digits.substring(0, 2)}) ${digits.substring(2)}`;
-                if (digits.length > 10) formatted = `${formatted.substring(0, 10)}-${formatted.substring(10)}`;
-                else if (digits.length > 6) formatted = `${formatted.substring(0, 9)}-${formatted.substring(9)}`;
+                if (digits.length > 2) formatted = `(${digits.substring(0, 2)}) ${digits.substring(2, 3)}`;
+                if (digits.length > 3) formatted += ` ${digits.substring(3, 7)}`;
+                if (digits.length > 7) formatted += `-${digits.substring(7, 11)}`;
                 $(this).val(formatted);
             });
 
@@ -968,6 +1201,7 @@
             $('#irm-nome').val(item.nome);
             $('#irm-cep').val(item.cep || '');
             $('#irm-comum').val(item.comum || '');
+            $('#irm-cidade').val(item.cidade || '');
             const addressRaw = item.endereco || '';
             const coordMatch = addressRaw.match(/^\[([-.\d]+),\s*([-.\d]+)\]\s*(.*)/);
             
@@ -1078,6 +1312,7 @@
                 nome: $('#irm-nome').val(),
                 cep: $('#irm-cep').val(),
                 comum: $('#irm-comum').val(),
+                cidade: $('#irm-cidade').val().trim(),
                 id_chefe_familia: $('#irm-chefe-select').val() || null,
                 vinculo_tipo: $('#irm-vinculo-tipo').val(),
                 setor: $('#irm-setor').val(),
@@ -1268,7 +1503,46 @@
             }
         };
 
-        $(document).ready(() => loadContent());
+        const fillCadastroCommonSelect = () => {
+            const select = document.getElementById('cadastro-common-filter');
+            if (!select) return;
+            const available = CADASTRO_COMMONS.filter(item => !cadastroSelectedCity || item.cidade === cadastroSelectedCity);
+            select.replaceChildren(new Option('Selecione a comum...', ''));
+            available.forEach(item => select.add(new Option(item.comum, item.comum)));
+            if (available.some(item => item.comum === cadastroSelectedCommon)) select.value = cadastroSelectedCommon;
+            const $select = jQuery(select);
+            if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+            $select.select2({
+                width: '100%', language: 'pt-BR', allowClear: true,
+                placeholder: 'Digite o código ou nome da comum...'
+            });
+        };
+
+        const configureCadastroScope = () => {
+            const citySelect = document.getElementById('cadastro-municipio-filter');
+            const commonSelect = document.getElementById('cadastro-common-filter');
+            if (citySelect) {
+                citySelect.value = cadastroSelectedCity;
+                citySelect.addEventListener('change', async () => {
+                    cadastroSelectedCity = citySelect.value;
+                    cadastroSelectedCommon = '';
+                    fillCadastroCommonSelect();
+                    await loadContent();
+                });
+            }
+            fillCadastroCommonSelect();
+            if (commonSelect) {
+                jQuery(commonSelect).off('change.cadastroScope').on('change.cadastroScope', async () => {
+                    cadastroSelectedCommon = commonSelect.value || '';
+                    await loadContent();
+                });
+            }
+        };
+
+        $(document).ready(() => {
+            configureCadastroScope();
+            loadContent();
+        });
     </script>
 
     <!-- MODAL HISTÓRICO DE VISITAS -->

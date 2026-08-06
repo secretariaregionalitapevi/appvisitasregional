@@ -12,7 +12,50 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
     .calendar .fc-header-toolbar {
-        margin-bottom: 30px !important;
+        margin-bottom: 18px !important;
+    }
+
+    .agenda-page-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    .agenda-page-heading .page-header,
+    .agenda-page-heading .breadcrumb { margin: 0 !important; }
+    .agenda-filter-card { border: 0; border-radius: 10px; }
+    .agenda-filter-card .card-body { padding-left: 16px; padding-right: 16px; }
+    .agenda-filter-card .select2-container { width: 100% !important; }
+    .agenda-filter-card .select2-selection--single { height: 38px !important; }
+    .agenda-filter-card .select2-selection__rendered { line-height: 36px !important; }
+    .agenda-filter-card .select2-selection__arrow { height: 36px !important; }
+    .agenda-filter-card .form-label { min-height: 17px; }
+    .agenda-filter-card .form-control,
+    .agenda-filter-card .form-select { height: 38px; }
+    .fc-daygrid-day-frame { min-height: 105px; }
+    .fc-daygrid-event { border-radius: 4px !important; margin-top: 2px !important; }
+    .fc-daygrid-more-link {
+        display: block;
+        margin: 4px 2px 2px;
+        padding: 4px 7px;
+        border-radius: 5px;
+        background: #e8f2fc;
+        color: #1e5f99;
+        font-weight: 700;
+        text-align: center;
+    }
+    .fc-popover { z-index: 1050 !important; max-height: 70vh; overflow-y: auto; }
+    .fc-list-event-title a { white-space: normal; }
+
+    @media (max-width: 767.98px) {
+        .agenda-page-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+        .calendar { padding: 10px !important; }
+        .calendar .fc-header-toolbar { align-items: stretch; flex-direction: column; gap: 8px; }
+        .calendar .fc-toolbar-chunk { display: flex; justify-content: center; }
+        .calendar .fc-toolbar-title { font-size: 1.15rem; }
+        .calendar .fc-button { padding: .35rem .55rem; font-size: .78rem; }
+        .agenda-sidebar { margin-bottom: 15px; }
     }
 
     /* Estilo exclusivo para os itens de ARRASTAR (Sidebar) */
@@ -143,6 +186,10 @@
 <script>
     var calendar;
     var irmandadeData = [];
+    const agendaAccessLevel = '{{ agenda_access_level|escapejs }}';
+    const agendaDefaultCommon = '{{ agenda_comum_padrao|escapejs }}';
+    const agendaDefaultCity = '{{ agenda_municipio_padrao|escapejs }}';
+    const agendaCommons = JSON.parse(document.getElementById('agenda-commons-data').textContent);
 
     $(document).ready(function () {
         const categoryColors = {
@@ -153,10 +200,39 @@
             'RE': '#ff5b57'
         };
 
+        const municipalityFilter = $('#agenda-municipio-filter');
+        const commonFilter = $('#agenda-comum-filter');
+
+        const rebuildCommonFilter = (municipality, selectedValue = '') => {
+            const options = agendaCommons.filter(item => !municipality || item.cidade === municipality);
+            commonFilter.empty().append(new Option('Selecione a comum...', '', false, false));
+            options.forEach(item => commonFilter.append(new Option(item.comum, item.comum, false, item.comum === selectedValue)));
+            commonFilter.val(selectedValue || '').trigger('change.select2');
+        };
+
+        if (commonFilter.length) {
+            commonFilter.select2({ placeholder: 'Pesquise a comum...', allowClear: true, width: '100%' });
+            rebuildCommonFilter(agendaDefaultCity, agendaDefaultCommon);
+            municipalityFilter.on('change', function () {
+                rebuildCommonFilter($(this).val(), '');
+                if (calendar) calendar.refetchEvents();
+            });
+            commonFilter.on('change', function () {
+                loadIrmandadeList();
+                if (calendar) calendar.refetchEvents();
+            });
+        }
+
         const loadIrmandadeList = async () => {
-            const res = await fetch('/visitas/api/irmandade/?status=Ativo');
+            const params = new URLSearchParams({ status: 'Ativo' });
+            const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
+            if (selectedCommon) params.set('comum', selectedCommon);
+            const res = await fetch(`/visitas/api/irmandade/?${params.toString()}`);
             irmandadeData = await res.json();
             const options = irmandadeData.map(item => ({ id: item.id, text: item.nome }));
+            if ($('#event-member-select').hasClass('select2-hidden-accessible')) {
+                $('#event-member-select').select2('destroy').empty();
+            }
             $('#event-member-select').select2({
                 data: options,
                 placeholder: 'Buscar família para visita (ou digite um novo nome)',
@@ -233,13 +309,33 @@
             themeSystem: 'bootstrap',
             headerToolbar: { left: 'dayGridMonth,timeGridWeek,listMonth', center: 'title', right: 'prev,next today' },
             buttonText: { today: 'Hoje', month: 'Mês', week: 'Semana', list: 'Lista' },
-            initialView: 'dayGridMonth',
+            initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth',
+            height: window.innerWidth < 768 ? 'auto' : Math.max(650, window.innerHeight - 240),
+            expandRows: true,
+            dayMaxEvents: 4,
+            moreLinkClick: 'popover',
+            moreLinkContent: function (arg) { return `+ ${arg.num} visitas`; },
+            windowResize: function (arg) {
+                const isMobile = window.innerWidth < 768;
+                calendar.setOption('height', isMobile ? 'auto' : Math.max(650, window.innerHeight - 240));
+                if (isMobile && arg.view.type !== 'listMonth') calendar.changeView('listMonth');
+            },
             editable: true,
             droppable: true,
             displayEventTime: false,
             eventDisplay: 'block',
             events: function (info, successCallback, failureCallback) {
-                fetch('/visitas/api/agenda/').then(res => res.json()).then(data => {
+                const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
+                if (agendaAccessLevel !== 'local' && !selectedCommon) {
+                    successCallback([]);
+                    return;
+                }
+                const params = new URLSearchParams({ start_date: info.startStr, end_date: info.endStr });
+                if (selectedCommon) params.set('comum', selectedCommon);
+                fetch(`/visitas/api/agenda/?${params.toString()}`).then(res => {
+                    if (!res.ok) throw new Error('Nao foi possivel carregar a agenda.');
+                    return res.json();
+                }).then(data => {
                     const events = data.map(item => {
                         const baseColor = categoryColors[item.categoria] || '#1e4b7a';
                         const spTime = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
@@ -262,7 +358,7 @@
                         };
                     });
                     successCallback(events);
-                });
+                }).catch(failureCallback);
             },
             
             // CORREÇÃO: Drop agora abre o modal em vez de salvar direto
@@ -422,15 +518,43 @@
 {% endblock %}
 
 {% block content %}
-<ol class="breadcrumb float-xl-end">
-    <li class="breadcrumb-item"><a href="/">Home</a></li>
-    <li class="breadcrumb-item active">Agenda de Visitas</li>
-</ol>
-<h1 class="page-header">Gestão de Visitas <small>Logística Ministerial</small></h1>
-<hr />
+{{ agenda_comuns|json_script:"agenda-commons-data" }}
+<div class="agenda-page-heading">
+    <h1 class="page-header">Gestão de Visitas <small>Logística Ministerial</small></h1>
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/">Home</a></li>
+        <li class="breadcrumb-item active">Agenda de Visitas</li>
+    </ol>
+</div>
+
+{% if agenda_access_level != 'local' %}
+<div class="card agenda-filter-card shadow-sm mb-3">
+    <div class="card-body py-3">
+        <div class="row g-3 align-items-start">
+            <div class="col-12 col-md-6">
+                <label class="form-label small fw-bold text-muted mb-1">MUNICÍPIO</label>
+                {% if agenda_access_level == 'municipal' %}
+                <input type="text" class="form-control" value="{{ agenda_municipio_padrao }}" readonly>
+                <input type="hidden" id="agenda-municipio-filter" value="{{ agenda_municipio_padrao }}">
+                {% else %}
+                <select id="agenda-municipio-filter" class="form-select">
+                    <option value="">Selecione o município...</option>
+                    {% for municipio in agenda_municipios %}<option value="{{ municipio }}" {% if municipio == agenda_municipio_padrao %}selected{% endif %}>{{ municipio }}</option>{% endfor %}
+                </select>
+                {% endif %}
+            </div>
+            <div class="col-12 col-md-6">
+                <label class="form-label small fw-bold text-muted mb-1">COMUM CONGREGAÇÃO</label>
+                <select id="agenda-comum-filter" class="form-select"><option value="">Selecione a comum...</option></select>
+                <div class="form-text">Pesquise e selecione uma comum para carregar somente sua agenda.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="row">
-    <div class="col-lg-3 col-xl-2">
+    <div class="col-lg-3 col-xl-2 agenda-sidebar">
         <button class="btn btn-primary w-100 fw-bold btn-floating-add mb-3" onclick="resetModal(); $('#modal-event').modal('show');">
             <i class="fa fa-plus me-1"></i> Nova Visita
         </button>

@@ -63,9 +63,9 @@ def row_location(row):
 
 
 def can_access(scope, row):
-    municipio, comum = row_location(row)
     if scope["level"] in {"global", "regional"}:
         return True
+    municipio, comum = row_location(row)
     if scope["level"] == "municipal":
         return bool(scope["municipio"] and _norm(municipio) == _norm(scope["municipio"]))
     return bool(scope["comum"] and _norm(comum) == _norm(scope["comum"]))

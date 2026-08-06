@@ -10,6 +10,25 @@ def normalize_text(value):
     text = unicodedata.normalize('NFKD', str(value or ''))
     return ' '.join(''.join(c for c in text if not unicodedata.combining(c)).upper().split())
 
+
+def neighborhood_key(visit):
+    """Chave territorial estável usada para impedir a fragmentação de bairros."""
+    return normalize_text((visit or {}).get('setor')) or 'SEM BAIRRO'
+
+
+def street_key(visit):
+    """Normaliza a rua, removendo coordenadas, CEP e número do imóvel."""
+    address = re.sub(r'^\s*\[.*?\]\s*', '', str((visit or {}).get('endereco_visitado') or (visit or {}).get('endereco') or ''))
+    address = re.sub(r'\b\d{5}-?\d{3}\b', '', address)
+    street = re.split(r'\s*[,\-]\s*\d+\b|\s+N[.º°]?\s*\d+\b', address, maxsplit=1, flags=re.IGNORECASE)[0]
+    return normalize_text(street) or 'ENDERECO NAO INFORMADO'
+
+
+def address_number(visit):
+    address = re.sub(r'^\s*\[.*?\]\s*', '', str((visit or {}).get('endereco_visitado') or (visit or {}).get('endereco') or ''))
+    match = re.search(r'(?:[,\-]\s*|\bN[.º°]?\s*)(\d+)\b', address, re.IGNORECASE)
+    return int(match.group(1)) if match else float('inf')
+
 def haversine_distance(coord1, coord2):
     """
     Calcula a distância em metros entre duas coordenadas (lat, lng) usando a fórmula de Haversine.
@@ -48,6 +67,7 @@ def extract_coords_from_address(address):
             return None
     return None
 
+@lru_cache(maxsize=1024)
 def geocode_address_fallback(address):
     """
     Geocodifica um endereço usando Google Maps ou Nominatim como fallback.
@@ -59,23 +79,42 @@ def geocode_address_fallback(address):
     clean_addr = re.sub(r'^\[.*?\]\s*', '', address)
     clean_addr += ", SP, Brasil"
     
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if api_key:
+        try:
+            response = requests.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={"address": clean_addr, "key": api_key, "language": "pt-BR"},
+                timeout=5,
+            )
+            result = response.json()
+            if result.get('status') == 'OK':
+                location = result['results'][0]['geometry']['location']
+                return (location['lat'], location['lng'])
+        except (requests.RequestException, ValueError, KeyError, IndexError):
+            pass
+
+    # Fallback sem chave: mantém o roteiro operacional quando o Google estiver
+    # sem faturamento, com cota bloqueada ou temporariamente indisponível.
     try:
-        api_key = settings.GOOGLE_MAPS_API_KEY
-        url = "https://maps.googleapis.com/maps/api/geocode/json"
-        params = {
-            "address": clean_addr,
-            "key": api_key,
-            "language": "pt-BR"
-        }
-        response = requests.get(url, params=params, timeout=5)
-        result = response.json()
-        
-        if result.get('status') == 'OK':
-            location = result['results'][0]['geometry']['location']
-            return (location['lat'], location['lng'])
-            
-    except Exception as e:
-        print(f"Erro no geocode_address_fallback: {e}")
+        response = requests.get(
+            "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates",
+            params={
+                "SingleLine": clean_addr,
+                "f": "json",
+                "countryCode": "BRA",
+                "maxLocations": 1,
+                "outFields": "Match_addr",
+            },
+            timeout=8,
+        )
+        response.raise_for_status()
+        candidates = response.json().get('candidates') or []
+        if candidates and float(candidates[0].get('score') or 0) >= 60:
+            location = candidates[0]['location']
+            return (float(location['y']), float(location['x']))
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        pass
         
     return None
 
@@ -133,13 +172,24 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
         if not bairro:
             continue
         chave = normalize_text(bairro)
-        grupo = grupos.setdefault(chave, {"nome": bairro, "quantidade": 0, "coords": []})
+        grupo = grupos.setdefault(chave, {"nome": bairro, "quantidade": 0, "coords": [], "enderecos": []})
         grupo["quantidade"] += 1
         coords = extract_coords_from_address(membro.get('endereco') or '')
         if coords:
             grupo["coords"].append(coords)
+        elif membro.get('endereco'):
+            grupo["enderecos"].append(membro.get('endereco'))
 
     centro = get_common_coordinates(comum, cidade)
+    grupos_sem_coords = [grupo for grupo in grupos.values() if not grupo["coords"] and grupo["enderecos"]]
+    if grupos_sem_coords:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            resultados = executor.map(
+                lambda grupo: geocode_address_fallback(grupo["enderecos"][0]), grupos_sem_coords
+            )
+            for grupo, coords in zip(grupos_sem_coords, resultados):
+                if coords:
+                    grupo["coords"].append(coords)
     bairros = []
     for grupo in grupos.values():
         coords = None
@@ -173,7 +223,7 @@ def get_visit_coordinates(visit):
     coords = geocode_address_fallback(addr)
     return coords
 
-def optimize_route(visits, start_coords=None):
+def _optimize_route_nearest_neighbor_legacy(visits, start_coords=None):
     """
     Ordena uma lista de visitas usando o algoritmo Nearest Neighbor (Vizinho Mais Próximo).
     """
@@ -238,6 +288,71 @@ def optimize_route(visits, start_coords=None):
 
     return optimized_route
 
+
+def optimize_route_by_territory(visits, start_coords=None):
+    """Ordena bairro, rua e número sem permitir uma sequência A -> B -> A."""
+    if not visits:
+        return []
+    current_loc = start_coords or (-23.538263, -46.926524)
+
+    def group_coordinates(items):
+        coords = [get_visit_coordinates(item) for item in items]
+        coords = [coord for coord in coords if coord]
+        if not coords:
+            return None
+        return (sum(c[0] for c in coords) / len(coords), sum(c[1] for c in coords) / len(coords))
+
+    neighborhoods = {}
+    for visit in visits:
+        neighborhoods.setdefault(neighborhood_key(visit), []).append(visit)
+    pending = [
+        {'key': key, 'items': items, 'coords': group_coordinates(items)}
+        for key, items in neighborhoods.items()
+    ]
+    route = []
+    while pending:
+        pending.sort(key=lambda group: (
+            group['coords'] is None,
+            haversine_distance(current_loc, group['coords']) if group['coords'] else float('inf'),
+            group['key'],
+        ))
+        neighborhood = pending.pop(0)
+        streets = {}
+        for visit in neighborhood['items']:
+            streets.setdefault(street_key(visit), []).append(visit)
+        street_groups = [
+            {'key': key, 'items': items, 'coords': group_coordinates(items)}
+            for key, items in streets.items()
+        ]
+        while street_groups:
+            street_groups.sort(key=lambda group: (
+                group['coords'] is None,
+                haversine_distance(current_loc, group['coords']) if group['coords'] else float('inf'),
+                group['key'],
+            ))
+            street = street_groups.pop(0)
+            houses = sorted(street['items'], key=lambda item: (
+                address_number(item), normalize_text(item.get('titulo'))
+            ))
+            for visit in houses:
+                coords = get_visit_coordinates(visit)
+                if coords:
+                    visit['distance_meters'] = haversine_distance(current_loc, coords)
+                    visit['lat'], visit['lng'] = coords
+                    current_loc = coords
+                route.append(visit)
+    return route
+
+
+# Mantém a API existente enquanto aplica a estratégia territorial.
+optimize_route = optimize_route_by_territory
+
+
+def limit_daily_route(morning, afternoon, per_shift=5):
+    """Mantém no máximo cinco visitas por turno e dez no roteiro diário."""
+    return list(morning)[:per_shift] + list(afternoon)[:per_shift]
+
+
 from datetime import datetime, timedelta
 import concurrent.futures
 
@@ -290,16 +405,19 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     limite_passado = (data_obj - timedelta(days=15)).strftime("%Y-%m-%dT00:00:00")
     
     params_agenda = [
-        ("select", "irmandade_id, status"),
+        ("select", "irmandade_id,status,setor,endereco_visitado,equipe_responsavel,data_inicio"),
         ("data_inicio", f"gte.{limite_passado}")
     ]
     resp_agenda = requests.get(url_agenda, headers=headers, params=params_agenda, timeout=10)
     
     visitados_recentemente = set()
+    neighborhood_owners = {}
     if resp_agenda.status_code == 200:
         for v in resp_agenda.json():
             if v.get('status') != 'Cancelada' and v.get('irmandade_id'):
                 visitados_recentemente.add(str(v['irmandade_id']))
+            if str(v.get('data_inicio') or '')[:10] == data_filtro and v.get('equipe_responsavel'):
+                neighborhood_owners.setdefault(neighborhood_key(v), v.get('equipe_responsavel'))
                 
     # 3. Filtrar elegíveis e extrair coordenadas
     elegiveis = []
@@ -371,9 +489,29 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             item['dist'] = 999999 
             
     # Ordenar pela menor distância
-    elegiveis.sort(key=lambda x: x['dist'])
-    
-    selecionados = elegiveis[:num_to_generate]
+    grupos_bairro = {}
+    for item in elegiveis:
+        key = neighborhood_key(item['irmao'])
+        owner = neighborhood_owners.get(key)
+        if owner and owner != equipe:
+            continue
+        grupos_bairro.setdefault(key, []).append(item)
+
+    bairros_atuais = {neighborhood_key(item) for item in existing_visits}
+    grupos_ordenados = sorted(grupos_bairro.items(), key=lambda pair: (
+        pair[0] not in bairros_atuais,
+        min(item['dist'] for item in pair[1]),
+        pair[0],
+    ))
+    selecionados = []
+    for _, grupo in grupos_ordenados:
+        if len(selecionados) >= num_to_generate:
+            break
+        grupo.sort(key=lambda item: (
+            street_key(item['irmao']), address_number(item['irmao']), item['dist']
+        ))
+        vagas_restantes = num_to_generate - len(selecionados)
+        selecionados.extend(grupo[:vagas_restantes])
     
     if not selecionados:
         return []
@@ -395,10 +533,11 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         # Lógica de espaçamento: 15 minutos por visita
         # As 5 primeiras (0 a 4) são de manhã começando às 09:00
         # As 5 seguintes (5 a 9) são à tarde começando às 14:00
-        minutos_adicionais = (current_idx % 5) * 15
         if current_idx < 5:
+            minutos_adicionais = current_idx * 15
             hora_inicio_base = datetime.strptime(f"{data_filtro} 09:00:00", "%Y-%m-%d %H:%M:%S")
         else:
+            minutos_adicionais = (current_idx - 5) * 15
             hora_inicio_base = datetime.strptime(f"{data_filtro} 14:00:00", "%Y-%m-%d %H:%M:%S")
             
         hora_inicio = hora_inicio_base + timedelta(minutes=minutos_adicionais)

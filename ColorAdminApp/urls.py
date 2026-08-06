@@ -130,7 +130,7 @@ urlpatterns = [
     path('user/login-v1', views.userLoginV1, name='userLoginV1'),
     path('user/login-v2', views.userLoginV2, name='userLoginV2'),
     path('user/login-v3', views.userLoginV3, name='userLoginV3'),
-    path('user/register-v3', views.userRegisterV3, name='userRegisterV3'),
+    path('user/cadastro', views.userRegisterV3, name='cadastro'),
     path('logout/', views.logout_view, name='logout'),
     path('helper/css', views.helperCss, name='helperCss')
 ]

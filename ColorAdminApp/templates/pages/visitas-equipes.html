@@ -2,16 +2,24 @@
 {% load static %}
 
 {% block title %}Equipes de Visita{% endblock %}
-{% block css %}<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet"><style>#equipe-modal .select2-container,.equipes-comum-filtro .select2-container{width:100%!important}.select2-results__options{max-height:240px!important}.equipes-comum-filtro .select2-selection--single{height:34px}.equipes-comum-filtro .select2-selection__rendered{line-height:32px!important}.equipes-comum-filtro .select2-selection__arrow{height:32px!important}.equipes-comum-filtro .select2-dropdown{box-shadow:0 8px 20px rgba(0,0,0,.15)}.equipe-badge{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff;display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid color-mix(in srgb,var(--equipe-cor) 28%,transparent);border-radius:6px;background:var(--equipe-fundo);color:var(--equipe-cor);font-size:12px;font-weight:600;line-height:1;box-shadow:0 1px 2px rgba(15,23,42,.06)}.equipe-badge::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--equipe-cor);box-shadow:0 0 0 2px color-mix(in srgb,var(--equipe-cor) 14%,transparent)}.equipe-cor-0{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff}.equipe-cor-1{--equipe-cor:#0f766e;--equipe-fundo:#f0fdfa}.equipe-cor-2{--equipe-cor:#7c3aed;--equipe-fundo:#f5f3ff}.equipe-cor-3{--equipe-cor:#c2410c;--equipe-fundo:#fff7ed}.equipe-cor-4{--equipe-cor:#be123c;--equipe-fundo:#fff1f2}.equipe-cor-5{--equipe-cor:#4d7c0f;--equipe-fundo:#f7fee7}.equipe-cor-6{--equipe-cor:#a16207;--equipe-fundo:#fefce8}.equipe-cor-7{--equipe-cor:#0369a1;--equipe-fundo:#f0f9ff}</style>{% endblock %}
+{% block css %}<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet"><style>#equipe-modal .select2-container,.equipes-comum-filtro .select2-container{width:100%!important}.select2-results__options{max-height:240px!important}.equipes-page-heading{clear:both;padding-top:10px;gap:16px}.equipes-comum-filtro .select2-selection--single{height:34px}.equipes-comum-filtro .select2-selection__rendered{line-height:32px!important}.equipes-comum-filtro .select2-selection__arrow{height:32px!important}.equipes-comum-filtro .select2-dropdown{box-shadow:0 8px 20px rgba(0,0,0,.15)}.equipe-badge{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff;display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid color-mix(in srgb,var(--equipe-cor) 28%,transparent);border-radius:6px;background:var(--equipe-fundo);color:var(--equipe-cor);font-size:12px;font-weight:600;line-height:1;box-shadow:0 1px 2px rgba(15,23,42,.06)}.equipe-badge::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--equipe-cor);box-shadow:0 0 0 2px color-mix(in srgb,var(--equipe-cor) 14%,transparent)}.equipe-cor-0{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff}.equipe-cor-1{--equipe-cor:#0f766e;--equipe-fundo:#f0fdfa}.equipe-cor-2{--equipe-cor:#7c3aed;--equipe-fundo:#f5f3ff}.equipe-cor-3{--equipe-cor:#c2410c;--equipe-fundo:#fff7ed}.equipe-cor-4{--equipe-cor:#be123c;--equipe-fundo:#fff1f2}.equipe-cor-5{--equipe-cor:#4d7c0f;--equipe-fundo:#f7fee7}.equipe-cor-6{--equipe-cor:#a16207;--equipe-fundo:#fefce8}.equipe-cor-7{--equipe-cor:#0369a1;--equipe-fundo:#f0f9ff}@media(max-width:575.98px){.equipes-page-heading{align-items:stretch!important;flex-direction:column}.equipes-page-heading .btn{width:100%}}</style>{% endblock %}
 
 {% block content %}
 <ol class="breadcrumb float-xl-end"><li class="breadcrumb-item">Visitas</li><li class="breadcrumb-item active">Equipes</li></ol>
-<div class="d-flex align-items-center justify-content-between mb-4">
+<div class="equipes-page-heading d-flex align-items-center justify-content-between mb-4">
     <h1 class="page-header mb-0"><i class="fa fa-people-group me-2 text-teal"></i>Equipes de Visita <small>Organização por comum</small></h1>
     <button class="btn btn-teal" id="nova-equipe"><i class="fa fa-user-plus me-2"></i>Atribuir membro</button>
 </div>
 
 <div id="equipes-alerta"></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1080;margin-top:55px">
+    <div id="equipes-toast" class="toast border-start border-4" role="status" aria-live="polite" aria-atomic="true">
+        <div class="d-flex align-items-center bg-white rounded">
+            <div class="toast-body"><i class="fa fa-circle-check text-success me-2"></i><span id="equipes-toast-message"></span></div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button>
+        </div>
+    </div>
+</div>
 <div class="panel panel-inverse">
     <div class="panel-heading"><h4 class="panel-title">Equipes cadastradas</h4></div>
     <div class="panel-body">
@@ -39,4 +47,4 @@
 </div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script><script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script><script src="{% static 'js/visitas/equipes.js' %}?v=20260805-4"></script>{% endblock %}
+{% block js %}<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script><script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script><script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/visitas/equipes.js' %}?v=20260806-4"></script>{% endblock %}

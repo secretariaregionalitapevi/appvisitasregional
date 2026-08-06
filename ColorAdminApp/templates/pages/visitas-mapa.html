@@ -5,6 +5,7 @@
 {% block title %}Roteiro de Visitas - Google Maps{% endblock %}
 
 {% block css %}
+    <link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
     <style>
         .map-wrapper {
             position: relative;
@@ -15,6 +16,31 @@
         #google-map {
             width: 100%;
             height: 100%;
+        }
+        /* Controles elegantes inspirados no acabamento do mapcn, mantendo Google Maps. */
+        #google-map .gm-control-active,
+        #google-map .gm-fullscreen-control,
+        #google-map .gmnoprint > div {
+            border-radius: 10px !important;
+            box-shadow: 0 4px 16px rgba(29, 43, 54, .18) !important;
+            overflow: hidden;
+        }
+        #google-map .gm-control-active,
+        #google-map .gm-fullscreen-control {
+            width: 38px !important;
+            height: 38px !important;
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+        #google-map .gm-control-active:hover,
+        #google-map .gm-fullscreen-control:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 7px 20px rgba(29, 43, 54, .24) !important;
+        }
+        #google-map .gm-style-mtc button {
+            min-height: 38px !important;
+            border-radius: 9px !important;
+            font-family: inherit !important;
+            font-weight: 600 !important;
         }
         .map-float-info {
             position: absolute;
@@ -27,6 +53,26 @@
             box-shadow: 0 5px 25px rgba(0,0,0,0.2);
             width: 260px;
             transition: all 0.3s ease;
+        }
+        .map-scope-filter {
+            position: absolute; top: 20px; left: 310px; z-index: 1020;
+            display: flex; gap: 8px; align-items: center; padding: 9px;
+            background: rgba(255,255,255,.97); border: 1px solid rgba(45,53,60,.1);
+            border-radius: 12px; box-shadow: 0 5px 22px rgba(0,0,0,.16);
+        }
+        .map-scope-filter .form-select { min-width: 210px; height: 38px; font-size: 12px; font-weight: 600; }
+        .map-scope-filter .select2-container { min-width: 260px; }
+        .map-scope-filter .select2-selection--single { height: 38px; border-color: #ced4da; border-radius: 8px; }
+        .map-scope-filter .select2-selection__rendered { line-height: 36px; padding-left: 12px; font-size: 12px; font-weight: 600; }
+        .map-scope-filter .select2-selection__arrow { height: 36px; }
+        .map-scope-filter .select2-dropdown { border-radius: 8px; border-color: #80bdff; box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; }
+        .map-scope-filter .select2-search--dropdown { padding: 8px; }
+        .map-scope-filter .select2-search__field { padding: 9px 11px; border-radius: 7px; font-size: 14px; }
+        .map-scope-filter .municipio-label { min-width: 170px; padding: 0 10px; font-size: 12px; font-weight: 700; }
+        @media (max-width: 767px) {
+            .map-scope-filter { top: auto; bottom: 18px; left: 12px; right: 12px; flex-direction: column; }
+            .map-scope-filter .form-select { width: 100%; min-width: 0; }
+            .map-scope-filter .select2-container { width: 100% !important; min-width: 0; }
         }
         .map-float-info.minimized {
             width: 50px;
@@ -154,6 +200,8 @@
 {% block js %}
     <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&key={{ google_maps_api_key }}&libraries=geometry"></script>
     <script src="{% static 'plugins/moment/min/moment-with-locales.min.js' %}"></script>
+    <script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+    <script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
     <script>
         moment.locale('pt-br');
         let map;
@@ -162,6 +210,15 @@
         let infoWindow;
         let agendaEvents = [];
         let autoSyncInterval;
+        let churchMarker;
+        let coverageCircles = [];
+
+        const MAP_ACCESS_LEVEL = '{{ map_access_level|escapejs }}';
+        const MAP_DEFAULT_COMUM = '{{ map_default_comum|escapejs }}';
+        const MAP_DEFAULT_MUNICIPIO = '{{ map_default_municipio|escapejs }}';
+        const MAP_COMMONS = JSON.parse(document.getElementById('map-commons-data')?.textContent || '[]');
+        let selectedMunicipio = MAP_ACCESS_LEVEL === 'regional' || MAP_ACCESS_LEVEL === 'global' ? '' : MAP_DEFAULT_MUNICIPIO;
+        let selectedCommon = MAP_ACCESS_LEVEL === 'regional' || MAP_ACCESS_LEVEL === 'global' ? '' : MAP_DEFAULT_COMUM;
         
         const CARGO_COLORS = {
             'Ancião': '#1a1a1a',
@@ -174,18 +231,21 @@
             'Origin': '#dc3545'
         };
 
-        const CHURCH_COORDS = { lat: -23.538263, lng: -46.926524 };
+        let CHURCH_COORDS = { lat: -23.538263, lng: -46.926524 };
 
         const initMap = async () => {
             geocoder = new google.maps.Geocoder();
             infoWindow = new google.maps.InfoWindow();
             
             map = new google.maps.Map(document.getElementById('google-map'), {
-                zoom: 17,
+                zoom: 15,
                 center: CHURCH_COORDS,
                 styles: [{ featureType: "all", elementType: "all", stylers: [{ saturation: -20 }] }],
                 mapTypeControl: true,
-                streetViewControl: true
+                streetViewControl: true,
+                fullscreenControl: true,
+                controlSize: 38,
+                gestureHandling: 'greedy'
             });
 
             // Fechar janela ao clicar fora (no mapa)
@@ -194,18 +254,19 @@
             });
 
             // Marcador da Igreja
-            new google.maps.Marker({
+            churchMarker = new google.maps.Marker({
                 position: CHURCH_COORDS,
                 map: map,
                 title: 'Comum Congregacao',
                 zIndex: 1000,
                 icon: {
-                    path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-                    scale: 10,
+                    path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
+                    scale: 2.15,
                     fillColor: CARGO_COLORS.Origin,
                     fillOpacity: 1,
-                    strokeWeight: 2,
-                    strokeColor: '#fff'
+                    strokeWeight: 2.5,
+                    strokeColor: '#fff',
+                    anchor: new google.maps.Point(12, 22)
                 }
             });
 
@@ -215,8 +276,8 @@
                 { r: 1000, color: '#2d353c', op: 0.05 }
             ];
 
-            circles.forEach(c => {
-                new google.maps.Circle({
+            coverageCircles = circles.map(c => {
+                return new google.maps.Circle({
                     strokeColor: c.color,
                     strokeOpacity: 0.2,
                     strokeWeight: 1,
@@ -228,6 +289,9 @@
                     clickable: false
                 });
             });
+
+            // Centraliza primeiro na comum autorizada; depois calcula pins e distâncias.
+            if (selectedCommon) await centerSelectedCommon();
 
             // Primeira carga completa
             await loadInitialData();
@@ -254,8 +318,10 @@
                 }
                 markers = [];
 
+                if (!selectedCommon) return;
+
                 const [resIrmandade, resAgenda] = await Promise.all([
-                    fetch('/visitas/api/irmandade/'),
+                    fetch(`/visitas/api/irmandade/?comum=${encodeURIComponent(selectedCommon)}`),
                     fetch('/visitas/api/agenda/')
                 ]);
 
@@ -271,26 +337,17 @@
                     agendaEvents = []; // Fallback para não quebrar
                 }
 
-                let delay = 0;
                 const bounds = new google.maps.LatLngBounds();
                 bounds.extend(CHURCH_COORDS); // Sempre incluir a igreja
                 
                 members.forEach(member => {
-                    setTimeout(() => { 
+                    try {
                         geocodeMember(member, (location) => {
                             if (location) bounds.extend(location);
-                            // Se for o último membro, ajusta o mapa
-                            if (delay >= (members.length - 1) * 250) {
-                                map.fitBounds(bounds);
-                                // Evitar zoom excessivo se houver poucos pontos
-                                const listener = google.maps.event.addListener(map, "idle", function() { 
-                                    if (map.getZoom() > 17) map.setZoom(17); 
-                                    google.maps.event.removeListener(listener); 
-                                });
-                            }
-                        }); 
-                    }, delay);
-                    delay += 250;
+                        });
+                    } catch (markerError) {
+                        console.error(`Falha ao criar marcador do registro ${member.id}:`, markerError);
+                    }
                 });
 
             } catch (err) {
@@ -299,7 +356,7 @@
             }
         };
 
-        const geocodeMember = async (member, callback) => {
+        const geocodeMember = (member, callback) => {
             if (!member.endereco) {
                 if (callback) callback(null);
                 return;
@@ -383,7 +440,7 @@
             const iconPath = "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z";
             let strokeColor = '#fff';
             let strokeWeight = 2;
-            let scale = 1.6;
+            let scale = 1.35;
 
             if (status === 'Realizada') { 
                 strokeWeight = 4;
@@ -483,12 +540,12 @@
         };
 
         // ANIMAÇÃO DE PULSAÇÃO
-        let pulseScale = 1.6;
+        let pulseScale = 1.35;
         let pulseDirection = 1;
         setInterval(() => {
             pulseScale += 0.05 * pulseDirection;
-            if (pulseScale > 2.0) pulseDirection = -1;
-            if (pulseScale < 1.6) pulseDirection = 1;
+            if (pulseScale > 1.65) pulseDirection = -1;
+            if (pulseScale < 1.35) pulseDirection = 1;
 
             markers.forEach(marker => {
                 const visit = agendaEvents.find(e => e.irmandade_id == marker.memberData.id);
@@ -523,14 +580,14 @@
                 title: member.nome,
                 baseColor: color,
                 memberData: member,
-                icon: getMarkerIcon(color, status) // Placeholder inicial
+                icon: getMarkerIcon(color, visit) // Placeholder inicial
             });
 
             // IMPORTANTE: Adicionar à lista global ANTES de qualquer lógica de parentesco
             markers.push(marker);
 
             // Tentar carregar ícone de foto premium
-            createPhotoIcon(member, color, status, (icon) => {
+            createPhotoIcon(member, color, visit, (icon) => {
                 marker.setIcon(icon);
             });
 
@@ -618,7 +675,6 @@
                 infoWindow.setContent(content);
                 infoWindow.open(map, marker);
             });
-            markers.push(marker);
         };
 
         const getMemberColor = (member) => {
@@ -874,13 +930,95 @@
             }
         };
 
-        $(document).ready(() => { initMap(); });
+        const commonCity = (commonName) => (MAP_COMMONS.find(item => item.comum === commonName) || {}).cidade || selectedMunicipio || MAP_DEFAULT_MUNICIPIO;
+
+        const centerSelectedCommon = () => new Promise((resolve) => {
+            if (!selectedCommon || !geocoder) return resolve();
+            const cleanName = selectedCommon.replace(/^BR-\d+(?:-\d+)?\s*-\s*/i, '').trim();
+            const city = commonCity(selectedCommon);
+            geocoder.geocode({ address: `Congregação Cristã no Brasil ${cleanName}, ${city}, SP, Brasil` }, (results, status) => {
+                if (status === 'OK' && results[0]) {
+                    const point = results[0].geometry.location;
+                    CHURCH_COORDS = { lat: point.lat(), lng: point.lng() };
+                    map.setCenter(CHURCH_COORDS);
+                    map.setZoom(15);
+                    churchMarker?.setPosition(CHURCH_COORDS);
+                    coverageCircles.forEach(circle => circle.setCenter(CHURCH_COORDS));
+                }
+                resolve();
+            });
+        });
+
+        const fillCommonSelect = () => {
+            const commonSelect = document.getElementById('map-common-filter');
+            if (!commonSelect) return;
+            const available = MAP_COMMONS.filter(item => !selectedMunicipio || item.cidade === selectedMunicipio);
+            commonSelect.replaceChildren(new Option('Selecione a comum...', ''));
+            available.forEach(item => commonSelect.add(new Option(item.comum, item.comum)));
+            if (available.some(item => item.comum === selectedCommon)) commonSelect.value = selectedCommon;
+            if (window.jQuery && jQuery.fn.select2) {
+                const $common = jQuery(commonSelect);
+                if ($common.hasClass('select2-hidden-accessible')) $common.select2('destroy');
+                $common.select2({
+                    width: '260px',
+                    language: 'pt-BR',
+                    placeholder: 'Digite o código ou nome da comum...',
+                    allowClear: true,
+                    dropdownParent: jQuery('.map-scope-filter'),
+                });
+            }
+        };
+
+        const configureMapScope = () => {
+            const municipioSelect = document.getElementById('map-municipio-filter');
+            const commonSelect = document.getElementById('map-common-filter');
+            if (municipioSelect) {
+                [...new Set(MAP_COMMONS.map(item => item.cidade).filter(Boolean))].sort().forEach(city => municipioSelect.add(new Option(city, city)));
+                municipioSelect.addEventListener('change', async () => {
+                    selectedMunicipio = municipioSelect.value;
+                    selectedCommon = '';
+                    fillCommonSelect();
+                    await loadInitialData();
+                });
+            }
+            fillCommonSelect();
+            const handleCommonChange = async () => {
+                selectedCommon = commonSelect?.value || '';
+                if (!selectedCommon) return loadInitialData();
+                await centerSelectedCommon();
+                await loadInitialData();
+            };
+            if (commonSelect && window.jQuery && jQuery.fn.select2) {
+                jQuery(commonSelect).off('change.mapScope').on('change.mapScope', handleCommonChange);
+            } else {
+                commonSelect?.addEventListener('change', handleCommonChange);
+            }
+        };
+
+        $(document).ready(async () => {
+            configureMapScope();
+            await initMap();
+        });
     </script>
 {% endblock %}
 
 {% block content %}
+    {{ map_comuns|json_script:"map-commons-data" }}
     <div class="map-wrapper">
         <div id="google-map"></div>
+
+        {% if map_access_level != 'local' %}
+        <div class="map-scope-filter">
+            {% if map_access_level == 'regional' or map_access_level == 'global' %}
+            <select id="map-municipio-filter" class="form-select" aria-label="Selecionar município">
+                <option value="">Selecione o município...</option>
+            </select>
+            {% else %}
+            <div class="municipio-label"><i class="fa fa-city me-2 text-primary"></i>{{ map_default_municipio }}</div>
+            {% endif %}
+            <select id="map-common-filter" class="form-select" aria-label="Selecionar comum"></select>
+        </div>
+        {% endif %}
         
         <div class="map-float-info shadow-base">
             <div class="toggle-btn" onclick="toggleLegend()"><i class="fa fa-bars"></i></div>
