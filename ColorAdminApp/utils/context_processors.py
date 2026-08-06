@@ -1,4 +1,4 @@
-from django.urls import resolve
+from django.urls import Resolver404, resolve
 
 def mark_active_link(menu, current_path_name):
     for item in menu:
@@ -22,16 +22,16 @@ def sidebar_menu(request):
 	},
 	{ 'url': '/visitas', 'icon': 'fa fa-home', 'title': 'Visitas',
 		'children': [
-			{ 'url': '/visitas/dashboard', 'title': 'Dashboard', 'name': 'visitasDashboard' },
-			{ 'url': '/visitas/analytics', 'title': 'Análise Ministerial', 'name': 'visitasAnalytics' },
-			{ 'url': '/visitas/cadastro', 'title': 'Cadastro de Irmandade', 'name': 'visitasCadastro' },
-			{ 'url': '/visitas/agenda', 'title': 'Calendário Visitas', 'name': 'visitasAgenda' },
-			{ 'url': '/visitas/equipes', 'title': 'Equipes de Visita', 'name': 'visitasEquipes' },
-			{ 'url': '/visitas/roteiro-inteligente', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true' },
-			{ 'url': '/visitas/mapa', 'title': 'Mapa', 'name': 'visitasMapa' }
+			{ 'url': '/visitas/dashboard/', 'title': 'Dashboard', 'name': 'visitasDashboard' },
+			{ 'url': '/visitas/analytics/', 'title': 'Análise Ministerial', 'name': 'visitasAnalytics' },
+			{ 'url': '/visitas/cadastro/', 'title': 'Cadastro de Irmandade', 'name': 'visitasCadastro' },
+			{ 'url': '/visitas/agenda/', 'title': 'Calendário Visitas', 'name': 'visitasAgenda' },
+			{ 'url': '/visitas/equipes/', 'title': 'Equipes de Visita', 'name': 'visitasEquipes' },
+			{ 'url': '/visitas/roteiro-inteligente/', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true' },
+			{ 'url': '/visitas/mapa/', 'title': 'Mapa', 'name': 'visitasMapa' }
 		]
 	},
-	{ 'url': '/administracao', 'icon': 'fa fa-shield-halved', 'title': 'Administração', 'name': 'administration',
+	{ 'url': '/administracao/', 'icon': 'fa fa-shield-halved', 'title': 'Administração', 'name': 'administration',
 		'children': [
 			{ 'url': '/administracao#pendentes', 'title': 'Liberar Usuários' },
 			{ 'url': '/administracao#usuarios', 'title': 'Usuários' },
@@ -209,9 +209,12 @@ def sidebar_menu(request):
 		]
 	}]
 	
-	resolved_path = resolve(request.path_info)
-
-	current_path_name = resolved_path.url_name
+	try:
+		current_path_name = resolve(request.path_info).url_name
+	except Resolver404:
+		# O contexto também é executado ao renderizar uma resposta 404.
+		# Nesse estágio o CommonMiddleware ainda pode normalizar a URL.
+		current_path_name = ''
 	
 	# O nivel global mantem o menu administrativo completo.
 	user_profile = request.session.get('user_profile', {})
