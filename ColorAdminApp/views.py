@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from datetime import datetime, timedelta
 import json
 import unicodedata
-from .access_control import can_access, filter_rows, scope_details, user_scope, visible_commons
+from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
 
 def index(request):
 	return redirect('/dashboard/v3')
@@ -181,7 +181,39 @@ def apiAuth(request):
                         return JsonResponse({"error": "Perfil não encontrado. Contate o administrador."}, status=404)
                     
                     profile = profiles[0]
-                    
+
+                    # Repara contas do fluxo antigo, nas quais a comum ficou
+                    # somente nos metadados do Auth e não chegou ao perfil.
+                    auth_metadata = user_data.get('user_metadata') or {}
+                    profile_common = str(profile.get('comum') or auth_metadata.get('comum') or '').strip()
+                    common_row = next(
+                        (item for item in common_catalog() if str(item.get('comum') or '').strip() == profile_common),
+                        None,
+                    )
+                    if common_row and int(profile.get('role_id') or 4) == 4:
+                        municipality = str(common_row.get('cidade') or '').strip()
+                        repair = {
+                            'comum': profile_common,
+                            'municipio': municipality,
+                            'cidade': municipality,
+                            'role_id': 4,
+                            'role': 'Instrutor',
+                            'sector': 'Visitas',
+                        }
+                        if any(str(profile.get(key) or '').strip() != str(value) for key, value in repair.items()):
+                            repair_response = requests.patch(
+                                f"{settings.SUPABASE_URL}/rest/v1/profiles",
+                                headers={
+                                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                                    "Content-Type": "application/json",
+                                    "Prefer": "return=representation",
+                                },
+                                params={"user_id": f"eq.{user_id}"}, json=repair, timeout=10,
+                            )
+                            if repair_response.ok:
+                                profile.update(repair)
+
                     # Check status
                     if profile.get('status') != 'approved':
                         request.session['user_id'] = user_id
@@ -227,6 +259,16 @@ def apiAuth(request):
                 }, status=502)
 
         elif action == 'register':
+            comum = str(data.get('comum') or '').strip()
+            comum_row = next(
+                (item for item in common_catalog() if str(item.get('comum') or '').strip() == comum),
+                None,
+            )
+            if not comum_row:
+                return JsonResponse({
+                    "error": "Selecione uma comum válida na lista oficial."
+                }, status=400)
+            municipio = str(comum_row.get('cidade') or '').strip()
             # 1. Sign up
             url = f"{settings.SUPABASE_URL}/auth/v1/signup"
             headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
@@ -235,7 +277,11 @@ def apiAuth(request):
                 "password": data.get('password'),
                 "data": {
                     "full_name": data.get('full_name'),
-                    "comum": data.get('comum'),
+                    "comum": comum,
+                    "municipio": municipio,
+                    "cidade": municipio,
+                    "role_id": 4,
+                    "access_level": "local",
                     "cadastro_origem": "app_visitas_regional",
                     "cadastro_origem_label": "Aplicativo Regional de Visitas",
                     "cadastro_origem_setor_sugerido": "Visitas",
@@ -245,28 +291,49 @@ def apiAuth(request):
             response = requests.post(url, headers=headers, json=payload)
             if response.status_code in [200, 201]:
                 res_data = response.json()
-                user_id = res_data.get('id')
+                user_id = res_data.get('id') or (res_data.get('user') or {}).get('id')
                 if user_id:
-                    requests.patch(
-                        f"{settings.SUPABASE_URL}/rest/v1/profiles",
+                    profile_payload = {
+                        "user_id": user_id,
+                        "full_name": str(data.get('full_name') or '').strip(),
+                        "comum": comum,
+                        "municipio": municipio,
+                        "cidade": municipio,
+                        "role_id": 4,
+                        "role": "Instrutor",
+                        "status": "pending",
+                        "cadastro_origem": "app_visitas_regional",
+                        "cadastro_origem_label": "Aplicativo Regional de Visitas",
+                        "cadastro_origem_setor_sugerido": "Visitas",
+                        "cadastro_origem_rota": request.path,
+                        "cadastro_origem_url": request.build_absolute_uri(),
+                        "sector": "Visitas",
+                    }
+                    profile_response = requests.post(
+                        f"{settings.SUPABASE_URL}/rest/v1/profiles?on_conflict=user_id",
                         headers={
                             "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
                             "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
                             "Content-Type": "application/json",
-                        }, params={"user_id": f"eq.{user_id}"}, json={
-                            "cadastro_origem": "app_visitas_regional",
-                            "cadastro_origem_label": "Aplicativo Regional de Visitas",
-                            "cadastro_origem_setor_sugerido": "Visitas",
-                            "cadastro_origem_rota": request.path,
-                            "cadastro_origem_url": request.build_absolute_uri(),
-                            "sector": "Visitas",
-                        }, timeout=10,
+                            "Prefer": "resolution=merge-duplicates,return=representation",
+                        }, json=profile_payload, timeout=10,
                     )
+                    if not profile_response.ok:
+                        return JsonResponse({
+                            "error": "A conta foi criada, mas não foi possível vincular a comum. Contate o administrador antes de acessar."
+                        }, status=502)
+                else:
+                    return JsonResponse({
+                        "error": "O serviço criou a conta sem retornar sua identificação. Contate o administrador."
+                    }, status=502)
                 
                 # Note: The trigger on Supabase (handle_new_user_profile) will create the profile record.
                 # We just need to make sure level 7 is 'Usuário'.
                 
-                log_audit(request, 'REGISTER', details={"email": data.get('email'), "user_id": user_id})
+                log_audit(request, 'REGISTER', details={
+                    "email": data.get('email'), "user_id": user_id,
+                    "comum": comum, "municipio": municipio, "role_id": 4,
+                })
                 return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
             
             return JsonResponse({"error": response.text}, status=response.status_code)
@@ -1592,10 +1659,15 @@ def userLoginV3(request):
 	return render(request, "pages/user-login-v3.html", context)
 
 def userRegisterV3(request):
+	register_comuns = sorted(
+		common_catalog(),
+		key=lambda item: (str(item.get('cidade') or ''), str(item.get('comum') or '')),
+	)
 	context = {
 		"appSidebarHide": 1,
 		"appHeaderHide": 1,
-		"appContentClass": "p-0"
+		"appContentClass": "p-0",
+		"register_comuns": register_comuns,
 	}
 	return render(request, "pages/user-register-v3.html", context)
 

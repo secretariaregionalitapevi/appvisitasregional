@@ -19,6 +19,15 @@
 <h1 class="page-header">Administração <small>usuários, acessos e auditoria</small></h1>
 
 <div id="admin-alert" class="alert d-none"></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1080;margin-top:55px">
+  <div id="admin-success-toast" class="toast border-0 shadow" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-header bg-success text-white border-0">
+      <i class="fa fa-circle-check me-2"></i><strong class="me-auto">Operação concluída</strong>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Fechar"></button>
+    </div>
+    <div class="toast-body bg-white" id="admin-success-toast-message">Usuário excluído com sucesso.</div>
+  </div>
+</div>
 <div class="row mb-3">
   <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-blue text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Usuários cadastrados</div><h2 id="kpi-users">0</h2><div class="small">todos os perfis</div><i class="fa fa-users admin-kpi-icon"></i></div></div></div>
   <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-warning text-dark admin-kpi"><div class="card-body position-relative"><div class="text-dark text-opacity-75">Aguardando liberação</div><h2 id="kpi-pending">0</h2><div class="small">requerem análise</div><i class="fa fa-user-clock admin-kpi-icon"></i></div></div></div>
@@ -63,4 +72,4 @@
 </div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'js/admin/administracao.js' %}?v=20260805-1"></script>{% endblock %}
+{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/administracao.js' %}?v=20260806-3"></script>{% endblock %}

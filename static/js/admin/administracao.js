@@ -14,6 +14,10 @@
   const initials = name => String(name || '?').split(/\s+/).slice(0,2).map(item => item[0]).join('').toUpperCase();
 
   function alertMessage(message, type='danger') { $('#admin-alert').attr('class',`alert alert-${type}`).text(message); setTimeout(()=>$('#admin-alert').addClass('d-none'),5000); }
+  function successToast(message) {
+    $('#admin-success-toast-message').text(message);
+    bootstrap.Toast.getOrCreateInstance(document.querySelector('#admin-success-toast'), {delay:3500}).show();
+  }
 
   async function load() {
     $('#refresh-admin i').addClass('fa-spin');
@@ -37,7 +41,7 @@
   function renderUsers() {
     const search=norm($('#user-search').val()), status=$('#status-filter').val();
     const rows=data.profiles.filter(profile=>(!status||profile.status===status)&&(!search||norm([profile.full_name,profile.username,profile.comum,profile.municipio,profile.cidade,origin(profile)].join(' ')).includes(search)));
-    $('#users-table').html(rows.map(profile=>`<tr><td><div class="d-flex align-items-center"><div class="admin-avatar me-2">${esc(initials(profile.full_name))}</div><div><strong>${esc(profile.full_name||profile.username||'Sem nome')}</strong><div class="small text-gray-500">${esc(profile.user_id)}</div></div></div></td><td><strong>${roleLabel(profile.role_id)}</strong><div class="small text-gray-500">${esc(profile.municipio||profile.cidade||'—')} · ${esc(profile.comum||'—')}</div></td><td><span class="badge origin-badge">${esc(origin(profile))}</span><div class="small text-gray-500 mt-1">${date(profile.created_at)}</div></td><td><strong>${fmt(profile.contador_logins)}</strong> acessos<div class="small text-gray-500">Último: ${date(profile.data_ultimo_login)}</div></td><td><span class="badge bg-${statusBadge(profile.status)}">${statusLabel(profile.status)}</span></td><td><button class="btn btn-sm btn-outline-theme edit-user" data-id="${profile.user_id}"><i class="fa fa-pen"></i></button></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-gray-500 py-4">Nenhum usuário encontrado.</td></tr>');
+    $('#users-table').html(rows.map(profile=>`<tr><td><div class="d-flex align-items-center"><div class="admin-avatar me-2">${esc(initials(profile.full_name))}</div><div><strong>${esc(profile.full_name||profile.username||'Sem nome')}</strong><div class="small text-gray-500">${esc(profile.user_id)}</div></div></div></td><td><strong>${roleLabel(profile.role_id)}</strong><div class="small text-gray-500">${esc(profile.municipio||profile.cidade||'—')} · ${esc(profile.comum||'—')}</div></td><td><span class="badge origin-badge">${esc(origin(profile))}</span><div class="small text-gray-500 mt-1">${date(profile.created_at)}</div></td><td><strong>${fmt(profile.contador_logins)}</strong> acessos<div class="small text-gray-500">Último: ${date(profile.data_ultimo_login)}</div></td><td><span class="badge bg-${statusBadge(profile.status)}">${statusLabel(profile.status)}</span></td><td class="text-nowrap"><button class="btn btn-sm btn-outline-theme edit-user" data-id="${profile.user_id}" title="Editar usuário"><i class="fa fa-pen"></i></button> <button class="btn btn-sm btn-outline-danger delete-user" data-id="${profile.user_id}" title="Excluir usuário"><i class="fa fa-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-gray-500 py-4">Nenhum usuário encontrado.</td></tr>');
   }
 
   function renderLogs() {
@@ -63,5 +67,22 @@
     catch(error){alertMessage(error.message)} finally{$('#save-user').prop('disabled',false)}
   }
 
-  $(function(){ $('#refresh-admin').on('click',load); $(document).on('click','.edit-user',function(){openUser($(this).data('id'),$(this).data('approve'))}); $('#save-user').on('click',saveUser); $('#user-search,#status-filter').on('input change',renderUsers); $('#log-search,#module-filter,#log-date').on('input change',renderLogs); if(location.hash) $(`[href="${location.hash}"]`).tab('show'); load(); });
+  async function deleteUser(id) {
+    const profile=data.profiles.find(item=>item.user_id===id); if(!profile) return;
+    const confirmed=await swal({
+      title:'Excluir usuário?',
+      text:`${profile.full_name||profile.username||'Este usuário'} perderá definitivamente o acesso ao sistema.`,
+      icon:'warning',
+      buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Excluir definitivamente',visible:true,value:true,closeModal:true}},
+      dangerMode:true,
+    });
+    if(!confirmed) return;
+    try {
+      const response=await fetch(`/administracao/api/usuarios/${id}/`,{method:'DELETE',headers:{'X-CSRFToken':csrf()}});
+      const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Falha ao excluir o usuário.');
+      await load(); successToast(payload.message||'Usuário excluído com sucesso.');
+    } catch(error) { alertMessage(error.message); }
+  }
+
+  $(function(){ $('#refresh-admin').on('click',load); $(document).on('click','.edit-user',function(){openUser($(this).data('id'),$(this).data('approve'))}); $(document).on('click','.delete-user',function(){deleteUser(String($(this).data('id')))}); $('#save-user').on('click',saveUser); $('#user-search,#status-filter').on('input change',renderUsers); $('#log-search,#module-filter,#log-date').on('input change',renderLogs); if(location.hash) $(`[href="${location.hash}"]`).tab('show'); load(); });
 })();

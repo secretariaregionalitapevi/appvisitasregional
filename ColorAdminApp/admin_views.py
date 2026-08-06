@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
+from .access_control import common_catalog
 from .views import log_audit
 
 
@@ -78,8 +79,56 @@ def administration_data(request):
 
 
 @global_only
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 def administration_user(request, user_id):
+    if request.method == "DELETE":
+        current_user_id = str(
+            request.session.get("user_id")
+            or (request.session.get("user_profile") or {}).get("user_id")
+            or ""
+        )
+        if current_user_id == str(user_id):
+            return JsonResponse({"error": "Você não pode excluir a própria conta enquanto está conectado."}, status=400)
+        try:
+            before = _get_table("profiles", {"select": "*", "user_id": f"eq.{user_id}", "limit": "1"})
+            if not before:
+                return JsonResponse({"error": "Usuário não encontrado."}, status=404)
+            revoke_response = requests.patch(
+                f"{settings.SUPABASE_URL}/rest/v1/profiles",
+                headers=_headers(), params={"user_id": f"eq.{user_id}"},
+                json={"status": "rejected"}, timeout=15,
+            )
+            if revoke_response.status_code not in {200, 204}:
+                return JsonResponse({
+                    "error": "Não foi possível revogar o acesso antes da exclusão.",
+                    "details": revoke_response.text,
+                }, status=502)
+            auth_response = requests.delete(
+                f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                headers=_headers(), timeout=15,
+            )
+            if auth_response.status_code not in {200, 204}:
+                return JsonResponse({
+                    "error": "Não foi possível excluir a conta de autenticação.",
+                    "details": auth_response.text,
+                }, status=502)
+            # Mantém compatibilidade com bancos onde o perfil não usa CASCADE.
+            profile_response = requests.delete(
+                f"{settings.SUPABASE_URL}/rest/v1/profiles",
+                headers=_headers(), params={"user_id": f"eq.{user_id}"}, timeout=15,
+            )
+            if profile_response.status_code not in {200, 204}:
+                return JsonResponse({
+                    "error": "A conta foi removida, mas o perfil residual não pôde ser apagado.",
+                    "details": profile_response.text,
+                }, status=502)
+            log_audit(request, "DELETE_USER", "ADMIN", {
+                "target_user_id": str(user_id), "deleted_profile": before[0],
+            })
+            return JsonResponse({"status": "deleted", "message": "Usuário excluído com sucesso."})
+        except requests.RequestException as exc:
+            return JsonResponse({"error": "Falha ao excluir o usuário.", "details": str(exc)}, status=502)
+
     try:
         body = json.loads(request.body or "{}")
     except json.JSONDecodeError:
@@ -102,6 +151,20 @@ def administration_user(request, user_id):
         before = _get_table("profiles", {"select": "*", "user_id": f"eq.{user_id}", "limit": "1"})
         if not before:
             return JsonResponse({"error": "Usuário não encontrado."}, status=404)
+        candidate = {**before[0], **changes}
+        candidate_role = int(candidate.get("role_id") or 4)
+        if candidate_role == 4:
+            candidate_common = str(candidate.get("comum") or "").strip()
+            common_row = next(
+                (item for item in common_catalog() if str(item.get("comum") or "").strip() == candidate_common),
+                None,
+            )
+            if not common_row:
+                return JsonResponse({
+                    "error": "Para aprovar um acesso local, selecione uma comum válida."
+                }, status=400)
+            municipality = str(common_row.get("cidade") or "").strip()
+            changes.update({"comum": candidate_common, "municipio": municipality, "cidade": municipality})
         response = requests.patch(
             f"{settings.SUPABASE_URL}/rest/v1/profiles", headers=_headers("return=representation"),
             params={"user_id": f"eq.{user_id}"}, json=changes, timeout=15,

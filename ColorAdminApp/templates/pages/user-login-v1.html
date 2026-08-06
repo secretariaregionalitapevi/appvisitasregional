@@ -104,6 +104,16 @@
             passwordInput.focus();
         });
 
+        const logoutReason = new URLSearchParams(window.location.search).get('reason');
+        if (logoutReason === 'account_removed' || logoutReason === 'access_revoked') {
+            Swal.fire({
+                title: 'Acesso encerrado',
+                text: 'Sua conta não está mais ativa. Entre em contato com o administrador caso precise de ajuda.',
+                icon: 'info',
+                confirmButtonColor: '#348fe2'
+            });
+        }
+
         document.getElementById('login-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             const email = document.getElementById('emailAddress').value;

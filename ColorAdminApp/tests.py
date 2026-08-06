@@ -1,11 +1,13 @@
 import json
 from unittest.mock import Mock, patch
 
+from django.http import HttpResponse
 from django.test import RequestFactory, TestCase
 
 from .access_control import can_access, filter_rows, user_scope
-from .admin_views import administration, administration_data
-from .views import apiRoteiroBairros, apiVisitasEquipes, apiVisitasIrmandade, visitasAgenda, visitasCadastro, visitasMapa
+from .admin_views import administration, administration_data, administration_user
+from .middleware import SupabaseAuthMiddleware
+from .views import apiAuth, apiRoteiroBairros, apiVisitasEquipes, apiVisitasIrmandade, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa
 from .utils.routing import limit_daily_route, optimize_route, street_key
 
 CATALOG = [
@@ -13,6 +15,33 @@ CATALOG = [
     {"comum": "BR-02 - JARDIM JANDIRA", "cidade": "JANDIRA"},
     {"comum": "BR-03 - ALTO ITAPEVI", "cidade": "ITAPEVI"},
 ]
+
+
+class RevokedSessionTests(TestCase):
+    class Session(dict):
+        def flush(self):
+            self.clear()
+
+    @patch("ColorAdminApp.middleware.requests.get")
+    def test_deleted_user_is_logged_out_on_next_page(self, get):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = []
+        request = RequestFactory().get("/visitas/dashboard/")
+        request.session = self.Session(supabase_token="token", user_id="deleted-user")
+        response = SupabaseAuthMiddleware(lambda _request: HttpResponse("protected"))(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/user/login-v1?reason=account_removed")
+        self.assertEqual(request.session, {})
+
+    @patch("ColorAdminApp.middleware.requests.get")
+    def test_deleted_user_api_receives_unauthorized_response(self, get):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = []
+        request = RequestFactory().get("/visitas/api/irmandade/")
+        request.session = self.Session(supabase_token="token", user_id="deleted-user")
+        response = SupabaseAuthMiddleware(lambda _request: HttpResponse("protected"))(request)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(json.loads(response.content)["code"], "account_removed")
 
 
 class RegionalAccessTests(TestCase):
@@ -44,6 +73,15 @@ class RegionalAccessTests(TestCase):
         self.assertEqual(scope["level"], "global")
         self.assertEqual(filter_rows(scope, CATALOG), CATALOG)
 
+    @patch("ColorAdminApp.views.common_catalog", return_value=CATALOG)
+    def test_registration_groups_searchable_commons_by_municipality(self, _catalog):
+        request = RequestFactory().get("/user/cadastro")
+        request.session = {}
+        response = userRegisterV3(request)
+        self.assertContains(response, '<optgroup label="ITAPEVI">')
+        self.assertContains(response, '<optgroup label="JANDIRA">')
+        self.assertContains(response, "$('#comum').select2")
+
 
 class GlobalAdministrationTests(TestCase):
     def request_with_profile(self, role_id, path="/administracao/"):
@@ -64,6 +102,83 @@ class GlobalAdministrationTests(TestCase):
     def test_global_user_can_consult_admin_api(self, _get_table):
         response = administration_data(self.request_with_profile(1, "/administracao/api/dados/"))
         self.assertEqual(response.status_code, 200)
+
+    @patch("ColorAdminApp.admin_views.log_audit")
+    @patch("ColorAdminApp.admin_views.common_catalog", return_value=CATALOG)
+    @patch("ColorAdminApp.admin_views.requests.patch")
+    @patch("ColorAdminApp.admin_views._get_table")
+    def test_local_approval_canonicalizes_common_and_municipality(self, get_table, patch_request, _catalog, _audit):
+        get_table.return_value = [{"user_id": "user-1", "role_id": 4, "comum": CATALOG[0]["comum"]}]
+        patch_request.return_value = Mock()
+        patch_request.return_value.raise_for_status.return_value = None
+        patch_request.return_value.json.return_value = [{"user_id": "user-1", "status": "approved"}]
+        request = RequestFactory().patch(
+            "/administracao/api/usuarios/user-1/",
+            data={"status": "approved", "role_id": 4, "comum": CATALOG[0]["comum"]},
+            content_type="application/json",
+        )
+        request.session = {"user_profile": {"role_id": 1}}
+        response = administration_user(request, "user-1")
+        self.assertEqual(response.status_code, 200)
+        payload = patch_request.call_args.kwargs["json"]
+        self.assertEqual(payload["comum"], CATALOG[0]["comum"])
+        self.assertEqual(payload["municipio"], "ITAPEVI")
+        self.assertEqual(payload["cidade"], "ITAPEVI")
+
+    @patch("ColorAdminApp.admin_views.log_audit")
+    @patch("ColorAdminApp.admin_views.requests.patch")
+    @patch("ColorAdminApp.admin_views.requests.delete")
+    @patch("ColorAdminApp.admin_views._get_table")
+    def test_global_admin_deletes_auth_account_and_profile(self, get_table, delete_request, patch_request, audit):
+        get_table.return_value = [{"user_id": "22222222-2222-2222-2222-222222222222", "full_name": "Teste"}]
+        patch_request.return_value = Mock(status_code=204)
+        delete_request.side_effect = [Mock(status_code=204), Mock(status_code=204)]
+        request = RequestFactory().delete("/administracao/api/usuarios/22222222-2222-2222-2222-222222222222/")
+        request.session = {"user_id": "11111111-1111-1111-1111-111111111111", "user_profile": {"role_id": 1}}
+        response = administration_user(request, "22222222-2222-2222-2222-222222222222")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(patch_request.call_args.kwargs["json"], {"status": "rejected"})
+        self.assertEqual(delete_request.call_count, 2)
+        self.assertIn("/auth/v1/admin/users/", delete_request.call_args_list[0].args[0])
+        self.assertIn("/rest/v1/profiles", delete_request.call_args_list[1].args[0])
+        audit.assert_called_once()
+
+    def test_global_admin_cannot_delete_own_active_account(self):
+        user_id = "11111111-1111-1111-1111-111111111111"
+        request = RequestFactory().delete(f"/administracao/api/usuarios/{user_id}/")
+        request.session = {"user_id": user_id, "user_profile": {"role_id": 1, "user_id": user_id}}
+        response = administration_user(request, user_id)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("própria conta", json.loads(response.content)["error"])
+
+
+class LocalRegistrationFlowTests(TestCase):
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.common_catalog", return_value=CATALOG)
+    @patch("ColorAdminApp.views.requests.post")
+    def test_registration_upserts_complete_local_profile(self, post, _catalog, _audit):
+        auth_response = Mock(status_code=200, ok=True)
+        auth_response.json.return_value = {"user": {"id": "user-local-1"}}
+        profile_response = Mock(status_code=201, ok=True)
+        profile_response.json.return_value = [{"user_id": "user-local-1"}]
+        post.side_effect = [auth_response, profile_response]
+        request = RequestFactory().post(
+            "/api/auth/?action=register",
+            data={
+                "full_name": "Usuário Local", "email": "local@example.com",
+                "password": "123456", "comum": CATALOG[0]["comum"],
+            },
+            content_type="application/json",
+        )
+        request.session = {}
+        response = apiAuth(request)
+        self.assertEqual(response.status_code, 200)
+        profile = post.call_args_list[1].kwargs["json"]
+        self.assertEqual(profile["user_id"], "user-local-1")
+        self.assertEqual(profile["role_id"], 4)
+        self.assertEqual(profile["status"], "pending")
+        self.assertEqual(profile["comum"], CATALOG[0]["comum"])
+        self.assertEqual(profile["municipio"], "ITAPEVI")
 
 
 class IntelligentRouteTests(TestCase):

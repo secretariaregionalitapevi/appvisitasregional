@@ -4,6 +4,18 @@
 
 {% block title %}Cadastrar{% endblock %}
 
+{% block css %}
+<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
+<style>
+	.register-content .select2-container { width: 100% !important; }
+	.register-content .select2-selection--single { height: 36px !important; border-color: #d5dbe0 !important; }
+	.register-content .select2-selection__rendered { line-height: 34px !important; padding-left: 12px !important; }
+	.register-content .select2-selection__arrow { height: 34px !important; }
+	.select2-results__group { color: #0b6f78; font-weight: 700; background: #f1f8f8; }
+	.select2-results__options { max-height: 280px !important; }
+</style>
+{% endblock %}
+
 {% block outter_content %}
 <!-- BEGIN register -->
 <div class="register register-with-news-feed">
@@ -40,7 +52,16 @@
 				</div>
 				<div class="mb-3">
 					<label class="mb-2 fw-bold">Localidade (Comum) <span class="text-danger">*</span></label>
-					<input type="text" class="form-control fs-13px" id="comum" placeholder="Selecione sua comum" required />
+					<select class="form-select fs-13px" id="comum" required>
+						<option value=""></option>
+						{% regroup register_comuns by cidade as comuns_por_municipio %}
+						{% for municipio in comuns_por_municipio %}
+						<optgroup label="{{ municipio.grouper|default:'MUNICÍPIO NÃO INFORMADO' }}">
+							{% for item in municipio.list %}<option value="{{ item.comum }}">{{ item.comum }}</option>{% endfor %}
+						</optgroup>
+						{% endfor %}
+					</select>
+					<div class="form-text">Pesquise pelo código ou nome da comum.</div>
 				</div>
 				<div class="mb-3">
 					<label class="mb-2 fw-bold">E-mail <span class="text-danger">*</span></label>
@@ -76,8 +97,17 @@
 </div>
 <!-- END register -->
 
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+    $('#comum').select2({
+        width: '100%',
+        language: 'pt-BR',
+        placeholder: 'Pesquise e selecione sua comum...',
+        allowClear: true
+    });
+
     document.getElementById('register-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         const full_name = document.getElementById('fullName').value;
