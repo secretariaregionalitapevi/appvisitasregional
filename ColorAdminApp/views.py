@@ -1473,4 +1473,8 @@ def error404(request):
 	return render(request, "pages/extra-error.html", context)
 
 def handler404(request, exception = None):
-	return redirect('/404/')
+	# Preserve o status 404 para que o CommonMiddleware possa aplicar
+	# APPEND_SLASH quando existir uma rota equivalente com barra final.
+	response = error404(request)
+	response.status_code = 404
+	return response
