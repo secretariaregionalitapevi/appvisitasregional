@@ -129,13 +129,18 @@ STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
-# WhiteNoise storage to serve static files reliably
+# No Vercel os arquivos estáticos são publicados separadamente da função.
+# Fora dele, o WhiteNoise mantém compressão e manifest normalmente.
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if os.getenv("VERCEL")
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        ),
     },
 }
 
