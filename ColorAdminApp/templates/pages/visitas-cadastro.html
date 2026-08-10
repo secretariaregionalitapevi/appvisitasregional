@@ -367,17 +367,29 @@
                                 <label class="form-label fw-bold small">LOCALIDADE (COMUM)</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-comum" value="{{ request.session.user_profile.comum|default:'' }}" required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">CIDADE</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-cidade" placeholder="Ex: Itapevi" value="{{ cadastro_municipio_padrao }}" required>
                             </div>
-							<div class="col-md-3">
+							<div class="col-md-4">
                                 <label class="form-label fw-bold small">SETOR / BAIRRO</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-setor" placeholder="Ex: Setor 1 ou Jardim Rosemeire">
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">CELULAR DE CONTATO</label>
                                 <input type="tel" class="form-control border-0 bg-light" id="irm-celular" placeholder="(11) 9 1234-5678" maxlength="16" inputmode="numeric" autocomplete="tel">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">PREFERÊNCIA DE VISITA</label>
+                                <select class="form-select border-0 bg-light fw-bold" id="irm-preferencia-periodo-visita">
+                                    <option value="">Não informada</option>
+                                    <option value="Manhã">Manhã</option>
+                                    <option value="Tarde">Tarde</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">CLASSIFICAÇÃO ADICIONAL</label>
+                                <input type="text" class="form-control border-0 bg-light" id="irm-classificacao-adicional" placeholder="Ex: Avivamento ou Resgate">
                             </div>
                             <div class="col-md-8">
                                 <label class="form-label fw-bold small text-primary"><i class="fa fa-map-marker-alt me-1"></i> ENDEREÇO RESIDENCIAL COMPLETO</label>
@@ -522,12 +534,12 @@
             ['nome', 'Nome completo'], ['comum', 'Comum'], ['codigo_comum', 'Código da comum'], ['cidade', 'Cidade'], ['status', 'Status'],
             ['cargo_ministerio', 'Cargo / Ministério'], ['setor', 'Bairro / Setor'], ['endereco_limpo', 'Endereço'],
             ['complemento', 'Complemento'], ['cep', 'CEP'], ['latitude', 'Latitude'], ['longitude', 'Longitude'],
-            ['celular_formatado', 'Celular'], ['ultima_visita', 'Última visita'],
+            ['celular_formatado', 'Celular'], ['preferencia_periodo_visita', 'Preferência de período de visita'], ['ultima_visita', 'Última visita'],
             ['frequencia_visita', 'Frequência de visita'], ['data_nascimento', 'Data de nascimento'],
             ['data_batismo', 'Data de batismo'], ['data_inicio_ensaios', 'Início nos ensaios'],
             ['data_culto_oficial', 'Culto oficial'], ['data_oficializacao', 'Oficialização'], ['familia', 'Família'],
             ['id_chefe_familia', 'ID chefe da família'], ['vinculo_tipo', 'Vínculo familiar'], ['categoria', 'Categoria'],
-            ['equipe_visita', 'Equipe de visita'], ['observacoes', 'Observações'],
+            ['equipe_visita', 'Equipe de visita'], ['classificacao_adicional', 'Classificação adicional'], ['observacoes', 'Observações'],
             ['referencia_geografica', 'Referência geográfica'], ['url_foto', 'URL da foto'],
             ['origem_registro', 'Origem do registro'], ['data_cadastro', 'Data do cadastro'],
             ['created_at', 'Data do registro'], ['updated_at', 'Data da atualização'], ['id', 'ID do sistema']
@@ -692,12 +704,12 @@
             ['nome','Nome completo'], ['comum','Comum'], ['codigo_comum','Código da comum'], ['cidade','Cidade'], ['status','Status'],
             ['cargo_outros','Cargo / Ministério'], ['setor','Bairro / Setor'], ['endereco','Endereço'],
             ['complemento','Complemento'], ['cep','CEP'], ['latitude','Latitude'], ['longitude','Longitude'],
-            ['celular','Celular'], ['ultima_visita','Última visita'],
+            ['celular','Celular'], ['preferencia_periodo_visita','Preferência de período de visita'], ['ultima_visita','Última visita'],
             ['frequencia_visita','Frequência de visita'], ['data_nascimento','Data de nascimento'],
             ['data_batismo','Data de batismo'], ['data_inicio_ensaios','Início nos ensaios'],
             ['data_culto_oficial','Culto oficial'], ['data_oficializacao','Oficialização'], ['familia','Família'],
-            ['id_chefe_familia','ID chefe da família'], ['vinculo_tipo','Vínculo familiar'], ['categoria','Categoria'],
-            ['equipe_visita','Equipe de visita'], ['observacoes','Observações'],
+            ['id_chefe_familia','ID chefe da família'], ['vinculo_tipo','Vínculo familiar'], ['categoria','Categoria regional'],
+            ['equipe_visita','Equipe de visita'], ['classificacao_adicional','Classificação adicional'], ['observacoes','Observações'],
             ['referencia_geografica','Referência geográfica'], ['url_foto','URL da foto']
         ];
         const downloadMatrix = () => {
@@ -710,6 +722,8 @@
                 ['Nome completo e Comum são obrigatórios. Latitude e Longitude devem ser números decimais.'],
                 ['Cargo / Ministério: informe múltiplos cargos separados por vírgula.'],
                 ['Status sugeridos: Ativo ou Inativo. Datas: DD/MM/AAAA ou AAAA-MM-DD.'],
+                ['Categoria regional: use somente GVI, GVM, GVE, RF ou RE.'],
+                ['Classificação adicional: use para Avivamento, Resgate e outras classificações locais.'],
                 [],
                 ['EXEMPLOS DE PREENCHIMENTO'],
                 ['Campo', 'Exemplo'],
@@ -717,6 +731,7 @@
                 ['Código da comum', 'BR-22-0673'],
                 ['Cidade', 'Itapevi'],
                 ['Celular', '(11) 9 1234-5678'],
+                ['Preferência de período de visita', 'Manhã ou Tarde'],
                 ['Cargo / Ministério', 'Músico, Grupo de Visitas'],
                 ['Data', '06/08/2026']
             ]);
@@ -737,6 +752,7 @@
             if (code === '22P02' || message.includes('uuid')) return `Há um vínculo familiar inválido nas ${batch}. Deixe “ID chefe da família” vazio ou informe um ID válido do sistema.`;
             if (code === '23505' || message.includes('duplicate')) return `Um ou mais membros das ${batch} já estão cadastrados. Revise possíveis duplicidades.`;
             if (code === '23502' || message.includes('not-null')) return `Falta uma informação obrigatória nas ${batch}. Confira principalmente Nome completo e Comum.`;
+            if (code === '23514' || message.includes('check constraint')) return `Um valor das ${batch} não atende às opções permitidas pelo sistema. ${parsed.message || ''}`.trim();
             if (code === 'PGRST102' || message.includes('object keys')) return `As linhas da planilha possuem estruturas diferentes nas ${batch}. O sistema já tentou uniformizá-las; atualize a página e repita a importação.`;
             if (code === '22007' || message.includes('date')) return `Há uma data inválida nas ${batch}. Utilize o formato dd/mm/aaaa.`;
             if (code === 'PGRST204' || message.includes('schema cache')) return 'A estrutura da planilha não corresponde à versão atual do sistema. Atualize a página e tente novamente.';
@@ -749,6 +765,9 @@
                 const workbook = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {defval:'', raw:false});
                 const headerMap = new Map(MATRIX_COLUMNS.map(([key,label]) => [normalizeHeader(label), key]));
+                // Compatibilidade com planilhas antigas: valores regionais permanecem em
+                // categoria; valores como Avivamento/Resgate são movidos abaixo para a classificação adicional.
+                headerMap.set(normalizeHeader('Categoria'), 'categoria');
                 const records = rows.map((row, rowIndex) => {
                     const item = {};
                     Object.entries(row).forEach(([header,value]) => { const key = headerMap.get(normalizeHeader(header)); if (key) item[key] = value; });
@@ -760,6 +779,11 @@
                     item.codigo_comum = code;
                     if (code && !String(item.comum || '').toUpperCase().startsWith(code)) item.comum = `${code} - ${item.comum || ''}`.trim();
                     item.celular = formatCellPhone(item.celular);
+                    if (item.preferencia_periodo_visita) {
+                        const periodo = normalizeHeader(item.preferencia_periodo_visita);
+                        if (!['manha', 'tarde'].includes(periodo)) throw new Error(`A “Preferência de período de visita” está inválida na linha ${rowIndex + 2}. Use Manhã ou Tarde.`);
+                        item.preferencia_periodo_visita = periodo === 'manha' ? 'Manhã' : 'Tarde';
+                    }
                     ['ultima_visita','data_nascimento','data_batismo','data_inicio_ensaios','data_culto_oficial','data_oficializacao'].forEach(key => {
                         if (!item[key]) { delete item[key]; return; }
                         const parsed = moment(item[key], ['DD/MM/YYYY','YYYY-MM-DD','DD-MM-YYYY'], true);
@@ -780,6 +804,16 @@
                     item.perfil_enfermo = hasCargo('Enfermo'); item.cargo_porteiro = hasCargo('Porteiro');
                     item.cargo_auxiliar_porta = hasCargo('Auxiliar da Porta'); item.cargo_cozinha = hasCargo('Cozinha'); item.cargo_limpeza = hasCargo('Limpeza');
                     item.status = item.status || 'Ativo'; item.cargo_outros = cargos.join(',');
+                    if (item.categoria) {
+                        const categoriaOriginal = String(item.categoria).trim();
+                        const categoria = categoriaOriginal.toUpperCase();
+                        if (['GVI', 'GVM', 'GVE', 'RF', 'RE'].includes(categoria)) {
+                            item.categoria = categoria;
+                        } else {
+                            item.classificacao_adicional = [item.classificacao_adicional, categoriaOriginal].filter(Boolean).join(', ');
+                            delete item.categoria;
+                        }
+                    }
                     Object.keys(item).forEach(key => {
                         if (typeof item[key] === 'string') item[key] = item[key].trim();
                         if (item[key] === '') delete item[key];
@@ -977,6 +1011,15 @@
                 const equipeBadgeHtml = item.equipe_visita
                     ? `<span class="badge-ministerio badge-equipe-visita" title="Equipe do Grupo de Visitas"><i class="fa fa-route"></i> ${item.equipe_visita}</span>`
                     : '';
+                const periodoVisitaHtml = item.preferencia_periodo_visita
+                    ? `<span class="badge ${item.preferencia_periodo_visita === 'Manhã' ? 'bg-warning-100 text-warning' : 'bg-indigo-100 text-indigo'} border" title="Preferência de período da visita"><i class="fa ${item.preferencia_periodo_visita === 'Manhã' ? 'fa-sun' : 'fa-cloud-sun'} me-1"></i>Prefere ${item.preferencia_periodo_visita.toLowerCase()}</span>`
+                    : '';
+                const classificacaoAdicionalHtml = item.classificacao_adicional
+                    ? `<span class="badge bg-teal-100 text-teal border" title="Classificação adicional; não altera a categoria regional"><i class="fa fa-tag me-1"></i>${item.classificacao_adicional}</span>`
+                    : '';
+                const preferenciasHtml = periodoVisitaHtml || classificacaoAdicionalHtml
+                    ? `<div class="d-flex flex-wrap align-items-center gap-2 mt-1">${periodoVisitaHtml}${classificacaoAdicionalHtml}</div>`
+                    : '';
 
                 const photoHtml = item.url_foto 
                     ? `<img src="${item.url_foto}" class="rounded-circle shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">`
@@ -998,6 +1041,7 @@
                                         const chefe = irmandadeData.find(i => i.id == item.id_chefe_familia);
                                         return `<div class="mt-1"><span class="badge bg-blue-100 text-blue-700 border border-blue-200" style="font-size: 9px;"><i class="fa fa-users me-1"></i> ${item.vinculo_tipo || 'Membro'} de ${chefe ? chefe.nome : 'Chefe'}</span></div>`;
                                     })() : ''}
+                                    ${preferenciasHtml}
                                 </div>
                             </div>
                         </td>
@@ -1215,6 +1259,8 @@
 
             $('#irm-status').val(item.status || 'Ativo');
             $('#irm-setor').val(item.setor || '');
+			$('#irm-preferencia-periodo-visita').val(item.preferencia_periodo_visita || '');
+			$('#irm-classificacao-adicional').val(item.classificacao_adicional || '');
 			$('#irm-celular').val(item.celular || '').trigger('input');
 			$('#irm-complemento').val(item.complemento || '');
 			$('#irm-chefe-select').val(item.id_chefe_familia || '').trigger('change');
@@ -1316,6 +1362,8 @@
                 id_chefe_familia: $('#irm-chefe-select').val() || null,
                 vinculo_tipo: $('#irm-vinculo-tipo').val(),
                 setor: $('#irm-setor').val(),
+                preferencia_periodo_visita: $('#irm-preferencia-periodo-visita').val() || null,
+                classificacao_adicional: $('#irm-classificacao-adicional').val().trim() || null,
                 celular: $('#irm-celular').val().trim() || null,
                 complemento: $('#irm-complemento').val().trim() || null,
                 endereco: ($('#irm-gps').val() ? `[${$('#irm-gps').val()}] ` : '') + $('#irm-endereco').val(),
