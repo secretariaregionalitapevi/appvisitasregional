@@ -88,6 +88,7 @@ urlpatterns = [
     path('chart/apex/', views.chartApex, name='chartApex'),
     path('landing/', views.landing, name='landing'),
     path('calendar/', views.calendar, name='calendar'),
+    path('api/calendar/events/', views.api_calendar_events, name='api_calendar_events'),
     path('map/vector/', views.mapVector, name='mapVector'),
     path('map/google/', views.mapGoogle, name='mapGoogle'),
     path('gallery/v1', views.galleryV1, name='galleryV1'),

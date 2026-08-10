@@ -259,6 +259,12 @@ def apiAuth(request):
                 }, status=502)
 
         elif action == 'register':
+            if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+                print("Registration failed: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured")
+                return JsonResponse({
+                    "error": "Serviço de cadastro não configurado. Contate o administrador."
+                }, status=503)
+
             comum = str(data.get('comum') or '').strip()
             comum_row = next(
                 (item for item in common_catalog() if str(item.get('comum') or '').strip() == comum),
@@ -288,9 +294,22 @@ def apiAuth(request):
                     "cadastro_origem_rota": request.path,
                 }
             }
-            response = requests.post(url, headers=headers, json=payload)
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=15)
+            except requests.RequestException as exc:
+                print(f"Registration Auth request failed: {type(exc).__name__}: {exc}")
+                return JsonResponse({
+                    "error": "Não foi possível conectar ao serviço de cadastro. Tente novamente."
+                }, status=502)
+
             if response.status_code in [200, 201]:
-                res_data = response.json()
+                try:
+                    res_data = response.json()
+                except ValueError as exc:
+                    print(f"Registration Auth returned invalid JSON: {exc}")
+                    return JsonResponse({
+                        "error": "O serviço de cadastro retornou uma resposta inválida. Tente novamente."
+                    }, status=502)
                 user_id = res_data.get('id') or (res_data.get('user') or {}).get('id')
                 if user_id:
                     profile_payload = {
@@ -309,18 +328,52 @@ def apiAuth(request):
                         "cadastro_origem_url": request.build_absolute_uri(),
                         "sector": "Visitas",
                     }
-                    profile_response = requests.post(
-                        f"{settings.SUPABASE_URL}/rest/v1/profiles?on_conflict=user_id",
-                        headers={
-                            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-                            "Content-Type": "application/json",
-                            "Prefer": "resolution=merge-duplicates,return=representation",
-                        }, json=profile_payload, timeout=10,
-                    )
-                    if not profile_response.ok:
+                    try:
+                        profile_response = requests.post(
+                            f"{settings.SUPABASE_URL}/rest/v1/profiles?on_conflict=user_id",
+                            headers={
+                                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                                "Content-Type": "application/json",
+                                "Prefer": "resolution=merge-duplicates,return=representation",
+                            }, json=profile_payload, timeout=10,
+                        )
+                    except requests.RequestException as exc:
+                        profile_response = None
+                        print(f"Registration profile request failed for user {user_id}: {type(exc).__name__}: {exc}")
+
+                    if profile_response is None or not profile_response.ok:
+                        if profile_response is not None:
+                            print(
+                                f"Registration profile save failed for user {user_id}: "
+                                f"HTTP {profile_response.status_code} - {profile_response.text[:1000]}"
+                            )
+                        # Compensa a criação no Auth para não deixar uma conta
+                        # sem perfil, que bloquearia uma nova tentativa com o e-mail.
+                        rollback_succeeded = False
+                        try:
+                            rollback_response = requests.delete(
+                                f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                                headers={
+                                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                                }, timeout=10,
+                            )
+                            if not rollback_response.ok:
+                                print(
+                                    f"Registration rollback failed for user {user_id}: "
+                                    f"HTTP {rollback_response.status_code} - {rollback_response.text[:1000]}"
+                                )
+                            else:
+                                rollback_succeeded = True
+                        except requests.RequestException as exc:
+                            print(f"Registration rollback request failed for user {user_id}: {type(exc).__name__}: {exc}")
+                        if not rollback_succeeded:
+                            return JsonResponse({
+                                "error": "O cadastro ficou incompleto e exige revisão do administrador. Não tente novamente com o mesmo e-mail."
+                            }, status=502)
                         return JsonResponse({
-                            "error": "A conta foi criada, mas não foi possível vincular a comum. Contate o administrador antes de acessar."
+                            "error": "Não foi possível concluir o cadastro. Nenhuma conta foi mantida; tente novamente."
                         }, status=502)
                 else:
                     return JsonResponse({
@@ -336,7 +389,18 @@ def apiAuth(request):
                 })
                 return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
             
-            return JsonResponse({"error": response.text}, status=response.status_code)
+            try:
+                auth_error = response.json()
+                error_message = (
+                    auth_error.get('error_description') or auth_error.get('msg')
+                    or auth_error.get('message') or auth_error.get('error')
+                )
+            except (ValueError, AttributeError):
+                error_message = None
+            print(f"Registration Auth rejected request: HTTP {response.status_code} - {response.text[:1000]}")
+            return JsonResponse({
+                "error": error_message or "O serviço de cadastro recusou a solicitação."
+            }, status=response.status_code)
 
         elif action == 'logout':
             profile = update_profile_activity(request.session.get('user_profile') or {}, 'logout')
@@ -1420,6 +1484,81 @@ def landing(request):
 
 def calendar(request):
 	return render(request, "pages/calendar.html")
+
+@csrf_exempt
+def api_calendar_events(request):
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    if request.method == "GET":
+        start = request.GET.get('start')
+        end = request.GET.get('end')
+        
+        url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda?select=*"
+        if start and end:
+            url += f"&and=(data_inicio.gte.{start},data_inicio.lt.{end})"
+        
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            events = []
+            for item in response.json():
+                color = '#3b82f6'
+                if item.get('categoria') == 'GVI': color = '#10b981'
+                elif item.get('categoria') == 'GVM': color = '#f59e0b'
+                elif item.get('categoria') == 'RF': color = '#8b5cf6'
+                elif item.get('categoria') == 'RE': color = '#ec4899'
+                elif item.get('categoria') == 'Músicos': color = '#14b8a6'
+                
+                events.append({
+                    "id": item.get('id'),
+                    "title": item.get('titulo') or "Visita",
+                    "start": item.get('data_inicio'),
+                    "end": item.get('data_fim') or item.get('data_inicio'),
+                    "color": color,
+                    "extendedProps": {
+                        "categoria": item.get('categoria'),
+                        "status": item.get('status'),
+                        "observacoes": item.get('observacoes')
+                    }
+                })
+            return JsonResponse(events, safe=False)
+        return JsonResponse({"error": "Falha ao buscar visitas"}, status=500)
+
+    elif request.method == "POST":
+        data = json.loads(request.body)
+        event_id = data.get('id')
+        categoria = data.get('categoria')
+        titulo = data.get('title') or f"Visita {categoria}"
+        start = data.get('start')
+        end = data.get('end') or start
+        observacoes = data.get('observacoes')
+        
+        payload = {
+            "titulo": titulo,
+            "categoria": categoria,
+            "data_inicio": start,
+            "data_fim": end,
+            "observacoes": observacoes
+        }
+        
+        if event_id:
+            url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda?id=eq.{event_id}"
+            res = requests.patch(url, headers=headers, json=payload)
+            action = 'UPDATE_VISITA'
+        else:
+            url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda"
+            res = requests.post(url, headers=headers, json=payload)
+            action = 'CREATE_VISITA'
+            
+        if res.status_code in [200, 201]:
+            log_audit(request, action, module='CALENDAR', details=f"Visita: {titulo}")
+            return JsonResponse({"success": True})
+            
+        return JsonResponse({"error": "Erro ao salvar visita"}, status=400)
 
 def mapVector(request):
 	context = {

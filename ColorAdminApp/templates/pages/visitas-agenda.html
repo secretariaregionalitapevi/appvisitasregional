@@ -392,7 +392,7 @@
                 $('#event-member-select').val(e.irmandade_id).trigger('change');
                 $('#event-titulo').val(e.titulo);
                 $('#event-start').val(moment(e.data_inicio).format('YYYY-MM-DDTHH:mm'));
-                $('#event-equipe').val(e.equipe_responsavel || 'Equipe 01');
+                $('#event-equipe').val(e.equipe_responsavel || 'Equipe 1');
                 $('#event-categoria-modal').val(e.categoria || 'GVI');
                 $('#event-status').val(e.status).trigger('change');
                 $('#event-setor').val(e.setor || '');
@@ -628,10 +628,10 @@
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
                             <select class="form-select" id="event-equipe">
-                                <option value="Equipe 01">Equipe de Visita 01</option>
-                                <option value="Equipe 02">Equipe de Visita 02</option>
-                                <option value="Equipe 03">Equipe de Visita 03</option>
-                                <option value="Equipe 04">Equipe de Visita 04</option>
+                                <option value="Equipe 1">Equipe 1</option>
+                                <option value="Equipe 2">Equipe 2</option>
+                                <option value="Equipe 3">Equipe 3</option>
+                                <option value="Equipe 4">Equipe 4</option>
                                 <option value="Grupo RF">Grupo RF</option>
                             </select>
                         </div>
@@ -684,10 +684,10 @@
                         <label class="form-label fw-bold small text-muted">EQUIPE</label>
                         <select name="equipe" class="form-select" required>
                             <option value="">Selecione a equipe...</option>
-                            <option value="Equipe 01">Equipe de Visita 01</option>
-                            <option value="Equipe 02">Equipe de Visita 02</option>
-                            <option value="Equipe 03">Equipe de Visita 03</option>
-                            <option value="Equipe 04">Equipe de Visita 04</option>
+                            <option value="Equipe 1">Equipe 1</option>
+                            <option value="Equipe 2">Equipe 2</option>
+                            <option value="Equipe 3">Equipe 3</option>
+                            <option value="Equipe 4">Equipe 4</option>
                             <option value="Grupo RF">Grupo RF</option>
                         </select>
                     </div>

@@ -180,6 +180,40 @@ class LocalRegistrationFlowTests(TestCase):
         self.assertEqual(profile["comum"], CATALOG[0]["comum"])
         self.assertEqual(profile["municipio"], "ITAPEVI")
 
+    @patch("ColorAdminApp.views.settings.SUPABASE_URL", "")
+    @patch("ColorAdminApp.views.settings.SUPABASE_SERVICE_ROLE_KEY", "")
+    def test_registration_reports_missing_supabase_configuration(self):
+        request = RequestFactory().post(
+            "/api/auth/?action=register",
+            data={"full_name": "Teste", "email": "teste@example.com", "password": "123456", "comum": CATALOG[0]["comum"]},
+            content_type="application/json",
+        )
+        request.session = {}
+        response = apiAuth(request)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("não configurado", json.loads(response.content)["error"])
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.common_catalog", return_value=CATALOG)
+    @patch("ColorAdminApp.views.requests.delete")
+    @patch("ColorAdminApp.views.requests.post")
+    def test_registration_rolls_back_auth_user_when_profile_save_fails(self, post, delete, _catalog, _audit):
+        auth_response = Mock(status_code=200, ok=True)
+        auth_response.json.return_value = {"user": {"id": "partial-user-1"}}
+        profile_response = Mock(status_code=400, ok=False, text='{"message":"unknown column"}')
+        post.side_effect = [auth_response, profile_response]
+        delete.return_value = Mock(status_code=204, ok=True)
+        request = RequestFactory().post(
+            "/api/auth/?action=register",
+            data={"full_name": "Teste", "email": "teste@example.com", "password": "123456", "comum": CATALOG[0]["comum"]},
+            content_type="application/json",
+        )
+        request.session = {}
+        response = apiAuth(request)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("Nenhuma conta foi mantida", json.loads(response.content)["error"])
+        self.assertIn("/auth/v1/admin/users/partial-user-1", delete.call_args.args[0])
+
 
 class IntelligentRouteTests(TestCase):
     def request(self, comum):
