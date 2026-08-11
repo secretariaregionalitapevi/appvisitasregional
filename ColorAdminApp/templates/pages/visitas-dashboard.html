@@ -617,19 +617,30 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF('landscape');
 
-            doc.setFontSize(16);
-            doc.text('Relatório Consolidado de Visitas', 14, 15);
-
-            doc.setFontSize(10);
-            const dataStr = moment().format('DD/MM/YYYY HH:mm');
-            doc.text(`Gerado em: ${dataStr}`, 14, 22);
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const userName = '{{ request.session.user_profile.full_name|default:"Usuário do Sistema"|escapejs }}';
+            const start = $('#peridodo-de').val(), end = $('#peridodo-ate').val();
+            const period = start || end ? `${start ? moment(start).format('DD/MM/YYYY') : 'início'} a ${end ? moment(end).format('DD/MM/YYYY') : 'hoje'}` : 'Todos os lançamentos';
+            const drawHeader = pageNumber => {
+                doc.setTextColor(0,0,0); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+                doc.text('CONGREGAÇÃO CRISTÃ NO BRASIL', pageWidth / 2, 15, {align:'center'});
+                doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('Regional Itapevi - São Paulo', pageWidth / 2, 21, {align:'center'});
+                doc.setTextColor(30,75,122); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('CONTROLE REGIONAL DE VISITAS', pageWidth / 2, 29, {align:'center'});
+                doc.setTextColor(70,70,70); doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('Relatório Consolidado de Visitas', pageWidth / 2, 34, {align:'center'});
+                doc.setTextColor(0,0,0); doc.setFontSize(8); doc.text(`Página ${pageNumber}`, pageWidth - 14, 8, {align:'right'});
+                doc.text(`Emissão: ${moment().format('DD/MM/YYYY')}`, pageWidth - 14, 15, {align:'right'}); doc.text(`Período: ${period}`, pageWidth - 14, 20, {align:'right'}); doc.text(`Impresso por: ${userName}`, pageWidth - 14, 25, {align:'right'});
+                doc.setTextColor(100,100,100); doc.setFontSize(7); doc.text(`${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`, pageWidth - 14, 29, {align:'right'});
+            };
 
             doc.autoTable({
                 html: '#table-visitas',
-                startY: 25,
+                startY: 42,
+                margin: { top: 42 },
                 theme: 'grid',
                 styles: { fontSize: 8 },
-                headStyles: { fillColor: [44, 62, 80], textColor: 255 }
+                headStyles: { fillColor: [30, 75, 122], textColor: 255 },
+                alternateRowStyles: { fillColor: [245, 245, 245] },
+                didDrawPage: data => drawHeader(data.pageNumber)
             });
 
             doc.save(`Relatorio_Visitas_${moment().format('YYYYMMDD')}.pdf`);
@@ -1003,10 +1014,10 @@
                             <label class="form-label small fw-bold">Equipe Responsável</label>
                             <select class="form-select" id="det-equipe">
                                 <option value="">Sem Equipe</option>
-                                <option value="Equipe 01">Equipe 01</option>
-                                <option value="Equipe 02">Equipe 02</option>
-                                <option value="Equipe 03">Equipe 03</option>
-                                <option value="Equipe 04">Equipe 04</option>
+                                <option value="Equipe 1">Equipe 1</option>
+                                <option value="Equipe 2">Equipe 2</option>
+                                <option value="Equipe 3">Equipe 3</option>
+                                <option value="Equipe 4">Equipe 4</option>
                                 <option value="Grupo RF">Grupo RF</option>
                             </select>
                         </div>

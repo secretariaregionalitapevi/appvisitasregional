@@ -189,6 +189,7 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 SUPABASE_TABLE_VISITAS = 'visitas_lancamentos'
 SUPABASE_TABLE_VISITAS_IRMANDADE = 'visitas_irmandade'
 SUPABASE_TABLE_VISITAS_AGENDA = 'visitas_agenda'
+SUPABASE_TABLE_VISITAS_EQUIPES = 'visitas_equipes'
 
 # External API Keys
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY') or legacy_values.get('GOOGLE_MAPS_API_KEY', '')

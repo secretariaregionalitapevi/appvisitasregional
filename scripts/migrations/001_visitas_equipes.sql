@@ -12,12 +12,12 @@ comment on column public.visitas_irmandade.equipe_visita is
 
 -- Atribuições informadas para a Vila Doutor Cardoso.
 update public.visitas_irmandade
-set equipe_visita = 'Equipe 01'
+set equipe_visita = 'Equipe 1'
 where comum = 'BR-22-0673 - VILA DOUTOR CARDOSO'
   and upper(trim(nome)) in ('RICARDO', 'LUCIANO', 'RODRIGO', 'GERSON');
 
 update public.visitas_irmandade
-set equipe_visita = 'Equipe 02'
+set equipe_visita = 'Equipe 2'
 where comum = 'BR-22-0673 - VILA DOUTOR CARDOSO'
   and upper(trim(nome)) in ('ROGER', 'JAIR');
 

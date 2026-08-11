@@ -5,8 +5,53 @@ from django.views import generic
 from django.http import HttpResponse
 from datetime import datetime, timedelta
 import json
+import re
 import unicodedata
 from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
+
+
+def normalize_visit_team(value):
+    """Converte nomes legados da equipe para o formato atual (ex.: Equipe 01 -> Equipe 1)."""
+    name = ' '.join(str(value or '').strip().split())
+    match = re.fullmatch(r'equipe(?:\s+de\s+visitas?)?\s+0*(\d+)', name, flags=re.IGNORECASE)
+    return f'Equipe {int(match.group(1))}' if match else name
+
+
+def normalize_regional_group(value):
+    name = ' '.join(str(value or '').strip().split())
+    match = re.fullmatch(r'(?:grupo|equipe)(?:\s+regional)?\s+([a-z])', name, flags=re.IGNORECASE)
+    return f'Grupo {match.group(1).upper()}' if match else name
+
+
+def visit_team_type(value):
+    name = normalize_regional_group(value)
+    return 'REGIONAL' if re.fullmatch(r'Grupo\s+[A-Z]', name) else 'LOCAL'
+
+
+def normalize_team_name(value, team_type=None):
+    return normalize_regional_group(value) if team_type == 'REGIONAL' else normalize_visit_team(value)
+
+
+def format_display_name(value):
+    """Padroniza nomes para exibição sem alterar siglas usuais do projeto."""
+    text = ' '.join(str(value or '').strip().split())
+    if not text:
+        return ''
+    lowercase_words = {'a', 'as', 'da', 'das', 'de', 'do', 'dos', 'e'}
+    acronyms = {'ccb', 'gve', 'gvi', 'gvm', 're', 'rf'}
+    words = []
+    for index, word in enumerate(text.split(' ')):
+        parts = []
+        for part in word.split('-'):
+            clean = part.casefold()
+            if clean in acronyms:
+                parts.append(clean.upper())
+            elif index > 0 and clean in lowercase_words:
+                parts.append(clean)
+            else:
+                parts.append(clean[:1].upper() + clean[1:])
+        words.append('-'.join(parts))
+    return ' '.join(words)
 
 def index(request):
 	return redirect('/dashboard/v3')
@@ -626,6 +671,21 @@ def apiVisitasIrmandade(request):
             current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
             if not current or not can_access(scope, current[0]) or not can_access(scope, {**current[0], **data}):
                 return JsonResponse({"error": "Registro fora do seu escopo de acesso."}, status=403)
+            # Evita ciclo conjugal (esposo e esposa apontando um para o outro).
+            # Se o cônjuge selecionado já pertence ao núcleo do membro atual,
+            # o membro atual é a referência/chefe e não deve apontar de volta.
+            selected_head_id = str(data.get('id_chefe_familia') or '').strip()
+            if selected_head_id and str(data.get('vinculo_tipo') or '').strip().casefold() in {'cônjuge', 'conjuge'}:
+                selected_response = requests.get(
+                    url, headers=headers,
+                    params=[('id', f'eq.{selected_head_id}'), ('select', 'id,id_chefe_familia,vinculo_tipo')],
+                    timeout=10,
+                )
+                if selected_response.status_code == 200:
+                    selected_rows = selected_response.json()
+                    if selected_rows and str(selected_rows[0].get('id_chefe_familia') or '') == str(id):
+                        data['id_chefe_familia'] = None
+                        data['vinculo_tipo'] = None
             params = [("id", f"eq.{id}")]
             
             response = requests.patch(url, headers=headers, params=params, json=data, timeout=10)
@@ -722,10 +782,106 @@ def visitasEquipes(request):
     })
 
 
+def visitasRelatoriosEquipes(request):
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    return render(request, 'pages/visitas-relatorios-equipes.html', {
+        'comuns': comuns,
+        'municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+        'report_access_level': scope.get('level'),
+        'municipio_padrao': scope.get('municipio') or '',
+        'comum_padrao': scope.get('comum') or '',
+    })
+
+
+def apiVisitasRelatoriosEquipes(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método não permitido.'}, status=405)
+    scope = user_scope(request)
+    headers = {
+        'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+    def fetch_all(url, params):
+        rows = []
+        page_size = 1000
+        for offset in range(0, 1000000, page_size):
+            response = requests.get(
+                url, headers={**headers, 'Range': f'{offset}-{offset + page_size - 1}'},
+                params=params, timeout=30,
+            )
+            response.raise_for_status()
+            page = response.json()
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+        return rows
+    try:
+        member_rows = fetch_all(
+            f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}",
+            {'select': 'id,comum'},
+        )
+        members = {str(row.get('id')): row for row in filter_rows(scope, member_rows)}
+        agenda_params = [('select', '*'), ('order', 'data_inicio.desc')]
+        start = (request.GET.get('inicio') or '').strip()
+        end = (request.GET.get('fim') or '').strip()
+        if start:
+            agenda_params.append(('data_inicio', f'gte.{start}T00:00:00'))
+        if end:
+            agenda_params.append(('data_inicio', f'lte.{end}T23:59:59'))
+        agenda_rows = fetch_all(
+            f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}",
+            agenda_params,
+        )
+        team_rows = fetch_all(
+            f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_EQUIPES}",
+            {'select': '*'},
+        )
+        teams = {str(row.get('id')): row for row in team_rows}
+        catalog = {str(row.get('comum') or '').strip(): str(row.get('cidade') or '').strip() for row in visible_commons(scope)}
+        selected_city = (request.GET.get('municipio') or '').strip()
+        selected_common = (request.GET.get('comum') or '').strip()
+        selected_type = (request.GET.get('tipo') or '').strip().upper()
+        grouped = {}
+        for visit in agenda_rows:
+            member = members.get(str(visit.get('irmandade_id') or ''))
+            if not member:
+                continue
+            comum = str(member.get('comum') or '').strip()
+            municipio = catalog.get(comum, '')
+            team = teams.get(str(visit.get('equipe_id') or '')) or {}
+            name = format_display_name(normalize_team_name(team.get('nome') or visit.get('equipe_responsavel'), team.get('tipo')))
+            team_type = team.get('tipo') or visit.get('equipe_tipo') or visit_team_type(name)
+            if selected_city and municipio != selected_city:
+                continue
+            if selected_common and comum != selected_common:
+                continue
+            if selected_type in {'LOCAL', 'REGIONAL'} and team_type != selected_type:
+                continue
+            key = (team_type, municipio, comum if team_type == 'LOCAL' else '', name)
+            row = grouped.setdefault(key, {
+                'tipo': team_type, 'municipio': municipio,
+                'comum': comum if team_type == 'LOCAL' else '', 'equipe': name,
+                'total': 0, 'realizadas': 0, 'agendadas': 0, 'nao_realizadas': 0, 'canceladas': 0,
+            })
+            row['total'] += 1
+            status = str(visit.get('status') or '').casefold()
+            if status == 'realizada': row['realizadas'] += 1
+            elif status == 'cancelada': row['canceladas'] += 1
+            elif status in {'não realizada', 'nao realizada'}: row['nao_realizadas'] += 1
+            else: row['agendadas'] += 1
+        rows = sorted(grouped.values(), key=lambda row: (row['tipo'], row['municipio'], row['comum'], row['equipe']))
+        return JsonResponse({'rows': rows, 'local': [r for r in rows if r['tipo'] == 'LOCAL'], 'regional': [r for r in rows if r['tipo'] == 'REGIONAL']})
+    except requests.RequestException as exc:
+        return JsonResponse({'error': 'Não foi possível gerar os relatórios.', 'details': str(exc)}, status=502)
+
+
 def apiVisitasEquipes(request):
     """Atribui uma equipe aos membros já cadastrados em visitas_irmandade."""
     scope = user_scope(request)
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+    teams_url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_EQUIPES}"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
@@ -738,6 +894,11 @@ def apiVisitasEquipes(request):
             payload = response.json()
         except Exception:
             payload = {}
+        if ('grupo_regional_id' in str(payload) or 'grupo_regional_nome' in str(payload)) and payload.get('code') in {'PGRST204', '42703'}:
+            return JsonResponse({
+                'error': 'O vínculo regional independente ainda não foi habilitado no banco.',
+                'migration': 'scripts/migrations/007_visitas_duplo_vinculo_equipes.sql',
+            }, status=503)
         if payload.get('code') in {'PGRST204', '42703'} or 'equipe_visita' in str(payload):
             return JsonResponse({
                 'error': 'O campo de equipe ainda não foi criado no cadastro da irmandade.',
@@ -747,9 +908,32 @@ def apiVisitasEquipes(request):
 
     try:
         if request.method == 'GET':
+            if request.GET.get('modo') == 'catalogo':
+                response = requests.get(
+                    teams_url, headers=headers,
+                    params={'select': '*', 'order': 'municipio.asc,tipo.asc,comum.asc,nome.asc'}, timeout=15,
+                )
+                if response.status_code != 200:
+                    return JsonResponse({
+                        'error': 'A estrutura de equipes ainda não foi criada no banco.',
+                        'migration': 'scripts/migrations/002_visitas_equipes_estruturadas.sql',
+                        'details': response.text,
+                    }, status=503)
+                teams = filter_rows(scope, response.json())
+                municipio = (request.GET.get('municipio') or '').strip()
+                comum = (request.GET.get('comum') or '').strip()
+                tipo = (request.GET.get('tipo') or '').strip().upper()
+                if municipio:
+                    teams = [item for item in teams if str(item.get('municipio') or '').strip() == municipio]
+                if comum:
+                    teams = [item for item in teams if not item.get('comum') or str(item.get('comum')).strip() == comum]
+                if tipo in {'LOCAL', 'REGIONAL'}:
+                    teams = [item for item in teams if item.get('tipo') == tipo]
+                return JsonResponse(teams, safe=False)
+
             comum = (request.GET.get('comum') or '').strip()
             params = {
-                "select": "id,nome,comum,setor,status,cargo_outros,equipe_visita",
+                "select": "id,nome,comum,setor,status,cargo_outros,equipe_visita,equipe_id,grupo_regional_id,grupo_regional_nome",
                 "order": "comum.asc,equipe_visita.asc,nome.asc",
             }
             if comum:
@@ -758,6 +942,11 @@ def apiVisitasEquipes(request):
             if response.status_code != 200:
                 return database_error(response)
             rows = filter_rows(scope, response.json())
+            for row in rows:
+                if row.get('equipe_visita'):
+                    row['equipe_visita'] = normalize_visit_team(row['equipe_visita'])
+                if row.get('grupo_regional_nome'):
+                    row['grupo_regional_nome'] = normalize_team_name(row['grupo_regional_nome'], 'REGIONAL')
             if comum:
                 rows = [row for row in rows if str(row.get('comum') or '').strip() == comum]
             catalogo = {row.get('comum'): row.get('cidade') for row in visible_commons(scope)}
@@ -770,11 +959,11 @@ def apiVisitasEquipes(request):
                     if busca:
                         rows = [row for row in rows if busca in str(row.get('nome') or '').casefold()]
                 else:
-                    rows = [row for row in rows if str(row.get('equipe_visita') or '').strip()]
+                    rows = [row for row in rows if str(row.get('equipe_visita') or '').strip() or str(row.get('grupo_regional_nome') or '').strip()]
                 return JsonResponse([{**row, 'municipio': catalogo.get(row.get('comum'), '')} for row in rows], safe=False)
             somente_atribuidos = request.GET.get('atribuidos') != 'false'
             if somente_atribuidos:
-                rows = [row for row in rows if str(row.get('equipe_visita') or '').strip()]
+                rows = [row for row in rows if str(row.get('equipe_visita') or '').strip() or str(row.get('grupo_regional_nome') or '').strip()]
             grupos = {}
             for membro in rows:
                 equipe = str(membro.get('equipe_visita') or '').strip()
@@ -794,6 +983,31 @@ def apiVisitasEquipes(request):
             return JsonResponse({'error': 'Método não permitido.'}, status=405)
 
         member_id = request.GET.get('id')
+        team_delete_id = (request.GET.get('equipe_id') or '').strip()
+        if request.method == 'DELETE' and team_delete_id:
+            team_lookup = requests.get(
+                teams_url, headers=headers,
+                params={'id': f'eq.{team_delete_id}', 'select': '*'}, timeout=15,
+            )
+            if team_lookup.status_code != 200:
+                return database_error(team_lookup)
+            team_rows = team_lookup.json()
+            if not team_rows:
+                return JsonResponse({'error': 'Equipe não encontrada.'}, status=404)
+            team = team_rows[0]
+            if not can_access(scope, team):
+                return JsonResponse({'error': 'Equipe fora do seu escopo de acesso.'}, status=403)
+            regional = team.get('tipo') == 'REGIONAL'
+            link_field = 'grupo_regional_id' if regional else 'equipe_id'
+            clear_data = {'grupo_regional_id': None, 'grupo_regional_nome': None} if regional else {'equipe_id': None, 'equipe_visita': None}
+            detach = requests.patch(url, headers=headers, params={link_field: f'eq.{team_delete_id}'}, json=clear_data, timeout=15)
+            if detach.status_code not in {200, 201, 204}:
+                return database_error(detach)
+            deleted = requests.delete(teams_url, headers=headers, params={'id': f'eq.{team_delete_id}'}, timeout=15)
+            if deleted.status_code not in {200, 204}:
+                return database_error(deleted)
+            log_audit(request, 'DELETE_TEAM', 'VISITAS_EQUIPES', {'anterior': team, 'scope': scope_details(scope)})
+            return JsonResponse({'status': 'deleted'})
         current = []
         if request.method in {'PATCH', 'DELETE'}:
             if not member_id:
@@ -806,17 +1020,47 @@ def apiVisitasEquipes(request):
                 return JsonResponse({'error': 'Equipe fora do seu escopo de acesso.'}, status=403)
 
         if request.method == 'DELETE':
-            response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json={'equipe_visita': None}, timeout=15)
+            regional = (request.GET.get('tipo') or '').strip().upper() == 'REGIONAL'
+            clear_data = {'grupo_regional_id': None, 'grupo_regional_nome': None} if regional else {'equipe_id': None, 'equipe_visita': None}
+            response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json=clear_data, timeout=15)
             if response.status_code not in {200, 201, 204}:
                 return database_error(response)
             log_audit(request, 'REMOVE_TEAM_MEMBER', 'VISITAS_EQUIPES', {'anterior': current[0], 'scope': scope_details(scope)})
             return JsonResponse({'status': 'deleted'})
 
         data = json.loads(request.body or '{}')
+        if data.get('acao') == 'cadastrar_equipe':
+            team_type = str(data.get('tipo') or '').strip().upper()
+            municipio = str(data.get('municipio') or '').strip()
+            comum = str(data.get('comum') or '').strip() or None
+            name = normalize_team_name(data.get('nome'), team_type)
+            candidate = {'municipio': municipio, 'comum': comum}
+            if team_type not in {'LOCAL', 'REGIONAL'} or not municipio or not name:
+                return JsonResponse({'error': 'Informe tipo, nome e município da equipe.'}, status=400)
+            if team_type == 'LOCAL':
+                if not comum or not re.fullmatch(r'Equipe\s+\d+', name):
+                    return JsonResponse({'error': 'Equipe local deve ter uma comum e nome numérico, como Equipe 1.'}, status=400)
+            else:
+                comum = None
+                candidate['comum'] = None
+                if not re.fullmatch(r'Grupo\s+[A-Z]', name):
+                    return JsonResponse({'error': 'Grupo regional deve usar uma letra, como Grupo A.'}, status=400)
+            if not can_access(scope, candidate):
+                return JsonResponse({'error': 'Localidade fora do seu escopo de acesso.'}, status=403)
+            payload = {'nome': name, 'tipo': team_type, 'municipio': municipio, 'comum': comum, 'ativo': True}
+            response = requests.post(teams_url, headers=headers, json=payload, timeout=15)
+            if response.status_code not in {200, 201}:
+                message = 'Já existe uma equipe com esse nome nesta localidade.' if response.status_code == 409 else response.text
+                return JsonResponse({'error': message}, status=response.status_code)
+            result = response.json()
+            log_audit(request, 'CREATE_TEAM', 'VISITAS_EQUIPES', {'novo': result, 'scope': scope_details(scope)})
+            return JsonResponse(result, safe=False)
+
         member_id = str(data.get('membro_id') or member_id or '').strip()
-        equipe = str(data.get('equipe') or '').strip()
-        if not member_id or not equipe:
-            return JsonResponse({'error': 'Selecione o membro e informe a equipe.'}, status=400)
+        team_id = str(data.get('equipe_id') or '').strip()
+        equipe = normalize_team_name(data.get('equipe'))
+        if not member_id or not team_id:
+            return JsonResponse({'error': 'Selecione o membro e uma equipe cadastrada.'}, status=400)
         if not current or str(current[0].get('id')) != member_id:
             lookup = requests.get(url, headers=headers, params={'id': f'eq.{member_id}', 'select': '*'}, timeout=15)
             if lookup.status_code != 200:
@@ -824,10 +1068,26 @@ def apiVisitasEquipes(request):
             current = lookup.json()
         if not current or not can_access(scope, current[0]):
             return JsonResponse({'error': 'Membro fora do seu escopo de acesso.'}, status=403)
+        team_response = requests.get(teams_url, headers=headers, params={'id': f'eq.{team_id}', 'select': '*'}, timeout=15)
+        if team_response.status_code != 200 or not team_response.json():
+            return JsonResponse({'error': 'Equipe não encontrada.'}, status=404)
+        team = team_response.json()[0]
+        if not can_access(scope, team):
+            return JsonResponse({'error': 'Equipe fora do seu escopo de acesso.'}, status=403)
+        member_common = str(current[0].get('comum') or '').strip()
+        member_city = next((str(item.get('cidade') or '').strip() for item in visible_commons(scope) if str(item.get('comum') or '').strip() == member_common), '')
+        if team.get('tipo') == 'LOCAL' and member_common != str(team.get('comum') or '').strip():
+            return JsonResponse({'error': 'Equipe local aceita somente participantes da própria comum.'}, status=400)
+        if team.get('tipo') == 'REGIONAL' and member_city != str(team.get('municipio') or '').strip():
+            return JsonResponse({'error': 'Grupo regional aceita somente participantes do mesmo município.'}, status=400)
+        equipe = normalize_team_name(team.get('nome'), team.get('tipo'))
         cargos = [cargo.strip() for cargo in str(current[0].get('cargo_outros') or '').split(',') if cargo.strip()]
         if not any(cargo.casefold() == 'grupo de visitas' for cargo in cargos):
             cargos.append('Grupo de Visitas')
-        update_data = {'equipe_visita': equipe, 'cargo_outros': ','.join(cargos)}
+        if team.get('tipo') == 'REGIONAL':
+            update_data = {'grupo_regional_id': team_id, 'grupo_regional_nome': equipe, 'cargo_outros': ','.join(cargos)}
+        else:
+            update_data = {'equipe_id': team_id, 'equipe_visita': equipe, 'cargo_outros': ','.join(cargos)}
         response = requests.patch(url, headers=headers, params={'id': f'eq.{member_id}'}, json=update_data, timeout=15)
         if response.status_code not in {200, 201}:
             return database_error(response)
@@ -889,7 +1149,7 @@ def apiRoteiroBairros(request):
 
 def visitasRoteiro(request):
     scope = user_scope(request)
-    equipe = request.GET.get('equipe')
+    equipe = normalize_visit_team(request.GET.get('equipe'))
     data_filtro = request.GET.get('data') # formato YYYY-MM-DD
     comum = (request.GET.get('comum') or scope.get('comum') or '').strip()
     bairro = (request.GET.get('bairro') or '').strip()
@@ -909,8 +1169,6 @@ def visitasRoteiro(request):
     }
     
     params = [("select", "*")]
-    if equipe:
-        params.append(("equipe_responsavel", f"eq.{equipe}"))
     if data_filtro:
         # Pega do inicio ao fim do dia
         params.append(("data_inicio", f"gte.{data_filtro}T00:00:00"))
@@ -919,6 +1177,11 @@ def visitasRoteiro(request):
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         visitas = filter_rows(scope, response.json()) if response.status_code == 200 else []
+        if equipe:
+            visitas = [
+                v for v in visitas
+                if normalize_visit_team(v.get('equipe_responsavel')) == equipe
+            ]
         
         # Filtrar apenas as que não estão canceladas/não realizadas
         visitas_validas = [v for v in visitas if v.get('status') not in ['Cancelada', 'Não realizada']]
@@ -1035,6 +1298,9 @@ def apiVisitasAgenda(request):
             response = requests.get(url, headers=headers, params=params, timeout=10)
             response.raise_for_status()
             rows = response.json()
+            for row in rows:
+                if row.get('equipe_responsavel'):
+                    row['equipe_responsavel'] = normalize_visit_team(row['equipe_responsavel'])
 
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
@@ -1074,6 +1340,8 @@ def apiVisitasAgenda(request):
         try:
             id = request.GET.get('id') if request.method == 'PATCH' else None
             data = json.loads(request.body)
+            if 'equipe_responsavel' in data:
+                data['equipe_responsavel'] = normalize_team_name(data['equipe_responsavel'], data.get('equipe_tipo'))
             current = []
             if id:
                 current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
@@ -1084,21 +1352,21 @@ def apiVisitasAgenda(request):
             # Reserva territorial também para criações e edições manuais.
             candidate_day = str(candidate.get('data_inicio') or '')[:10]
             candidate_sector = str(candidate.get('setor') or '').strip()
-            candidate_team = str(candidate.get('equipe_responsavel') or '').strip()
+            candidate_team = normalize_team_name(candidate.get('equipe_responsavel'), candidate.get('equipe_tipo'))
             if candidate_day and candidate_sector and candidate_team:
                 day_visits_response = requests.get(url, headers=headers, params=[
-                    ("select", "id,setor,equipe_responsavel,status"),
+                    ("select", "id,setor,equipe_responsavel,equipe_tipo,status"),
                     ("data_inicio", f"gte.{candidate_day}T00:00:00"),
                     ("data_inicio", f"lte.{candidate_day}T23:59:59"),
                 ], timeout=10)
                 if day_visits_response.status_code == 200:
                     from .utils.routing import normalize_text
                     conflicting_team = next((
-                        item.get('equipe_responsavel') for item in day_visits_response.json()
+                        normalize_team_name(item.get('equipe_responsavel'), item.get('equipe_tipo')) for item in day_visits_response.json()
                         if str(item.get('id')) != str(id or '')
                         and item.get('status') != 'Cancelada'
                         and normalize_text(item.get('setor')) == normalize_text(candidate_sector)
-                        and str(item.get('equipe_responsavel') or '').strip() != candidate_team
+                        and normalize_team_name(item.get('equipe_responsavel'), item.get('equipe_tipo')) != candidate_team
                     ), None)
                     if conflicting_team:
                         return JsonResponse({

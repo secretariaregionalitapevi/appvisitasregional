@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Relatórios de Equipes{% endblock %}
+{% block css %}<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet"><style>.report-common-filter .select2-container{width:100%!important}.report-common-filter .select2-selection--single{height:34px}.report-common-filter .select2-selection__rendered{line-height:32px!important}.report-common-filter .select2-selection__arrow{height:32px!important}.report-common-filter .select2-results__options{max-height:260px!important}</style>{% endblock %}
+{% block content %}
+<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item">Visitas</li><li class="breadcrumb-item active">Relatórios de equipes</li></ol>
+<h1 class="page-header"><i class="fa fa-chart-column me-2 text-teal"></i>Relatórios de Equipes <small>Local e Regional</small></h1>
+<div class="panel panel-inverse"><div class="panel-heading"><h4 class="panel-title">Filtros</h4></div><div class="panel-body">
+  <form id="report-filters" class="row g-3 align-items-end">
+    <div class="col-lg-2"><label class="form-label">Início</label><input type="date" id="report-start" class="form-control"></div>
+    <div class="col-lg-2"><label class="form-label">Fim</label><input type="date" id="report-end" class="form-control"></div>
+    <div class="col-lg-2"><label class="form-label">Município</label><select id="report-city" class="form-select" {% if report_access_level == 'municipal' or report_access_level == 'local' %}disabled{% endif %}><option value="">Todos</option>{% for item in municipios %}<option {% if item == municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+    <div class="col-lg-3 report-common-filter"><label class="form-label">Comum</label><select id="report-common" class="form-select" {% if report_access_level == 'local' %}disabled{% endif %}><option value="">Todas</option>{% for item in comuns %}<option value="{{ item.comum }}" data-city="{{ item.cidade }}" {% if item.comum == comum_padrao %}selected{% endif %}>{{ item.comum }}</option>{% endfor %}</select></div>
+    <div class="col-lg-3 d-flex gap-2"><button class="btn btn-primary flex-fill"><i class="fa fa-filter me-1"></i>Gerar</button><button type="button" id="export-excel" class="btn btn-white border-gray-400" title="Excel"><i class="fa fa-file-excel text-success me-1"></i>Excel</button><button type="button" id="export-pdf" class="btn btn-white border-gray-400" title="PDF"><i class="fa fa-file-pdf text-danger me-1"></i>PDF</button></div>
+  </form>
+</div></div>
+<ul class="nav nav-tabs"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#local-report">Equipes locais por comum</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#regional-report">Grupos regionais por município</button></li></ul>
+<div class="tab-content panel panel-body border-top-0">
+  <div class="tab-pane fade show active" id="local-report"><div class="table-responsive"><table id="local-report-table" class="table table-striped align-middle"><thead><tr><th>Município</th><th>Comum</th><th>Equipe</th><th>Total</th><th>Realizadas</th><th>Agendadas</th><th>Não realizadas</th><th>Canceladas</th></tr></thead><tbody id="local-body"></tbody></table></div></div>
+  <div class="tab-pane fade" id="regional-report"><div class="table-responsive"><table id="regional-report-table" class="table table-striped align-middle"><thead><tr><th>Município</th><th>Grupo regional</th><th>Total</th><th>Realizadas</th><th>Agendadas</th><th>Não realizadas</th><th>Canceladas</th></tr></thead><tbody id="regional-body"></tbody></table></div></div>
+</div>
+{% endblock %}
+{% block js %}
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let reportRows = [];
+  const reportAccessLevel = '{{ report_access_level|escapejs }}';
+  const userName = '{{ request.session.user_profile.full_name|default:"Usuário do Sistema"|escapejs }}';
+  const q = id => document.getElementById(id);
+  const esc = value => String(value ?? '').replace(/[&<>\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
+  const cells = row => `<td>${row.total}</td><td>${row.realizadas}</td><td>${row.agendadas}</td><td>${row.nao_realizadas}</td><td>${row.canceladas}</td>`;
+  const commonCatalog = Array.from(q('report-common').options).slice(1).map(option => ({value:option.value, city:option.dataset.city}));
+  const rebuildCommonSearch = (city, selected='') => {
+    const select = q('report-common'), $select = jQuery(select);
+    if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+    select.replaceChildren(new Option('Todas', ''));
+    commonCatalog.filter(item => !city || item.city === city).forEach(item => select.add(new Option(item.value, item.value)));
+    select.value = commonCatalog.some(item => item.value === selected && (!city || item.city === city)) ? selected : '';
+    $select.prop('disabled', reportAccessLevel === 'local').select2({width:'100%',language:'pt-BR',placeholder:'Digite o código ou nome da comum...',allowClear:reportAccessLevel !== 'local',dropdownParent:jQuery('.report-common-filter')});
+  };
+  const render = (id, rows, regional=false) => q(id).innerHTML = rows.length
+    ? rows.map(row => `<tr><td>${esc(row.municipio)}</td>${regional ? '' : `<td>${esc(row.comum)}</td>`}<td><strong>${esc(row.equipe)}</strong></td>${cells(row)}</tr>`).join('')
+    : `<tr><td colspan="8" class="text-center text-muted py-4">Nenhum registro no período.</td></tr>`;
+  const activeReport = () => {
+    const regional = q('regional-report').classList.contains('active');
+    return {
+      table: q(regional ? 'regional-report-table' : 'local-report-table'),
+      rows: reportRows.filter(row => row.tipo === (regional ? 'REGIONAL' : 'LOCAL')),
+      title: regional ? 'Relatório de Grupos Regionais por Município' : 'Relatório de Equipes Locais por Comum',
+      sheet: regional ? 'Grupos Regionais' : 'Equipes Locais',
+      file: regional ? 'Grupos_Regionais' : 'Equipes_Locais',
+    };
+  };
+  const periodDescription = () => {
+    const parts = [];
+    if (q('report-start').value) parts.push(`Início: ${q('report-start').value.split('-').reverse().join('/')}`);
+    if (q('report-end').value) parts.push(`Fim: ${q('report-end').value.split('-').reverse().join('/')}`);
+    return parts.join(' | ') || 'Todos os lançamentos';
+  };
+  const locationDescription = () => {
+    const parts = [];
+    if (q('report-city').value) parts.push(`Município: ${q('report-city').value}`);
+    if (q('report-common').value) parts.push(`Comum: ${q('report-common').value}`);
+    return parts.join(' | ') || 'Todas as localidades';
+  };
+  async function load() {
+    const params = new URLSearchParams({inicio:q('report-start').value, fim:q('report-end').value, municipio:q('report-city').value, comum:q('report-common').value});
+    const response = await fetch(`/visitas/api/relatorios-equipes/?${params}`), data = await response.json();
+    if (!response.ok) return window.alert(data.error || 'Falha ao gerar relatório.');
+    reportRows = data.rows; render('local-body', data.local); render('regional-body', data.regional, true);
+  }
+  q('report-filters').onsubmit = event => { event.preventDefault(); load(); };
+  q('report-city').onchange = () => rebuildCommonSearch(q('report-city').value);
+  q('export-excel').onclick = () => {
+    const report = activeReport();
+    if (!report.rows.length) return window.alert('Não há registros nesta aba para exportar.');
+    const regional = report.rows[0]?.tipo === 'REGIONAL';
+    const headers = regional
+      ? ['Município','Grupo regional','Total','Realizadas','Agendadas','Não realizadas','Canceladas']
+      : ['Município','Comum','Equipe','Total','Realizadas','Agendadas','Não realizadas','Canceladas'];
+    const period = periodDescription();
+    const location = locationDescription();
+    const rows = [
+      ['CONGREGAÇÃO CRISTÃ NO BRASIL'],
+      ['Regional Itapevi - São Paulo'],
+      [regional ? 'GRUPOS REGIONAIS DE VISITAS' : 'EQUIPES LOCAIS DE VISITAS'],
+      [report.title],
+      ['Período', period],
+      ['Localidade', location],
+      ['Impresso por', userName],
+      ['Impresso em', new Date().toLocaleString('pt-BR')],
+      [], headers,
+      ...report.rows.map(row => regional
+        ? [row.municipio,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas]
+        : [row.municipio,row.comum,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!merges'] = [0,1,2,3].map(row => ({s:{r:row,c:0},e:{r:row,c:headers.length-1}}));
+    worksheet['!cols'] = headers.map((header,index) => ({wch:index < (regional?2:3) ? 34 : Math.max(14,header.length+2)}));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, report.sheet);
+    XLSX.writeFile(workbook, `${report.file}_${new Date().toISOString().slice(0,10).replaceAll('-','')}.xlsx`);
+  };
+  q('export-pdf').onclick = () => {
+    const report = activeReport();
+    if (!report.rows.length) return window.alert('Não há registros nesta aba para exportar.');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('landscape');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const regional = report.rows[0]?.tipo === 'REGIONAL';
+    const headers = regional
+      ? [['Município','Grupo regional','Total','Realizadas','Agendadas','Não realizadas','Canceladas']]
+      : [['Município','Comum','Equipe','Total','Realizadas','Agendadas','Não realizadas','Canceladas']];
+    const body = report.rows.map(row => regional
+      ? [row.municipio,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas]
+      : [row.municipio,row.comum,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas]);
+    const now = new Date();
+    const drawHeader = pageNumber => {
+      doc.setTextColor(0,0,0); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.text('CONGREGAÇÃO CRISTÃ NO BRASIL', pageWidth / 2, 15, {align:'center'});
+      doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.text('Regional Itapevi - São Paulo', pageWidth / 2, 21, {align:'center'});
+      doc.setTextColor(30,75,122); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+      doc.text(regional ? 'GRUPOS REGIONAIS DE VISITAS' : 'EQUIPES LOCAIS DE VISITAS', pageWidth / 2, 29, {align:'center'});
+      doc.setTextColor(70,70,70); doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.text(report.title, pageWidth / 2, 34, {align:'center'});
+      doc.setTextColor(0,0,0); doc.setFontSize(8);
+      doc.text(`Página ${pageNumber}`, pageWidth - 14, 8, {align:'right'});
+      doc.text(`Emissão: ${now.toLocaleDateString('pt-BR')}`, pageWidth - 14, 15, {align:'right'});
+      doc.text(`Período: ${periodDescription()}`, pageWidth - 14, 20, {align:'right'});
+      doc.text(`Localidade: ${locationDescription()}`, pageWidth - 14, 25, {align:'right'});
+      doc.text(`Impresso por: ${userName}`, pageWidth - 14, 30, {align:'right'});
+      doc.setTextColor(100,100,100); doc.setFontSize(7);
+      doc.text(`${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`, pageWidth - 14, 34, {align:'right'});
+    };
+    doc.autoTable({head:headers,body,startY:46,margin:{top:46},theme:'grid',styles:{fontSize:8},headStyles:{fillColor:[30,75,122],textColor:255},alternateRowStyles:{fillColor:[245,245,245]},didDrawPage:data=>drawHeader(data.pageNumber)});
+    doc.save(`${report.file}_${new Date().toISOString().slice(0,10).replaceAll('-','')}.pdf`);
+  };
+  rebuildCommonSearch(q('report-city').value, q('report-common').value);
+  load();
+});
+</script>
+{% endblock %}

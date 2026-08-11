@@ -408,8 +408,9 @@
                                 <small class="text-muted" style="font-size: 10px;">Preenchido automaticamente pelo sistema.</small>
                             </div>
 							<div class="col-md-8">
-                                <label class="form-label fw-bold small">VÍNCULO FAMILIAR (CHEFE DA FAMÍLIA)</label>
+                                <label class="form-label fw-bold small">CHEFE / REFERÊNCIA DA FAMÍLIA</label>
                                 <select class="form-select" id="irm-chefe-select" style="width: 100%"></select>
+                                <div class="form-text">Cadastre esposa e filhos vinculados ao esposo/chefe. No cadastro do chefe, deixe este campo vazio.</div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold small">GRAU DE PARENTESCO</label>
@@ -498,8 +499,8 @@
         const CADASTRO_DEFAULT_COMMON = '{{ cadastro_comum_padrao|escapejs }}';
         const CADASTRO_DEFAULT_CITY = '{{ cadastro_municipio_padrao|escapejs }}';
         const CADASTRO_COMMONS = JSON.parse(document.getElementById('cadastro-commons-data')?.textContent || '[]');
-        let cadastroSelectedCity = ['regional', 'global'].includes(CADASTRO_ACCESS_LEVEL) ? '' : CADASTRO_DEFAULT_CITY;
-        let cadastroSelectedCommon = ['regional', 'global'].includes(CADASTRO_ACCESS_LEVEL) ? '' : CADASTRO_DEFAULT_COMMON;
+        let cadastroSelectedCity = CADASTRO_DEFAULT_CITY;
+        let cadastroSelectedCommon = CADASTRO_DEFAULT_COMMON;
 
         // Inicialização Profissional
         const loadContent = async () => {
@@ -642,21 +643,21 @@
 
             doc.setFontSize(16);
             doc.setFont('helvetica', 'bold');
-            doc.text('CONGREGAÇÃO CRISTÃ NO BRASIL', 14, 15);
+            doc.text('CONGREGAÇÃO CRISTÃ NO BRASIL', pageWidth / 2, 15, { align: 'center' });
             
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
-            doc.text('Regional Itapevi - São Paulo', 14, 21);
+            doc.text('Regional Itapevi - São Paulo', pageWidth / 2, 21, { align: 'center' });
             
             doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(30, 75, 122);
-            doc.text('CADASTRO DE IRMANDADE', 14, 29);
+            doc.text('CADASTRO DE IRMANDADE', pageWidth / 2, 29, { align: 'center' });
             
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(100, 100, 100);
-            doc.text('Relatório Detalhado de Membros', 14, 34);
+            doc.text('Relatório Detalhado de Membros', pageWidth / 2, 34, { align: 'center' });
 
             doc.setFontSize(8);
             doc.setTextColor(0, 0, 0);
@@ -800,7 +801,7 @@
                     const cargos = String(item.cargo_outros || '').split(',').map(value => value.trim()).filter(Boolean);
                     const hasCargo = label => cargos.some(value => normalizeHeader(value) === normalizeHeader(label));
                     item.perfil_musico = hasCargo('Músico'); item.cargo_organista = hasCargo('Organista');
-                    item.perfil_mocidade = hasCargo('Mocidade') || hasCargo('Auxiliar de Jovens') || hasCargo('Cooperador de Jovens');
+                    item.perfil_mocidade = hasCargo('Mocidade');
                     item.perfil_enfermo = hasCargo('Enfermo'); item.cargo_porteiro = hasCargo('Porteiro');
                     item.cargo_auxiliar_porta = hasCargo('Auxiliar da Porta'); item.cargo_cozinha = hasCargo('Cozinha'); item.cargo_limpeza = hasCargo('Limpeza');
                     item.status = item.status || 'Ativo'; item.cargo_outros = cargos.join(',');
@@ -1312,7 +1313,9 @@
             if (extra) seleccionados.push(extra);
 
             let outros = [];
-            const mappedValues = ['Músico', 'Organista', 'Auxiliar de Jovens', 'Cooperador de Jovens', 'Enfermo', 'Porteiro', 'Auxiliar da Porta'];
+            // Cargos sem coluna própria permanecem em cargo_outros para conservar
+            // sua identidade ministerial (ex.: Cooperador/Auxiliar de Jovens).
+            const mappedValues = ['Músico', 'Organista', 'Enfermo', 'Porteiro', 'Auxiliar da Porta'];
             seleccionados.forEach(c => {
                 if (!mappedValues.includes(c)) outros.push(c);
             });
@@ -1320,6 +1323,7 @@
             // LÓGICA DE UPLOAD DE FOTO (PROXY)
             let urlFoto = $('#irm-url-foto').val();
             const photoFile = $('#irm-foto-input')[0].files[0];
+            const currentRecord = irmandadeData.find(item => String(item.id) === String(id));
             
             if (photoFile) {
                 const formData = new FormData();
@@ -1377,7 +1381,7 @@
                 data_oficializacao: $('#irm-graduacao').val() || null,
 				perfil_musico: seleccionados.includes('Músico'),
 				cargo_organista: seleccionados.includes('Organista'),
-				perfil_mocidade: seleccionados.includes('Auxiliar de Jovens') || seleccionados.includes('Cooperador de Jovens'),
+				perfil_mocidade: seleccionados.includes('Auxiliar de Jovens') || seleccionados.includes('Cooperador de Jovens') ? false : Boolean(currentRecord?.perfil_mocidade),
                 perfil_enfermo: seleccionados.includes('Enfermo'),
                 cargo_porteiro: seleccionados.includes('Porteiro'),
                 cargo_auxiliar_porta: seleccionados.includes('Auxiliar da Porta'),

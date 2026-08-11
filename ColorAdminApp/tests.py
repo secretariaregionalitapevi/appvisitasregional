@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitasEquipes, apiVisitasIrmandade, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa
+from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasRelatoriosEquipes
 from .utils.routing import limit_daily_route, optimize_route, street_key
 
 CATALOG = [
@@ -348,6 +348,72 @@ class MapScopeFilterTests(TestCase):
 
 
 class VisitTeamsTests(TestCase):
+    def test_legacy_team_names_are_normalized(self):
+        self.assertEqual(normalize_visit_team("Equipe 01"), "Equipe 1")
+        self.assertEqual(normalize_visit_team("Equipe de Visitas 02"), "Equipe 2")
+
+    def test_report_names_use_consistent_capitalization(self):
+        self.assertEqual(format_display_name("ADERBAL BAZANTE"), "Aderbal Bazante")
+        self.assertEqual(format_display_name("IAIR JOÃO"), "Iair João")
+        self.assertEqual(format_display_name("ADERBAL, ABNER, REINALDO E HENRIQUE"), "Aderbal, Abner, Reinaldo e Henrique")
+        self.assertEqual(format_display_name("GRUPO RF"), "Grupo RF")
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    def test_local_team_report_locks_city_and_common(self, _commons):
+        request = RequestFactory().get('/visitas/relatorios-equipes/')
+        request.session = {"user_profile": {"role_id": 4, "role": "USUARIO", "comum": "COMUM A", "municipio": "ITAPEVI"}}
+        response = visitasRelatoriosEquipes(request)
+        self.assertContains(response, 'id="report-city" class="form-select" disabled')
+        self.assertContains(response, 'id="report-common" class="form-select" disabled')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}, {"comum": "COMUM B", "cidade": "ITAPEVI"}])
+    def test_municipal_team_report_locks_city_but_allows_common_search(self, _commons):
+        request = RequestFactory().get('/visitas/relatorios-equipes/')
+        request.session = {"user_profile": {"role_id": 3, "role": "USUARIO", "comum": "COMUM A", "municipio": "ITAPEVI"}}
+        response = visitasRelatoriosEquipes(request)
+        self.assertContains(response, 'id="report-city" class="form-select" disabled')
+        self.assertContains(response, 'id="report-common" class="form-select" >')
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.post")
+    def test_regional_group_is_created_by_city(self, post, _audit):
+        post.return_value = Mock(status_code=201)
+        post.return_value.json.return_value = [{"id": "group-a", "nome": "Grupo A"}]
+        request = RequestFactory().post(
+            "/visitas/api/equipes/",
+            data={"acao": "cadastrar_equipe", "tipo": "REGIONAL", "municipio": "ITAPEVI", "nome": "grupo a"},
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasEquipes(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(post.call_args.kwargs["json"], {
+            "nome": "Grupo A", "tipo": "REGIONAL", "municipio": "ITAPEVI", "comum": None, "ativo": True,
+        })
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.delete")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_deleting_team_detaches_members_and_preserves_registrations(self, get, patch_request, delete, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{
+            "id": "team-1", "nome": "Equipe 1", "tipo": "LOCAL",
+            "municipio": "ITAPEVI", "comum": "COMUM A",
+        }]
+        patch_request.return_value = Mock(status_code=200)
+        delete.return_value = Mock(status_code=204)
+        request = RequestFactory().delete("/visitas/api/equipes/?equipe_id=team-1")
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasEquipes(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(patch_request.call_args.kwargs["json"], {"equipe_id": None, "equipe_visita": None})
+        self.assertEqual(delete.call_args.kwargs["params"], {"id": "eq.team-1"})
+
     @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
     @patch("ColorAdminApp.views.requests.get")
     def test_members_mode_includes_people_without_team(self, get, _commons):
@@ -365,22 +431,85 @@ class VisitTeamsTests(TestCase):
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.patch")
     @patch("ColorAdminApp.views.requests.get")
-    def test_existing_member_is_assigned_to_team(self, get, patch_request, _audit):
-        get.return_value = Mock(status_code=200)
-        get.return_value.json.return_value = [{"id": "1", "nome": "Ricardo", "comum": "COMUM A", "cidade": "ITAPEVI", "cargo_outros": "Grupo de Visitas"}]
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    def test_existing_member_is_assigned_to_team(self, _commons, get, patch_request, _audit):
+        member_response = Mock(status_code=200)
+        member_response.json.return_value = [{"id": "1", "nome": "Ricardo", "comum": "COMUM A", "cidade": "ITAPEVI", "cargo_outros": "Grupo de Visitas"}]
+        team_response = Mock(status_code=200)
+        team_response.json.return_value = [{"id": "team-1", "nome": "Equipe 1", "tipo": "LOCAL", "municipio": "ITAPEVI", "comum": "COMUM A"}]
+        get.side_effect = [member_response, team_response]
         patch_request.return_value = Mock(status_code=200)
-        patch_request.return_value.json.return_value = [{"id": "1", "equipe_visita": "Equipe 01"}]
+        patch_request.return_value.json.return_value = [{"id": "1", "equipe_visita": "Equipe 1"}]
         request = RequestFactory().post(
             "/visitas/api/equipes/",
-            data={"membro_id": "1", "equipe": "Equipe 01"},
+            data={"membro_id": "1", "equipe_id": "team-1", "equipe": "Equipe 01"},
             content_type="application/json",
         )
-        request.session = {"user_id": "user-1", "user_profile": {"role_id": 4, "comum": "COMUM A", "municipio": "ITAPEVI"}}
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1, "comum": "COMUM A", "municipio": "ITAPEVI"}}
         response = apiVisitasEquipes(request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(patch_request.call_args.kwargs["json"], {
-            "equipe_visita": "Equipe 01", "cargo_outros": "Grupo de Visitas",
+            "equipe_id": "team-1", "equipe_visita": "Equipe 1", "cargo_outros": "Grupo de Visitas",
         })
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.get")
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    def test_regional_assignment_does_not_replace_local_team(self, _commons, get, patch_request, _audit):
+        member_response = Mock(status_code=200)
+        member_response.json.return_value = [{
+            "id": "1", "nome": "Ricardo", "comum": "COMUM A", "cargo_outros": "Grupo de Visitas",
+            "equipe_id": "local-1", "equipe_visita": "Equipe 1",
+        }]
+        team_response = Mock(status_code=200)
+        team_response.json.return_value = [{
+            "id": "regional-a", "nome": "Grupo A", "tipo": "REGIONAL", "municipio": "ITAPEVI", "comum": None,
+        }]
+        get.side_effect = [member_response, team_response]
+        patch_request.return_value = Mock(status_code=200)
+        patch_request.return_value.json.return_value = [{"id": "1", "grupo_regional_nome": "Grupo A"}]
+        request = RequestFactory().post(
+            "/visitas/api/equipes/",
+            data={"membro_id": "1", "equipe_id": "regional-a", "equipe": "Grupo A"},
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1, "comum": "COMUM A", "municipio": "ITAPEVI"}}
+
+        response = apiVisitasEquipes(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(patch_request.call_args.kwargs["json"], {
+            "grupo_regional_id": "regional-a", "grupo_regional_nome": "Grupo A", "cargo_outros": "Grupo de Visitas",
+        })
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_legacy_and_current_names_do_not_conflict(self, get, patch_request, _audit):
+        current = Mock(status_code=200)
+        current.json.return_value = [{
+            "id": "visit-1", "data_inicio": "2026-08-01T09:00:00-03:00",
+            "setor": "Centro", "equipe_responsavel": "Equipe 01", "status": "Marcada",
+        }]
+        same_day = Mock(status_code=200)
+        same_day.json.return_value = [{
+            "id": "visit-2", "setor": "Centro",
+            "equipe_responsavel": "Equipe de Visitas 01", "status": "Marcada",
+        }]
+        get.side_effect = [current, same_day]
+        patch_request.return_value = Mock(status_code=200, text='[{"id":"visit-1"}]')
+        patch_request.return_value.json.return_value = [{"id": "visit-1"}]
+        request = RequestFactory().patch(
+            "/visitas/api/agenda/?id=visit-1",
+            data={"equipe_responsavel": "Equipe 1"}, content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(patch_request.call_args.kwargs["json"]["equipe_responsavel"], "Equipe 1")
 
 
 class BrotherhoodUpdateTests(TestCase):
@@ -454,3 +583,26 @@ class BrotherhoodUpdateTests(TestCase):
         response = apiVisitasIrmandade(request)
         self.assertEqual(response.status_code, 200)
         self.assertIn("/rest/v1/visitas_irmandade", get.call_args.args[0])
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_mutual_spouse_link_keeps_existing_family_head(self, get, patch_request, _audit):
+        current_response = Mock(status_code=200)
+        current_response.json.return_value = [{"id": "ricardo", "nome": "Ricardo", "comum": "COMUM A"}]
+        spouse_response = Mock(status_code=200)
+        spouse_response.json.return_value = [{"id": "vanessa", "id_chefe_familia": "ricardo", "vinculo_tipo": "Cônjuge"}]
+        get.side_effect = [current_response, spouse_response]
+        patch_request.return_value = Mock(status_code=200, text='')
+        request = RequestFactory().patch(
+            "/visitas/api/irmandade/?id=ricardo",
+            data={"id_chefe_familia": "vanessa", "vinculo_tipo": "Cônjuge"},
+            content_type="application/json",
+        )
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(patch_request.call_args.kwargs["json"]["id_chefe_familia"])
+        self.assertIsNone(patch_request.call_args.kwargs["json"]["vinculo_tipo"])

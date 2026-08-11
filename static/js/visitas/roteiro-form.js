@@ -40,10 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
     equipe.replaceChildren(option('', 'Carregando equipes...')); equipe.disabled = true;
     if (!comumValida()) return equipe.replaceChildren(option('', 'Selecione uma comum válida...'));
     try {
-      const response = await fetch(`/visitas/api/equipes/?comum=${encodeURIComponent(comum.value)}`);
+      const teamQuery = new URLSearchParams({modo:'catalogo', municipio:municipio.value, comum:comum.value});
+      const response = await fetch(`/visitas/api/equipes/?${teamQuery}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Falha ao carregar equipes.');
-      const ativas = payload.filter((item) => item.ativo);
+      const ativas = payload.filter((item) => item.ativo && (item.tipo === 'REGIONAL' || item.comum === comum.value));
       equipe.replaceChildren(option('', ativas.length ? 'Selecione a equipe...' : 'Nenhuma equipe ativa cadastrada'));
       ativas.forEach((item) => {
         const integrantes = (item.integrantes || []).map(primeiroNome).filter(Boolean).join(', ');

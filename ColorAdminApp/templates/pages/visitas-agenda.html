@@ -186,10 +186,11 @@
 <script>
     var calendar;
     var irmandadeData = [];
+    var visitTeams = [];
     const agendaAccessLevel = '{{ agenda_access_level|escapejs }}';
     const agendaDefaultCommon = '{{ agenda_comum_padrao|escapejs }}';
     const agendaDefaultCity = '{{ agenda_municipio_padrao|escapejs }}';
-    const agendaCommons = JSON.parse(document.getElementById('agenda-commons-data').textContent);
+        const agendaCommons = JSON.parse(document.getElementById('agenda-commons-data').textContent);
 
     $(document).ready(function () {
         const categoryColors = {
@@ -202,6 +203,19 @@
 
         const municipalityFilter = $('#agenda-municipio-filter');
         const commonFilter = $('#agenda-comum-filter');
+        let addressCoordinates = '';
+
+        const showAddressWithoutCoordinates = (value) => {
+            const fullAddress = String(value || '').trim();
+            const match = fullAddress.match(/^(\[\s*[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?\s*\])\s*/);
+            addressCoordinates = match ? match[1] : '';
+            $('#event-endereco').val(match ? fullAddress.slice(match[0].length) : fullAddress);
+        };
+
+        const addressForStorage = () => {
+            const visibleAddress = String($('#event-endereco').val() || '').trim();
+            return [addressCoordinates, visibleAddress].filter(Boolean).join(' ');
+        };
 
         const rebuildCommonFilter = (municipality, selectedValue = '') => {
             const options = agendaCommons.filter(item => !municipality || item.cidade === municipality);
@@ -255,19 +269,49 @@
             });
         };
 
+        const refreshTeamOptions = (selectedName = '', selectedId = '') => {
+            const member = irmandadeData.find(item => String(item.id) === String($('#event-member-select').val() || ''));
+            const common = member?.comum || $('#event-comum').val() || agendaDefaultCommon;
+            const city = agendaCommons.find(item => item.comum === common)?.cidade || agendaDefaultCity;
+            const eligible = visitTeams.filter(team => team.ativo !== false && team.municipio === city && (team.tipo === 'REGIONAL' || team.comum === common));
+            const select = $('#event-equipe').empty().append(new Option('Selecione a equipe...', ''));
+            eligible.forEach(team => {
+                const option = new Option(`${team.nome} — ${team.tipo === 'LOCAL' ? 'Local' : 'Regional'}`, team.nome);
+                option.dataset.id = team.id; option.dataset.type = team.tipo;
+                select.append(option);
+            });
+            if (selectedName && !eligible.some(team => team.nome === selectedName)) {
+                const legacy = new Option(`${selectedName} — histórico`, selectedName);
+                legacy.dataset.id = selectedId || ''; legacy.dataset.type = /^Grupo\s+[A-Z]$/i.test(selectedName) ? 'REGIONAL' : 'LOCAL';
+                select.append(legacy);
+            }
+            select.val(selectedName || '');
+        };
+
+        const loadVisitTeams = async () => {
+            const response = await fetch('/visitas/api/equipes/?modo=catalogo');
+            if (!response.ok) return;
+            visitTeams = await response.json();
+            refreshTeamOptions();
+            const route = $('#route-team').empty().append(new Option('Selecione a equipe...', ''));
+            visitTeams.filter(team => team.ativo !== false).forEach(team => route.append(new Option(`${team.nome} — ${team.municipio}`, team.nome)));
+        };
+
         loadIrmandadeList();
         loadComunsList();
+        loadVisitTeams();
 
         $('#event-member-select').on('change', function () {
             const idOrText = $(this).val();
             if (!idOrText) {
+                addressCoordinates = '';
                 $('#event-titulo, #event-endereco, #event-setor, #event-comum').val('');
                 return;
             }
             const member = irmandadeData.find(i => i.id == idOrText);
             if (member) {
                 $('#event-titulo').val(member.nome);
-                $('#event-endereco').val(member.endereco || '');
+                showAddressWithoutCoordinates(member.endereco || '');
                 $('#event-setor').val(member.setor || 'Não Definido');
                 
                 const comumVal = member.comum || '';
@@ -281,8 +325,10 @@
                 } else {
                     $('#event-comum').val(null).trigger('change.select2');
                 }
+                refreshTeamOptions();
             } else {
                 // É um novo nome digitado
+                addressCoordinates = '';
                 $('#event-titulo').val(idOrText);
             }
         });
@@ -392,11 +438,11 @@
                 $('#event-member-select').val(e.irmandade_id).trigger('change');
                 $('#event-titulo').val(e.titulo);
                 $('#event-start').val(moment(e.data_inicio).format('YYYY-MM-DDTHH:mm'));
-                $('#event-equipe').val(e.equipe_responsavel || 'Equipe 1');
+                refreshTeamOptions(e.equipe_responsavel || '', e.equipe_id || '');
                 $('#event-categoria-modal').val(e.categoria || 'GVI');
                 $('#event-status').val(e.status).trigger('change');
                 $('#event-setor').val(e.setor || '');
-                $('#event-endereco').val(e.endereco_visitado || '');
+                showAddressWithoutCoordinates(e.endereco_visitado || '');
                 $('#event-cancel-reason').val(e.motivo_cancelamento || '');
                 $('#event-obs').val(e.observacoes || '');
 
@@ -425,6 +471,7 @@
         calendar.render();
 
         function resetModal() {
+            addressCoordinates = '';
             $('#form-event')[0].reset();
             $('#event-id').val('');
             $('#event-member-select').val(null).trigger('change');
@@ -445,7 +492,7 @@
             if (!memberExists && irmandade_id) {
                 const newMemberData = {
                     nome: typedName,
-                    endereco: $('#event-endereco').val() || '',
+                    endereco: addressForStorage(),
                     setor: $('#event-setor').val() || 'Não Definido',
                     comum: $('#event-comum').val() || '{{ request.session.user_profile.comum|default:""|escapejs }}',
                     status: 'Ativo'
@@ -478,10 +525,12 @@
                 data_inicio: moment($('#event-start').val()).format('YYYY-MM-DDTHH:mm:ss-03:00'),
                 data_fim: moment($('#event-start').val()).add(60, 'minutes').format('YYYY-MM-DDTHH:mm:ss-03:00'),
                 equipe_responsavel: $('#event-equipe').val(),
+                equipe_id: $('#event-equipe option:selected').data('id') || null,
+                equipe_tipo: $('#event-equipe option:selected').data('type') || null,
                 categoria: $('#event-categoria-modal').val(),
                 status: $('#event-status').val(),
                 setor: $('#event-setor').val(),
-                endereco_visitado: $('#event-endereco').val(),
+                endereco_visitado: addressForStorage(),
                 motivo_cancelamento: $('#event-cancel-reason').val(),
                 observacoes: $('#event-obs').val()
             };
@@ -627,13 +676,7 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
-                            <select class="form-select" id="event-equipe">
-                                <option value="Equipe 1">Equipe 1</option>
-                                <option value="Equipe 2">Equipe 2</option>
-                                <option value="Equipe 3">Equipe 3</option>
-                                <option value="Equipe 4">Equipe 4</option>
-                                <option value="Grupo RF">Grupo RF</option>
-                            </select>
+                            <select class="form-select" id="event-equipe" required><option value="">Carregando equipes...</option></select>
                         </div>
                         <div class="col-md-12 text-center py-2 bg-light rounded border">
                             <label class="form-label fw-bold small text-muted d-block">DATA E HORA PROPOSTA</label>
@@ -682,14 +725,7 @@
                     
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted">EQUIPE</label>
-                        <select name="equipe" class="form-select" required>
-                            <option value="">Selecione a equipe...</option>
-                            <option value="Equipe 1">Equipe 1</option>
-                            <option value="Equipe 2">Equipe 2</option>
-                            <option value="Equipe 3">Equipe 3</option>
-                            <option value="Equipe 4">Equipe 4</option>
-                            <option value="Grupo RF">Grupo RF</option>
-                        </select>
+                        <select name="equipe" id="route-team" class="form-select" required><option value="">Carregando equipes...</option></select>
                     </div>
                     
                     <div class="mb-3">

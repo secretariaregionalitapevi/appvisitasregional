@@ -27,6 +27,7 @@ def sidebar_menu(request):
 			{ 'url': '/visitas/cadastro/', 'title': 'Cadastro de Irmandade', 'name': 'visitasCadastro' },
 			{ 'url': '/visitas/agenda/', 'title': 'Calendário Visitas', 'name': 'visitasAgenda' },
 			{ 'url': '/visitas/equipes/', 'title': 'Equipes de Visita', 'name': 'visitasEquipes' },
+			{ 'url': '/visitas/relatorios-equipes/', 'title': 'Relatórios de Equipes', 'name': 'visitasRelatoriosEquipes' },
 			{ 'url': '/visitas/roteiro-inteligente/', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true' },
 			{ 'url': '/visitas/mapa/', 'title': 'Mapa', 'name': 'visitasMapa' }
 		]

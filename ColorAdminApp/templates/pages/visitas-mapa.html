@@ -217,8 +217,8 @@
         const MAP_DEFAULT_COMUM = '{{ map_default_comum|escapejs }}';
         const MAP_DEFAULT_MUNICIPIO = '{{ map_default_municipio|escapejs }}';
         const MAP_COMMONS = JSON.parse(document.getElementById('map-commons-data')?.textContent || '[]');
-        let selectedMunicipio = MAP_ACCESS_LEVEL === 'regional' || MAP_ACCESS_LEVEL === 'global' ? '' : MAP_DEFAULT_MUNICIPIO;
-        let selectedCommon = MAP_ACCESS_LEVEL === 'regional' || MAP_ACCESS_LEVEL === 'global' ? '' : MAP_DEFAULT_COMUM;
+        let selectedMunicipio = MAP_DEFAULT_MUNICIPIO;
+        let selectedCommon = MAP_DEFAULT_COMUM;
         
         const CARGO_COLORS = {
             'Ancião': '#1a1a1a',
@@ -653,9 +653,9 @@
                                 <div class="mt-2 p-2 rounded bg-gray-100 border-start border-3 border-blue-500">
                                     <small class="d-block fw-bold text-blue-700" style="font-size: 9px; letter-spacing: 0.5px;">NÚCLEO FAMILIAR:</small>
                                     ${relatives.map(r => `
-                                        <div class="fw-bold text-dark d-flex align-items-center justify-content-between" style="font-size: 11px;">
+                                        <div class="fw-bold text-dark" style="font-size: 11px;">
                                             <div><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</div>
-                                            <span class="badge bg-white text-muted fw-normal border" style="font-size: 8px;">${r.id === (member.id_chefe_familia || member.id) ? 'Chefe' : (r.vinculo_tipo || 'Membro')}</span>
+                                            <span class="badge bg-white text-muted fw-normal border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Membro') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Membro'))}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -749,9 +749,9 @@
                 $('#dossie-familia-container').removeClass('d-none');
                 uniqueRelatives.forEach(r => {
                     $('#dossie-familia-list').append(`
-                        <div class="d-flex align-items-center justify-content-between p-2 bg-white rounded border border-light">
-                            <span class="fw-bold small text-dark"><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</span>
-                            <span class="badge bg-light text-muted border" style="font-size: 8px;">${r.id === (member.id_chefe_familia || member.id) ? 'Chefe' : (r.vinculo_tipo || 'Membro')}</span>
+                        <div class="p-2 bg-white rounded border border-light">
+                            <div class="fw-bold small text-dark"><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</div>
+                            <span class="badge bg-light text-muted border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Membro') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Membro'))}</span>
                         </div>
                     `);
                 });

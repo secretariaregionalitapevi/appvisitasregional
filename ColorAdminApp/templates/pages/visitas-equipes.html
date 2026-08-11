@@ -2,49 +2,70 @@
 {% load static %}
 
 {% block title %}Equipes de Visita{% endblock %}
-{% block css %}<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet"><style>#equipe-modal .select2-container,.equipes-comum-filtro .select2-container{width:100%!important}.select2-results__options{max-height:240px!important}.equipes-page-heading{clear:both;padding-top:10px;gap:16px}.equipes-comum-filtro .select2-selection--single{height:34px}.equipes-comum-filtro .select2-selection__rendered{line-height:32px!important}.equipes-comum-filtro .select2-selection__arrow{height:32px!important}.equipes-comum-filtro .select2-dropdown{box-shadow:0 8px 20px rgba(0,0,0,.15)}.equipe-badge{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff;display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid color-mix(in srgb,var(--equipe-cor) 28%,transparent);border-radius:6px;background:var(--equipe-fundo);color:var(--equipe-cor);font-size:12px;font-weight:600;line-height:1;box-shadow:0 1px 2px rgba(15,23,42,.06)}.equipe-badge::before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--equipe-cor);box-shadow:0 0 0 2px color-mix(in srgb,var(--equipe-cor) 14%,transparent)}.equipe-cor-0{--equipe-cor:#2563eb;--equipe-fundo:#eff6ff}.equipe-cor-1{--equipe-cor:#0f766e;--equipe-fundo:#f0fdfa}.equipe-cor-2{--equipe-cor:#7c3aed;--equipe-fundo:#f5f3ff}.equipe-cor-3{--equipe-cor:#c2410c;--equipe-fundo:#fff7ed}.equipe-cor-4{--equipe-cor:#be123c;--equipe-fundo:#fff1f2}.equipe-cor-5{--equipe-cor:#4d7c0f;--equipe-fundo:#f7fee7}.equipe-cor-6{--equipe-cor:#a16207;--equipe-fundo:#fefce8}.equipe-cor-7{--equipe-cor:#0369a1;--equipe-fundo:#f0f9ff}@media(max-width:575.98px){.equipes-page-heading{align-items:stretch!important;flex-direction:column}.equipes-page-heading .btn{width:100%}}</style>{% endblock %}
+{% block css %}
+<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
+<style>
+  .team-directory{display:grid;gap:18px}.team-directory-group{display:grid;gap:14px}.team-directory-title{display:flex;align-items:center;gap:10px;margin:6px 0 0;padding:0 2px;color:#34495e;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}.team-directory-title:after{content:'';height:1px;flex:1;background:#dde4eb}.team-directory-title.regional{color:#6f42c1}.team-section{overflow:hidden;border:1px solid #dce3eb;border-radius:10px;background:#fff;box-shadow:0 4px 16px rgba(31,45,61,.06)}
+  .team-section-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 20px;border-left:4px solid #348fe2;background:linear-gradient(100deg,#f7fbff 0,#fff 65%)}.team-section.regional .team-section-header{border-left-color:#6f42c1;background:linear-gradient(100deg,#faf8ff 0,#fff 65%)}
+  .team-heading{display:flex;align-items:center;gap:13px;min-width:0}.team-icon{display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border-radius:10px;background:#eaf4ff;color:#348fe2;font-size:17px}.regional .team-icon{background:#f0eaff;color:#6f42c1}.team-title{margin:0 0 3px;font-size:17px;font-weight:700;color:#1f2d3d}.team-location{color:#718096;font-size:12px}.team-type{font-size:10px;letter-spacing:.08em;text-transform:uppercase}.team-header-actions{display:flex;align-items:center;gap:9px}.team-count{padding:7px 11px;border:1px solid #dce3eb;border-radius:20px;background:#fff;color:#52616f;font-size:12px;font-weight:600;white-space:nowrap}.delete-team{width:35px;height:35px;padding:0;border-radius:9px;background:#fff}
+  .team-table{margin:0}.team-table th{padding:10px 20px;border-top:1px solid #edf0f4;background:#fafbfc;color:#82909d;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.team-table td{padding:12px 20px;vertical-align:middle}.member-profile{display:flex;align-items:center;gap:11px}.member-avatar{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#edf7f7;color:#00acac;font-weight:700}.member-name{font-weight:600;color:#2d353c}.member-status{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:3px 8px;border:1px solid #9fe2cb;border-radius:20px;background:#edfff8;color:#07845e;font-size:10px;font-weight:700;line-height:1}.member-status:before{content:'';width:6px;height:6px;border-radius:50%;background:#16b985;box-shadow:0 0 0 3px rgba(22,185,133,.12)}.team-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cfe2f5;border-radius:16px;background:#f3f8fd;color:#2878bd;font-size:11px;font-weight:600}.team-pill:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}.member-actions{display:flex;justify-content:flex-end;gap:7px}.member-actions .btn{width:34px;height:32px;padding:0}.empty-team{padding:26px;text-align:center;color:#8a96a3}@media(max-width:767.98px){.team-section-header{align-items:flex-start;flex-direction:column}.team-header-actions{width:100%;justify-content:space-between}.team-table th:nth-child(2),.team-table td:nth-child(2){display:none}}
+  #member-modal .select2-container,#team-modal .select2-container,.team-filter .select2-container{width:100%!important}
+  .select2-container--default .select2-selection--single{height:34px;border-color:#d5dbe0}.select2-container--default .select2-selection--single .select2-selection__rendered{line-height:32px;padding-left:12px}.select2-container--default .select2-selection--single .select2-selection__arrow{height:32px}.select2-dropdown{border-color:#d5dbe0;box-shadow:0 10px 28px rgba(31,45,61,.14)}
+  .teams-page-heading{clear:both;padding-top:12px}.page-actions{gap:8px;margin-right:8px}.location-label{color:#6c757d;font-size:12px}
+</style>
+{% endblock %}
 
 {% block content %}
 <ol class="breadcrumb float-xl-end"><li class="breadcrumb-item">Visitas</li><li class="breadcrumb-item active">Equipes</li></ol>
-<div class="equipes-page-heading d-flex align-items-center justify-content-between mb-4">
-    <h1 class="page-header mb-0"><i class="fa fa-people-group me-2 text-teal"></i>Equipes de Visita <small>Organização por comum</small></h1>
-    <button class="btn btn-teal" id="nova-equipe"><i class="fa fa-user-plus me-2"></i>Atribuir membro</button>
+<div class="teams-page-heading d-flex flex-wrap align-items-center justify-content-between mb-4 gap-3">
+  <h1 class="page-header mb-0"><i class="fa fa-people-group me-2 text-teal"></i>Equipes de Visita <small>Locais e regionais</small></h1>
+  <div class="d-flex flex-wrap page-actions">
+    <a class="btn btn-white" href="{% url 'ColorAdminApp:visitasRelatoriosEquipes' %}"><i class="fa fa-chart-column me-2"></i>Relatórios</a>
+    <button class="btn btn-outline-primary" id="assign-member"><i class="fa fa-user-plus me-2"></i>Atribuir participante</button>
+    <button class="btn btn-teal" id="create-team"><i class="fa fa-plus me-2"></i>Criar equipe ou grupo</button>
+  </div>
 </div>
 
-<div id="equipes-alerta"></div>
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1080;margin-top:55px">
-    <div id="equipes-toast" class="toast border-start border-4" role="status" aria-live="polite" aria-atomic="true">
-        <div class="d-flex align-items-center bg-white rounded">
-            <div class="toast-body"><i class="fa fa-circle-check text-success me-2"></i><span id="equipes-toast-message"></span></div>
-            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button>
-        </div>
-    </div>
-</div>
+<div id="teams-alert"></div>
 <div class="panel panel-inverse">
-    <div class="panel-heading"><h4 class="panel-title">Equipes cadastradas</h4></div>
-    <div class="panel-body">
-        <div class="row g-3 mb-4">
-            <div class="col-lg-3"><label class="form-label">Município</label><select id="filtro-municipio" class="form-select"><option value="">Todos</option>{% for item in municipios %}<option {% if item == municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
-            <div class="col-lg-4 equipes-comum-filtro"><label class="form-label">Comum</label><select id="filtro-comum" class="form-select"><option value="">Todas</option>{% for item in comuns %}<option value="{{ item.comum }}" data-municipio="{{ item.cidade }}" {% if item.comum == comum_padrao %}selected{% endif %}>{{ item.comum }}</option>{% endfor %}</select></div>
-            <div class="col-lg-5"><label class="form-label">Pesquisar membro do Grupo de Visitas</label><div class="input-group"><span class="input-group-text"><i class="fa fa-search"></i></span><input id="filtro-texto" class="form-control" placeholder="Digite o nome do membro..."></div></div>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-hover align-middle"><thead><tr><th>Membro</th><th>Equipe atribuída</th><th>Município / comum</th><th>Status</th><th class="text-end">Ações</th></tr></thead><tbody id="equipes-lista"><tr><td colspan="5" class="text-center py-5"><i class="fa fa-spinner fa-spin"></i> Carregando...</td></tr></tbody></table>
-        </div>
+  <div class="panel-heading"><h4 class="panel-title">Estrutura por município e comum</h4></div>
+  <div class="panel-body">
+    <div class="row g-3 mb-4">
+      <div class="col-lg-3"><label class="form-label">Município</label><select id="filter-city" class="form-select"><option value="">Todos</option>{% for item in municipios %}<option {% if item == municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-lg-4 team-filter"><label class="form-label">Comum</label><select id="filter-common" class="form-select"><option value="">Todas</option>{% for item in comuns %}<option value="{{ item.comum }}" data-city="{{ item.cidade }}" {% if item.comum == comum_padrao %}selected{% endif %}>{{ item.comum }}</option>{% endfor %}</select></div>
+      <div class="col-lg-2"><label class="form-label">Tipo</label><select id="filter-type" class="form-select"><option value="">Todos</option><option value="LOCAL">Local</option><option value="REGIONAL">Regional</option></select></div>
+      <div class="col-lg-3"><label class="form-label">Pesquisar</label><input id="filter-search" class="form-control" placeholder="Equipe ou participante"></div>
     </div>
+    <div id="teams-list" class="team-directory"><div class="text-center py-5"><i class="fa fa-spinner fa-spin me-2"></i>Carregando...</div></div>
+  </div>
 </div>
 
-<div class="modal fade" id="equipe-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-    <form id="equipe-form"><div class="modal-header"><h5 class="modal-title">Atribuir membro à equipe</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body">
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Município</label><select id="equipe-municipio" class="form-select" required><option value="">Selecione...</option>{% for item in municipios %}<option>{{ item }}</option>{% endfor %}</select></div>
-            <div class="col-md-6"><label class="form-label">Comum Congregação</label><select id="equipe-comum" class="form-select" required><option value="">Selecione...</option>{% for item in comuns %}<option value="{{ item.comum }}" data-municipio="{{ item.cidade }}">{{ item.comum }}</option>{% endfor %}</select></div>
-            <div class="col-12"><label class="form-label">Membro cadastrado</label><select id="equipe-membro" class="form-select" required disabled><option value="">Selecione primeiro a comum...</option></select><div class="form-text">A lista utiliza os membros já cadastrados na comum.</div></div>
-            <div class="col-12"><label class="form-label">Equipe</label><input id="equipe-nome" class="form-control" list="nomes-equipes" placeholder="Ex.: Equipe 01" required><datalist id="nomes-equipes"></datalist></div>
-        </div>
-    </div><div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-teal" type="submit"><i class="fa fa-save me-1"></i>Salvar equipe</button></div></form>
+<div class="modal fade" id="team-modal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form id="team-form"><div class="modal-header"><h5 class="modal-title">Criar equipe ou grupo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-12"><label class="form-label">Tipo</label><select id="team-type" class="form-select" required><option value="LOCAL">Equipe por Comum</option><option value="REGIONAL">Grupo Regional</option></select></div>
+    <div class="col-12"><label class="form-label">Município</label><select id="team-city" class="form-select" required><option value="">Selecione...</option>{% for item in municipios %}<option>{{ item }}</option>{% endfor %}</select></div>
+    <div class="col-12" id="team-common-wrap"><label class="form-label">Comum Congregação</label><select id="team-common" class="form-select"><option value="">Selecione...</option>{% for item in comuns %}<option value="{{ item.comum }}" data-city="{{ item.cidade }}">{{ item.comum }}</option>{% endfor %}</select></div>
+    <div class="col-12"><label class="form-label">Nome</label><input id="team-name" class="form-control" placeholder="Ex.: Equipe 1" required><div id="team-name-help" class="form-text">Equipe vinculada à comum selecionada.</div></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-teal"><i class="fa fa-save me-1"></i>Criar</button></div></form>
+</div></div></div>
+
+<div class="modal fade" id="member-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <form id="member-form"><div class="modal-header"><h5 class="modal-title">Atribuir participante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body"><div class="row g-3">
+    <div class="col-md-6"><label class="form-label">Município</label><select id="member-city" class="form-select" required><option value="">Selecione...</option>{% for item in municipios %}<option>{{ item }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label">Comum do participante</label><select id="member-common" class="form-select" required><option value="">Selecione...</option>{% for item in comuns %}<option value="{{ item.comum }}" data-city="{{ item.cidade }}">{{ item.comum }}</option>{% endfor %}</select></div>
+    <div class="col-12"><label class="form-label">Participante</label><select id="member-person" class="form-select" required disabled><option value="">Selecione a comum...</option></select></div>
+    <div class="col-12"><label class="form-label">Equipe ou grupo já cadastrado</label><select id="member-team" class="form-select" required disabled><option value="">Selecione a comum...</option></select><div class="form-text">São exibidas as equipes da comum e os grupos regionais do mesmo município.</div></div>
+  </div></div>
+  <div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary"><i class="fa fa-user-check me-1"></i>Atribuir</button></div></form>
 </div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script><script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script><script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/visitas/equipes.js' %}?v=20260806-4"></script>{% endblock %}
+{% block js %}
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
+<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script>
+<script src="{% static 'js/visitas/equipes.js' %}?v=20260811-10"></script>
+{% endblock %}
