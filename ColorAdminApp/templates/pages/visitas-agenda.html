@@ -47,6 +47,7 @@
     }
     .fc-popover { z-index: 1050 !important; max-height: 70vh; overflow-y: auto; }
     .fc-list-event-title a { white-space: normal; }
+    .agenda-bulk-toolbar{display:none;align-items:center;gap:10px;margin-bottom:10px;padding:10px 12px;border:1px solid #e2e7eb;border-radius:7px;background:#f8f9fa}.agenda-bulk-toolbar.active{display:flex}.agenda-event-check{width:16px;height:16px;margin-right:10px;vertical-align:middle;cursor:pointer}.agenda-bulk-count{margin-left:auto;color:#6c757d;font-size:12px;font-weight:600}
 
     @media (max-width: 767.98px) {
         .agenda-page-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
@@ -203,7 +204,20 @@
 
         const municipalityFilter = $('#agenda-municipio-filter');
         const commonFilter = $('#agenda-comum-filter');
+        const selectedAgendaIds = new Set();
         let addressCoordinates = '';
+
+        const updateBulkToolbar = () => {
+            const listMode = calendar && calendar.view.type.startsWith('list');
+            $('#agenda-bulk-toolbar').toggleClass('active', Boolean(listMode));
+            $('#agenda-bulk-count').text(`${selectedAgendaIds.size} selecionada${selectedAgendaIds.size === 1 ? '' : 's'}`);
+            $('#btn-bulk-delete').prop('disabled', selectedAgendaIds.size === 0);
+            const checks = Array.from(document.querySelectorAll('.agenda-event-check'));
+            const checked = checks.filter(item => item.checked).length;
+            $('#agenda-select-all').prop('checked', checks.length > 0 && checked === checks.length).prop('indeterminate', checked > 0 && checked < checks.length);
+        };
+
+        const clearBulkSelection = () => { selectedAgendaIds.clear(); updateBulkToolbar(); };
 
         const showAddressWithoutCoordinates = (value) => {
             const fullAddress = String(value || '').trim();
@@ -369,6 +383,7 @@
             themeSystem: 'bootstrap',
             headerToolbar: { left: 'dayGridMonth,timeGridWeek,listMonth', center: 'title', right: 'prev,next today' },
             buttonText: { today: 'Hoje', month: 'Mês', week: 'Semana', list: 'Lista' },
+            noEventsContent: 'Nenhuma visita para exibir',
             initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth',
             height: window.innerWidth < 768 ? 'auto' : Math.max(650, window.innerHeight - 240),
             expandRows: true,
@@ -438,6 +453,7 @@
             },
 
             eventClick: function (info) {
+                if (info.jsEvent.target.closest('.agenda-event-check')) return;
                 const e = info.event.extendedProps;
                 resetModal();
                 
@@ -462,6 +478,31 @@
                 $('#modal-event').modal('show');
             },
 
+            eventDidMount: function (info) {
+                if (!calendar.view.type.startsWith('list')) return;
+                const cell = info.el.querySelector('.fc-list-event-title');
+                if (!cell || cell.querySelector('.agenda-event-check')) return;
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input agenda-event-check';
+                checkbox.dataset.eventId = String(info.event.id);
+                checkbox.setAttribute('aria-label', `Selecionar ${info.event.title}`);
+                checkbox.checked = selectedAgendaIds.has(String(info.event.id));
+                checkbox.addEventListener('click', event => event.stopPropagation());
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) selectedAgendaIds.add(String(info.event.id));
+                    else selectedAgendaIds.delete(String(info.event.id));
+                    updateBulkToolbar();
+                });
+                cell.prepend(checkbox);
+                updateBulkToolbar();
+            },
+
+            datesSet: function () {
+                clearBulkSelection();
+                setTimeout(updateBulkToolbar, 0);
+            },
+
             eventDrop: async function (info) {
                 const res = await fetch(`/visitas/api/agenda/?id=${info.event.id}`, {
                     method: 'PATCH',
@@ -476,6 +517,40 @@
             }
         });
         calendar.render();
+
+        $('#agenda-select-all').on('change', function () {
+            document.querySelectorAll('.agenda-event-check').forEach(checkbox => {
+                checkbox.checked = this.checked;
+                const eventId = String(checkbox.dataset.eventId || '');
+                if (eventId && this.checked) selectedAgendaIds.add(eventId);
+                else selectedAgendaIds.delete(eventId);
+            });
+            updateBulkToolbar();
+        });
+
+        $('#btn-bulk-delete').on('click', async function () {
+            const ids = Array.from(selectedAgendaIds);
+            if (!ids.length) return;
+            const { isConfirmed } = await Swal.fire({
+                title: `Excluir ${ids.length} visita${ids.length === 1 ? '' : 's'}?`,
+                text: 'Esta ação não poderá ser desfeita.', icon: 'warning', showCancelButton: true,
+                confirmButtonColor: '#dc3545', confirmButtonText: 'Excluir selecionadas', cancelButtonText: 'Cancelar'
+            });
+            if (!isConfirmed) return;
+            const button = $(this).prop('disabled', true);
+            try {
+                const res = await fetch('/visitas/api/agenda/', {
+                    method: 'DELETE', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({ ids })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Não foi possível excluir as visitas.');
+                clearBulkSelection();
+                calendar.refetchEvents();
+                Swal.fire({ icon: 'success', title: `${result.deleted} visita${result.deleted === 1 ? '' : 's'} excluída${result.deleted === 1 ? '' : 's'}`, timer: 1600, showConfirmButton: false });
+            } catch (error) { Swal.fire('Erro', error.message, 'error'); }
+            finally { button.prop('disabled', selectedAgendaIds.size === 0); }
+        });
 
         function resetModal() {
             addressCoordinates = '';
@@ -649,6 +724,11 @@
         </div>
     </div>
     <div class="col-lg-9 col-xl-10">
+        <div id="agenda-bulk-toolbar" class="agenda-bulk-toolbar shadow-sm">
+            <label class="form-check mb-0"><input id="agenda-select-all" class="form-check-input" type="checkbox"><span class="form-check-label fw-bold">Selecionar todas da lista</span></label>
+            <span id="agenda-bulk-count" class="agenda-bulk-count">0 selecionadas</span>
+            <button type="button" id="btn-bulk-delete" class="btn btn-sm btn-danger" disabled><i class="fa fa-trash me-1"></i>Excluir selecionadas</button>
+        </div>
         <div id="calendar" class="calendar bg-white p-3 rounded shadow-sm"></div>
     </div>
 </div>

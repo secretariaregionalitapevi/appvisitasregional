@@ -473,7 +473,8 @@ def apiVisitas(request):
     if request.method == 'GET':
         ano = request.GET.get('ano')
         mes = request.GET.get('mes')
-        comum = request.GET.get('comum')
+        comum = (request.GET.get('comum') or '').strip()
+        municipio = (request.GET.get('municipio') or '').strip()
 
         url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS}"
         headers = {
@@ -492,14 +493,21 @@ def apiVisitas(request):
             params.append(("referencia_ano", f"eq.{ano}"))
         if mes and mes != 'all':
             params.append(("referencia_mes", f"eq.{mes}"))
-        if comum and comum != 'all':
-            params.append(("comum", f"ilike.*{comum}*"))
-
         try:
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
                 return JsonResponse({"error": "Supabase Error", "status": response.status_code, "details": response.text}, status=response.status_code)
-            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+            rows = filter_rows(scope, response.json())
+            catalog = {str(item.get('comum') or '').strip(): str(item.get('cidade') or '').strip() for item in visible_commons(scope)}
+            if municipio:
+                if municipio not in set(catalog.values()):
+                    return JsonResponse({"error": "Município fora do seu escopo de acesso."}, status=403)
+                rows = [row for row in rows if catalog.get(str(row.get('comum') or '').strip()) == municipio]
+            if comum and comum != 'all':
+                if comum not in catalog:
+                    return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+                rows = [row for row in rows if str(row.get('comum') or '').strip() == comum]
+            return JsonResponse(rows, safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
@@ -776,7 +784,17 @@ def apiVisitasComuns(request):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 def visitasDashboard(request):
-    return render(request, "pages/visitas-dashboard.html")
+    scope = user_scope(request)
+    comuns = visible_commons(scope)
+    comum_padrao = scope.get('comum') or ''
+    comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
+    return render(request, "pages/visitas-dashboard.html", {
+        'dashboard_access_level': scope.get('level'),
+        'dashboard_comum_padrao': comum_padrao,
+        'dashboard_municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
+        'dashboard_comuns': comuns,
+        'dashboard_municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+    })
 
 def visitasAnalytics(request):
     return render(request, "pages/visitas-analytics.html")
@@ -891,8 +909,9 @@ def apiVisitasRelatoriosEquipes(request):
             comum = str(member.get('comum') or '').strip()
             municipio = catalog.get(comum, '')
             team = teams.get(str(visit.get('equipe_id') or '')) or {}
-            name = format_display_name(normalize_team_name(team.get('nome') or visit.get('equipe_responsavel'), team.get('tipo')))
-            team_type = team.get('tipo') or visit.get('equipe_tipo') or visit_team_type(name)
+            raw_name = team.get('nome') or visit.get('equipe_responsavel')
+            team_type = team.get('tipo') or visit.get('equipe_tipo') or visit_team_type(raw_name)
+            name = format_display_name(normalize_team_name(raw_name, team_type))
             if selected_city and municipio != selected_city:
                 continue
             if selected_common and comum != selected_common:
@@ -911,7 +930,11 @@ def apiVisitasRelatoriosEquipes(request):
             elif status == 'cancelada': row['canceladas'] += 1
             elif status in {'não realizada', 'nao realizada'}: row['nao_realizadas'] += 1
             else: row['agendadas'] += 1
-        rows = sorted(grouped.values(), key=lambda row: (row['tipo'], row['municipio'], row['comum'], row['equipe']))
+        def report_sort_key(row):
+            regional_match = re.fullmatch(r'Grupo\s+([A-Z])', str(row.get('equipe') or ''), flags=re.IGNORECASE)
+            team_order = regional_match.group(1).upper() if regional_match else str(row.get('equipe') or '').casefold()
+            return (row['tipo'], row['municipio'], row['comum'], team_order)
+        rows = sorted(grouped.values(), key=report_sort_key)
         return JsonResponse({'rows': rows, 'local': [r for r in rows if r['tipo'] == 'LOCAL'], 'regional': [r for r in rows if r['tipo'] == 'REGIONAL']})
     except requests.RequestException as exc:
         return JsonResponse({'error': 'Não foi possível gerar os relatórios.', 'details': str(exc)}, status=502)
@@ -1354,10 +1377,15 @@ def apiVisitasAgenda(request):
             irmandade_id = request.GET.get('irmandade_id')
             status = request.GET.get('status')
             comum = (request.GET.get('comum') or '').strip()
+            municipio = (request.GET.get('municipio') or '').strip()
+            visible_catalog = visible_commons(scope)
+            allowed_commons = {str(item.get('comum') or '').strip() for item in visible_catalog}
+            allowed_municipios = {str(item.get('cidade') or '').strip() for item in visible_catalog}
             if comum:
-                allowed_commons = {str(item.get('comum') or '').strip() for item in visible_commons(scope)}
                 if comum not in allowed_commons:
                     return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+            if municipio and municipio not in allowed_municipios:
+                return JsonResponse({"error": "Município fora do seu escopo de acesso."}, status=403)
             
             params = [("select", "*"), ("order", "data_inicio.asc")]
             if irmandade_id:
@@ -1381,12 +1409,17 @@ def apiVisitasAgenda(request):
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
             # pois essa coluna nem sempre existe/esta preenchida na agenda.
-            if comum:
+            if comum or municipio:
                 members_url = (
                     f"{settings.SUPABASE_URL}/rest/v1/"
                     f"{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
                 )
                 member_ids = set()
+                member_locations = {}
+                target_commons = {comum} if comum else {
+                    str(item.get('comum') or '').strip() for item in visible_catalog
+                    if str(item.get('cidade') or '').strip() == municipio
+                }
                 offset = 0
                 page_size = 1000
                 while True:
@@ -1394,16 +1427,22 @@ def apiVisitasAgenda(request):
                     members_response = requests.get(
                         members_url,
                         headers=page_headers,
-                        params=[("select", "id"), ("comum", f"eq.{comum}")],
+                        params=[("select", "id,comum")],
                         timeout=15,
                     )
                     members_response.raise_for_status()
                     member_page = members_response.json()
-                    member_ids.update(str(item.get("id")) for item in member_page if item.get("id"))
+                    for item in member_page:
+                        if item.get('id') and str(item.get('comum') or '').strip() in target_commons:
+                            member_ids.add(str(item['id']))
+                            member_locations[str(item['id'])] = str(item.get('comum') or '')
                     if len(member_page) < page_size:
                         break
                     offset += page_size
                 rows = [row for row in rows if str(row.get("irmandade_id") or "") in member_ids]
+                for row in rows:
+                    row['comum'] = member_locations.get(str(row.get('irmandade_id') or ''), '')
+                    row['municipio'] = next((str(item.get('cidade') or '') for item in visible_catalog if item.get('comum') == row['comum']), '')
             else:
                 rows = filter_rows(scope, rows)
 
@@ -1481,14 +1520,32 @@ def apiVisitasAgenda(request):
     elif request.method == 'DELETE':
         id = request.GET.get('id')
         try:
-            current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
-            if not current or not can_access(scope, current[0]):
+            import json
+            body = json.loads(request.body or b'{}')
+            ids = body.get('ids') if isinstance(body, dict) else None
+            ids = [str(item).strip() for item in ids] if isinstance(ids, list) else ([str(id).strip()] if id else [])
+            ids = list(dict.fromkeys(item for item in ids if item))
+            if not ids:
+                return JsonResponse({"error": "Selecione ao menos uma visita."}, status=400)
+            if len(ids) > 500:
+                return JsonResponse({"error": "Selecione no máximo 500 visitas por vez."}, status=400)
+            try:
+                from uuid import UUID
+                ids = [str(UUID(item)) for item in ids]
+            except (ValueError, TypeError, AttributeError):
+                return JsonResponse({"error": "A seleção contém uma visita inválida."}, status=400)
+            id_filter = f"in.({','.join(ids)})"
+            current_response = requests.get(url, headers=headers, params=[("id", id_filter), ("select", "*")], timeout=15)
+            current_response.raise_for_status()
+            current = current_response.json()
+            if len(current) != len(ids) or any(not can_access(scope, item) for item in current):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
-            response = requests.delete(url, headers=headers, params=[("id", f"eq.{id}")], timeout=10)
+            response = requests.delete(url, headers=headers, params=[("id", id_filter)], timeout=15)
+            response.raise_for_status()
             log_audit(request, 'DELETE', 'VISITAS_AGENDA', {
-                "scope": scope_details(scope), "anterior": current[0]
+                "scope": scope_details(scope), "anterior": current, "total": len(current)
             })
-            return JsonResponse({"status": "deleted"}, safe=False)
+            return JsonResponse({"status": "deleted", "deleted": len(current)}, safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 

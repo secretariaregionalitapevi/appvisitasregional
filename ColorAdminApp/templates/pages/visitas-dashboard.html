@@ -33,6 +33,7 @@
         padding-right: 11px;
     }
     .filter-period .form-control { min-width: 135px; }
+    .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
 
     @media (max-width: 1199.98px) {
         .filter-actions {
@@ -155,8 +156,30 @@
     let currentData = [];
     let trendChart = null;
     let mixChart = null;
+    const dashboardAccessLevel = '{{ dashboard_access_level|escapejs }}';
+    const dashboardDefaultCommon = '{{ dashboard_comum_padrao|escapejs }}';
+    const dashboardDefaultCity = '{{ dashboard_municipio_padrao|escapejs }}';
+    const dashboardCommons = JSON.parse(document.getElementById('dashboard-commons-data').textContent);
 
     const formatNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const formatDisplayText = value => {
+        const connectors = new Set(['a','as','da','das','de','do','dos','e','em','na','nas','no','nos']);
+        return String(value || '').trim().toLocaleLowerCase('pt-BR').split(/\s+/).map((word, index) => {
+            if (/^[a-z]{2}-\d/i.test(word)) return word.toLocaleUpperCase('pt-BR');
+            if (index > 0 && connectors.has(word)) return word;
+            return word.charAt(0).toLocaleUpperCase('pt-BR') + word.slice(1);
+        }).join(' ');
+    };
+    const categoryPresentation = value => {
+        const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleUpperCase('pt-BR').trim();
+        if (normalized === 'GVI' || normalized.includes('GRUPO DE VISITAS') || normalized.includes('MINISTERIO')) return {label:'GVI — Irmandade', css:'category-gvi'};
+        if (normalized === 'GVM' || normalized.includes('MOCIDADE')) return {label:'GVM — Mocidade', css:'category-gvm'};
+        if (normalized === 'GVE' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO')) return {label:'GVE — Encarregados', css:'category-gve'};
+        if (normalized === 'RF' || normalized.includes('REUNIAO FAMILIAR')) return {label:'RF — Reunião Familiar', css:'category-rf'};
+        if (normalized === 'RE' || normalized.includes('EVANGELIZACAO')) return {label:'RE — Evangelização', css:'category-re'};
+        return {label:formatDisplayText(value || 'Não informada'), css:'category-other'};
+    };
 
     const renderDashboards = (data, agendaData = []) => {
         if (!Array.isArray(data)) {
@@ -348,9 +371,10 @@
 
         data.forEach(item => {
             const mesStr = mesesAbreviados[parseInt(item.referencia_mes) - 1] || item.referencia_mes;
+            const chronologicalKey = `${String(item.referencia_ano).padStart(4, '0')}${String(item.referencia_mes).padStart(2, '0')}`;
             body.append(`
                     <tr>
-                        <td class="fw-bold text-nowrap">${mesStr}/${item.referencia_ano}</td>
+                        <td class="fw-bold text-nowrap" data-order="${chronologicalKey}">${mesStr}/${item.referencia_ano}</td>
                         <td>${item.comum}</td>
                         <td class="text-center">${item.gvi}</td>
                         <td class="text-center">${item.gvm}</td>
@@ -366,6 +390,7 @@
         });
         $('#table-visitas').DataTable({ 
             responsive: true,
+            order: [[0, 'asc'], [1, 'asc']],
             language: { 
                 url: 'https://cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json',
                 paginate: { first: "«", previous: "‹", next: "›", last: "»" }
@@ -376,7 +401,8 @@
     const applyFilters = async () => {
         let ano = $('#filter-ano').val();
         let mes = $('#filter-mes').val();
-        const comum = $('#filter-comum').val();
+        const comum = $('#filter-comum').val() || '';
+        const municipio = $('#filter-municipio').val() || '';
         const dataDe = $('#peridodo-de').val();
         const dataAte = $('#peridodo-ate').val();
 
@@ -384,7 +410,10 @@
         if (mes === 'undefined' || !mes) mes = 'all';
 
         try {
-            const res = await fetch(`/visitas/api/dashboard/?ano=${ano}&mes=${mes}&comum=${comum}`);
+            const dashboardParams = new URLSearchParams({ ano, mes });
+            if (municipio) dashboardParams.set('municipio', municipio);
+            if (comum) dashboardParams.set('comum', comum);
+            const res = await fetch(`/visitas/api/dashboard/?${dashboardParams.toString()}`);
             const data = await res.json();
             if (data.error) throw new Error(data.error);
 
@@ -405,6 +434,7 @@
                     agendaUrl = `/visitas/api/agenda/?start_date=${ano}-01-01T00:00:00&end_date=${ano}-12-31T23:59:59`;
                 }
             }
+            agendaUrl += `${agendaUrl.includes('?') ? '&' : '?'}${new URLSearchParams({ ...(municipio ? { municipio } : {}), ...(comum ? { comum } : {}) }).toString()}`;
             
             const resAgenda = await fetch(agendaUrl);
             const dataAgenda = await resAgenda.json();
@@ -413,11 +443,8 @@
                 // Apenas exibe/contabiliza eventos passados ou marcados (Realizada, Não realizada, Cancelada)
                 filteredAgenda = dataAgenda.filter(v => v.status !== 'Agendada');
                 
-                if (comum) {
-                    filteredAgenda = filteredAgenda.filter(v => (v.endereco_visitado || '').toLowerCase().includes(comum.toLowerCase()) || (v.comum || '').toLowerCase().includes(comum.toLowerCase()));
-                }
                 window.globalAgendaVisitas = filteredAgenda;
-                renderRealizedVisits(filteredAgenda);
+                renderRealizedVisits(filteredAgenda.filter(item => String(item.status || '').toLocaleLowerCase('pt-BR') === 'realizada'));
             }
 
             renderDashboards(currentData, filteredAgenda);
@@ -442,6 +469,7 @@
 
         data.forEach(item => {
             const dataHora = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+            const category = categoryPresentation(item.categoria);
             let statusBadge = '';
             if (item.status === 'Cancelada') {
                 statusBadge = '<span class="badge bg-danger ms-2">Cancelada</span>';
@@ -451,11 +479,11 @@
             body.append(`
                     <tr>
                         <td class="fw-bold">${dataHora}</td>
-                        <td>${item.titulo || '-'}</td>
-                        <td>${item.comum || item.endereco_visitado || '-'}</td>
-                        <td class="text-center"><span class="badge bg-primary">${item.categoria || '-'}</span>${statusBadge}</td>
-                        <td class="text-center">${item.equipe_responsavel || '-'}</td>
-                        <td>${item.observacoes || '-'}</td>
+                        <td>${escapeHtml(formatDisplayText(item.titulo) || '-')}</td>
+                        <td>${escapeHtml(formatDisplayText(item.comum || item.endereco_visitado) || '-')}</td>
+                        <td class="text-center"><span class="category-badge ${category.css}">${escapeHtml(category.label)}</span>${statusBadge}</td>
+                        <td class="text-center">${escapeHtml(formatDisplayText(item.equipe_responsavel) || '-')}</td>
+                        <td>${escapeHtml(item.observacoes || '-')}</td>
                         <td class="text-center" style="white-space: nowrap;">
                             <button onclick="viewVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #00acac;"><i class="fa fa-eye me-1"></i> VER</button>
                             <button onclick="editVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #f5b041;"><i class="fa fa-edit me-1"></i> EDITAR</button>
@@ -662,15 +690,21 @@
     };
 
     $(document).ready(function () {
-        // Auto-update on filter change
-        $('#filter-ano, #filter-mes, #filter-cidade, #peridodo-de, #peridodo-ate').on('change', applyFilters);
-
-        // Debounced search
-        let searchTimer;
-        $('#filter-comum').on('input', () => {
-            clearTimeout(searchTimer);
-            searchTimer = setTimeout(applyFilters, 500);
+        const rebuildDashboardCommons = (municipio, selected = '') => {
+            const select = $('#filter-comum').empty();
+            if (dashboardAccessLevel !== 'local') select.append(new Option('Todas as comuns', ''));
+            dashboardCommons.filter(item => !municipio || item.cidade === municipio).forEach(item => select.append(new Option(item.comum, item.comum)));
+            select.val(selected || (dashboardAccessLevel === 'local' ? dashboardDefaultCommon : ''));
+        };
+        rebuildDashboardCommons($('#filter-municipio').val() || dashboardDefaultCity, dashboardDefaultCommon);
+        $('#filter-municipio').on('change', function () {
+            rebuildDashboardCommons($(this).val(), '');
+            applyFilters();
         });
+        $('#filter-comum').on('change', applyFilters);
+
+        // Auto-update on filter change
+        $('#filter-ano, #filter-mes, #peridodo-de, #peridodo-ate').on('change', applyFilters);
 
         $('#btn-refresh').click(() => {
             applyFilters().then(() => {
@@ -687,7 +721,8 @@
         $('#btn-clear').click(() => {
             $('#filter-mes').val('all');
             $('#filter-ano').val(new Date().getFullYear());
-            $('#filter-comum').val('');
+            if (dashboardAccessLevel === 'regional' || dashboardAccessLevel === 'global') $('#filter-municipio').val(dashboardDefaultCity);
+            rebuildDashboardCommons($('#filter-municipio').val() || dashboardDefaultCity, dashboardDefaultCommon);
             $('#peridodo-de, #peridodo-ate').val('');
             applyFilters();
         });
@@ -713,6 +748,7 @@
 {% endblock %}
 
 {% block content %}
+{{ dashboard_comuns|json_script:"dashboard-commons-data" }}
 <ol class="breadcrumb float-xl-end">
     <li class="breadcrumb-item"><a href="/">Home</a></li>
     <li class="breadcrumb-item active">Visitas</li>
@@ -757,13 +793,19 @@
                 <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate">
             </div>
         </div>
-        <div class="col-12 col-md-6 col-xl-2">
-            <label class="form-label fw-bold small text-muted text-uppercase mb-1"
-                style="font-size: 10px;">Localidade</label>
-            <input type="text" class="form-control border-gray-300 shadow-none" id="filter-comum"
-                placeholder="Igreja ou Comum...">
+        <div class="col-12 col-md-3 col-xl-2">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size:10px;">Município</label>
+            {% if dashboard_access_level == 'regional' or dashboard_access_level == 'global' %}
+            <select id="filter-municipio" class="form-select border-gray-300 shadow-none"><option value="">Todos</option>{% for item in dashboard_municipios %}<option value="{{ item }}" {% if item == dashboard_municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+            {% else %}
+            <input type="text" class="form-control" value="{{ dashboard_municipio_padrao }}" readonly><input type="hidden" id="filter-municipio" value="{{ dashboard_municipio_padrao }}">
+            {% endif %}
         </div>
-        <div class="col-12 col-xl-5">
+        <div class="col-12 col-md-3 col-xl-2">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size:10px;">Comum</label>
+            <select id="filter-comum" class="form-select border-gray-300 shadow-none" {% if dashboard_access_level == 'local' %}disabled{% endif %}></select>
+        </div>
+        <div class="col-12 col-xl-3">
             <div class="filter-actions">
                 <button class="btn btn-white border-gray-400" id="btn-refresh" title="Atualizar"><i class="fa fa-sync-alt text-primary"></i><span class="d-none d-sm-inline ms-1">Atualizar</span></button>
                 <button class="btn btn-white border-gray-400" id="btn-excel" title="Excel"><i class="fa fa-file-excel text-success"></i><span class="d-none d-sm-inline ms-1">Excel</span></button>
@@ -887,7 +929,8 @@
 <!-- VISITAS REALIZADAS -->
 <div class="card border-0 shadow-sm mt-4 mb-4">
     <div class="card-header bg-white py-3 border-0">
-        <h5 class="card-title fw-bold m-0"><i class="fa fa-check-circle text-success me-2"></i> Visitas Realizadas</h5>
+        <h5 class="card-title fw-bold mb-1"><i class="fa fa-check-circle text-success me-2"></i> Visitas Realizadas</h5>
+        <div class="small text-muted">Fonte: agenda de visitas, vinculada ao cadastro da irmandade. São exibidos somente registros com status Realizada dentro dos filtros selecionados.</div>
     </div>
     <div class="card-body">
         <table class="table table-hover align-middle w-100" id="table-visitas-realizadas">
