@@ -59,10 +59,24 @@ document.addEventListener('DOMContentLoaded', () => {
   async function load() {
     byId('teams-list').innerHTML='<div class="text-center py-5"><i class="fa fa-spinner fa-spin me-2"></i>Carregando equipes...</div>';
     try {
-      const city=byId('filter-city').value, common=byId('filter-common').value;
+      const city=byId('filter-city').value, common=byId('filter-common').value, type=byId('filter-type').value;
       const teamQuery=new URLSearchParams({modo:'catalogo'}), memberQuery=new URLSearchParams({modo:'membros'});
       if(city)teamQuery.set('municipio',city);
-      if(common){teamQuery.set('comum',common);memberQuery.set('comum',common);}
+      if(type)teamQuery.set('tipo',type);
+      if(type)memberQuery.set('tipo',type);
+      if(type==='LOCAL') {
+        if(common) {
+          teamQuery.set('comum',common);
+          memberQuery.set('comum',common);
+        }
+      } else {
+        // Grupos regionais abrangem todas as comuns do município. Quando o
+        // tipo ainda não foi escolhido, carregamos o município inteiro para
+        // permitir a exibição simultânea de equipes locais e regionais.
+        if(city)memberQuery.set('municipio',city);
+        else if(common)memberQuery.set('comum',common);
+        if(common && type!=='REGIONAL')teamQuery.set('comum',common);
+      }
       [state.teams,state.members]=await Promise.all([jsonFetch(`/visitas/api/equipes/?${teamQuery}`),jsonFetch(`/visitas/api/equipes/?${memberQuery}`)]);
       render();
     } catch(error) { alertMessage(error.message); byId('teams-list').innerHTML='<div class="text-center text-danger py-5">Não foi possível carregar as equipes.</div>'; }
@@ -130,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
   jQuery('#filter-common').select2({width:'100%',language:'pt-BR',placeholder:'Pesquise a comum...',allowClear:true,dropdownParent:jQuery('.team-filter')}).on('change',load);
   jQuery('#member-common').select2({width:'100%',language:'pt-BR',placeholder:'Pesquise a comum...',dropdownParent:jQuery('#member-modal')});
   jQuery('#team-common').select2({width:'100%',language:'pt-BR',placeholder:'Pesquise a comum...',dropdownParent:jQuery('#team-modal')});
-  byId('filter-type').onchange=render; byId('filter-search').oninput=render;
+  byId('filter-type').onchange=load; byId('filter-search').oninput=render;
   byId('filter-city').onchange=()=>{const keep=byId('filter-common').value;rebuildFilterCommons(keep);load();};
   load();
 });

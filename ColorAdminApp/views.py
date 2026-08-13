@@ -972,11 +972,16 @@ def apiVisitasEquipes(request):
                 return JsonResponse(teams, safe=False)
 
             comum = (request.GET.get('comum') or '').strip()
+            municipio = (request.GET.get('municipio') or '').strip()
+            tipo = (request.GET.get('tipo') or '').strip().upper()
             params = {
                 "select": "id,nome,comum,setor,status,cargo_outros,equipe_visita,equipe_id,grupo_regional_id,grupo_regional_nome",
                 "order": "comum.asc,equipe_visita.asc,nome.asc",
             }
-            if comum:
+            # A listagem dos grupos regionais precisa enxergar participantes de
+            # todas as comuns do município. A comum continua sendo usada quando
+            # não há um filtro municipal (ex.: seleção no modal local).
+            if comum and tipo != 'REGIONAL' and not municipio:
                 params['comum'] = f'eq.{comum}'
             response = requests.get(url, headers=headers, params=params, timeout=15)
             if response.status_code != 200:
@@ -987,9 +992,15 @@ def apiVisitasEquipes(request):
                     row['equipe_visita'] = normalize_visit_team(row['equipe_visita'])
                 if row.get('grupo_regional_nome'):
                     row['grupo_regional_nome'] = normalize_team_name(row['grupo_regional_nome'], 'REGIONAL')
-            if comum:
+            if comum and tipo != 'REGIONAL' and not municipio:
                 rows = [row for row in rows if str(row.get('comum') or '').strip() == comum]
             catalogo = {row.get('comum'): row.get('cidade') for row in visible_commons(scope)}
+            if municipio:
+                rows = [row for row in rows if str(catalogo.get(row.get('comum')) or '').strip() == municipio]
+            if tipo == 'REGIONAL':
+                rows = [row for row in rows if str(row.get('grupo_regional_id') or '').strip()]
+            elif tipo == 'LOCAL':
+                rows = [row for row in rows if str(row.get('equipe_id') or '').strip()]
             if request.GET.get('modo') == 'membros':
                 busca = (request.GET.get('busca') or '').strip().casefold()
                 listar_elegiveis = request.GET.get('elegiveis') == 'true'
