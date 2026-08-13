@@ -175,10 +175,14 @@
                     <h6 class="fw-bold mb-0 text-dark" style="font-size: 14px;">{{ visit.titulo }}</h6>
                     <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_visitado|default:"Endereço não cadastrado" }}</p>
                     
-                    <div class="d-flex gap-2 mt-1">
+                    <div class="d-flex flex-wrap gap-2 mt-1">
                         <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-clock me-1"></i> {{ visit.data_inicio|slice:"11:16" }}</span>
                         {% if visit.setor %}
                             <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-map me-1"></i> Setor: {{ visit.setor }}</span>
+                        {% endif %}
+                        <span class="badge badge-compact bg-primary text-white"><i class="fa fa-tag me-1"></i> {{ visit.categoria|default:"GVI" }}</span>
+                        {% if visit.preferencia_periodo_visita %}
+                            <span class="badge badge-compact bg-warning text-dark"><i class="fa fa-sun me-1"></i> Prefere {{ visit.preferencia_periodo_visita|lower }}</span>
                         {% endif %}
                         {% if visit.distance_meters %}
                             <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_meters|floatformat:0 }}m do último ponto</span>
@@ -186,6 +190,9 @@
                     </div>
                     {% if visit.observacoes %}
                         <p class="mb-0 mt-1 text-compact text-secondary"><strong>Obs:</strong> {{ visit.observacoes|truncatechars:60 }}</p>
+                    {% endif %}
+                    {% if visit.apontamentos_restritos %}
+                        <p class="mb-0 mt-1 text-compact text-danger"><i class="fa fa-shield-alt me-1"></i><strong>Apontamento especial:</strong> {{ visit.apontamentos_restritos }}</p>
                     {% endif %}
                 </div>
                 <div class="qr-code-box">

@@ -538,6 +538,15 @@ def apiVisitas(request):
 
 def apiVisitasIrmandade(request):
     scope = user_scope(request)
+    can_view_restricted_notes = int((scope.get("profile") or {}).get("role_id") or 99) <= 3
+
+    def protect_restricted_notes(rows):
+        if can_view_restricted_notes:
+            return rows
+        for row in rows:
+            if isinstance(row, dict):
+                row.pop("apontamentos_restritos", None)
+        return rows
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
@@ -578,12 +587,12 @@ def apiVisitasIrmandade(request):
                     rows.extend(page)
                     if len(page) < page_size:
                         break
-                return JsonResponse(filter_rows(scope, rows), safe=False)
+                return JsonResponse(protect_restricted_notes(filter_rows(scope, rows)), safe=False)
 
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
                 return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
-            return JsonResponse(filter_rows(scope, response.json()), safe=False)
+            return JsonResponse(protect_restricted_notes(filter_rows(scope, response.json())), safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
@@ -600,6 +609,8 @@ def apiVisitasIrmandade(request):
             }
             for item in records:
                 if isinstance(item, dict):
+                    if not can_view_restricted_notes:
+                        item.pop("apontamentos_restritos", None)
                     for field in nullable_fields:
                         if field in item and (item[field] is None or str(item[field]).strip() == ""):
                             item[field] = None
@@ -614,28 +625,54 @@ def apiVisitasIrmandade(request):
             if any(not isinstance(item, dict) or not can_access(scope, item) for item in records):
                 return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
             skipped = 0
+            updated = 0
             if isinstance(data, list) and request.GET.get('smart') == '1':
                 def identity(value):
                     normalized = unicodedata.normalize('NFKD', str(value or ''))
                     return ' '.join(''.join(char for char in normalized if not unicodedata.combining(char)).casefold().split())
 
-                existing_keys = set()
+                existing_by_key = {}
                 for comum in sorted({str(item.get('comum') or '').strip() for item in records}):
                     lookup = requests.get(
                         url,
                         headers={**headers, "Range": "0-9999"},
-                        params={"select": "nome,comum", "comum": f"eq.{comum}"},
+                        params={"select": "id,nome,comum,preferencia_periodo_visita,classificacao_adicional,apontamentos_restritos", "comum": f"eq.{comum}"},
                         timeout=30,
                     )
                     if lookup.status_code not in {200, 206}:
                         return JsonResponse({"error": "Não foi possível comparar os cadastros existentes.", "details": lookup.text}, status=lookup.status_code)
-                    existing_keys.update((identity(row.get('comum')), identity(row.get('nome'))) for row in lookup.json())
+                    existing_by_key.update({
+                        (identity(row.get('comum')), identity(row.get('nome'))): row
+                        for row in lookup.json()
+                    })
 
                 new_records = []
                 seen_in_file = set()
                 for item in records:
                     key = (identity(item.get('comum')), identity(item.get('nome')))
-                    if key in existing_keys or key in seen_in_file:
+                    existing = existing_by_key.get(key)
+                    if existing:
+                        enrichment = {}
+                        for field in ('preferencia_periodo_visita', 'classificacao_adicional', 'apontamentos_restritos'):
+                            incoming = item.get(field)
+                            if incoming and incoming != existing.get(field):
+                                enrichment[field] = incoming
+                        if enrichment and existing.get('id'):
+                            update_response = requests.patch(
+                                url,
+                                headers=headers,
+                                params={"id": f"eq.{existing['id']}"},
+                                json=enrichment,
+                                timeout=10,
+                            )
+                            if update_response.status_code not in {200, 201, 204}:
+                                return JsonResponse({"error": "Não foi possível atualizar as preferências existentes.", "details": update_response.text}, status=update_response.status_code)
+                            updated += 1
+                            existing.update(enrichment)
+                        else:
+                            skipped += 1
+                        continue
+                    if key in seen_in_file:
                         skipped += 1
                         continue
                     seen_in_file.add(key)
@@ -643,17 +680,17 @@ def apiVisitasIrmandade(request):
                 records = new_records
                 data = records
                 if not records:
-                    return JsonResponse({"created": 0, "skipped": skipped, "smart_import": True})
+                    return JsonResponse({"created": 0, "updated": updated, "skipped": skipped, "smart_import": True})
 
             response = requests.post(url, headers=headers, json=data, timeout=30 if isinstance(data, list) else 10)
             if response.status_code in [200, 201]:
                 log_audit(request, 'CREATE', 'VISITAS_IRMANDADE', {
                     "scope": scope_details(scope),
-                    "quantidade": len(records), "ignorados_existentes": skipped,
+                    "quantidade": len(records), "atualizados_existentes": updated, "ignorados_existentes": skipped,
                     "novo": response.json() if not isinstance(data, list) else {"importacao_em_lote": True},
                 })
                 if isinstance(data, list) and request.GET.get('smart') == '1':
-                    return JsonResponse({"created": len(records), "skipped": skipped, "smart_import": True})
+                    return JsonResponse({"created": len(records), "updated": updated, "skipped": skipped, "smart_import": True})
                 return JsonResponse(response.json(), safe=False)
             else:
                 return JsonResponse({"error": "Save Error", "details": response.text}, status=response.status_code)
@@ -668,6 +705,8 @@ def apiVisitasIrmandade(request):
                 return JsonResponse({"error": "ID is required"}, status=400)
             
             data = json.loads(request.body)
+            if not can_view_restricted_notes:
+                data.pop("apontamentos_restritos", None)
             current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
             if not current or not can_access(scope, current[0]) or not can_access(scope, {**current[0], **data}):
                 return JsonResponse({"error": "Registro fora do seu escopo de acesso."}, status=403)
@@ -753,6 +792,7 @@ def visitasCadastro(request):
         'cadastro_municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
         'cadastro_comuns': comuns,
         'cadastro_municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
+        'cadastro_pode_ver_apontamentos': int((scope.get('profile') or {}).get('role_id') or 99) <= 3,
     })
 
 def visitasAgenda(request):
@@ -1201,6 +1241,31 @@ def visitasRoteiro(request):
             )
             if novas_visitas:
                 visitas_validas.extend(filter_rows(scope, novas_visitas))
+
+        # Completa o roteiro com os dados permanentes do cadastro. Esses campos
+        # não pertencem ao agendamento e precisam acompanhar tanto visitas já
+        # marcadas quanto as incluídas pelo despacho automático.
+        member_ids = sorted({str(v.get('irmandade_id')) for v in visitas_validas if v.get('irmandade_id')})
+        members_by_id = {}
+        if member_ids:
+            can_view_restricted_notes = int((scope.get('profile') or {}).get('role_id') or 99) <= 3
+            member_fields = 'id,categoria,preferencia_periodo_visita'
+            if can_view_restricted_notes:
+                member_fields += ',apontamentos_restritos'
+            member_response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}",
+                headers=headers,
+                params={'select': member_fields, 'id': f"in.({','.join(member_ids)})"},
+                timeout=10,
+            )
+            if member_response.status_code == 200:
+                members_by_id = {str(item.get('id')): item for item in member_response.json()}
+        for visit in visitas_validas:
+            member = members_by_id.get(str(visit.get('irmandade_id'))) or {}
+            visit['categoria'] = member.get('categoria') or visit.get('categoria') or 'GVI'
+            visit['preferencia_periodo_visita'] = member.get('preferencia_periodo_visita') or ''
+            if member.get('apontamentos_restritos'):
+                visit['apontamentos_restritos'] = member['apontamentos_restritos']
                 
         # 3. Ajustar fuso horário de volta para o Brasil (-3) no que veio do banco (UTC)
         from datetime import datetime, timezone, timedelta

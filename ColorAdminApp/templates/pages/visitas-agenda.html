@@ -269,6 +269,19 @@
             });
         };
 
+        const applyActiveCommonToModal = () => {
+            const activeCommon = String((commonFilter.length ? commonFilter.val() : agendaDefaultCommon) || '').trim();
+            if (!activeCommon) {
+                $('#event-comum').val(null).trigger('change.select2');
+                return;
+            }
+            if (!$('#event-comum').find('option').filter(function () { return $(this).val() === activeCommon; }).length) {
+                $('#event-comum').append(new Option(activeCommon, activeCommon, true, true));
+            }
+            $('#event-comum').val(activeCommon).trigger('change.select2');
+            refreshTeamOptions();
+        };
+
         const refreshTeamOptions = (selectedName = '', selectedId = '') => {
             const member = irmandadeData.find(item => String(item.id) === String($('#event-member-select').val() || ''));
             const common = member?.comum || $('#event-comum').val() || agendaDefaultCommon;
@@ -305,7 +318,8 @@
             const idOrText = $(this).val();
             if (!idOrText) {
                 addressCoordinates = '';
-                $('#event-titulo, #event-endereco, #event-setor, #event-comum').val('');
+                $('#event-titulo, #event-endereco, #event-setor').val('');
+                applyActiveCommonToModal();
                 return;
             }
             const member = irmandadeData.find(i => i.id == idOrText);
@@ -416,18 +430,11 @@
                 // Remove o evento 'fantasma' que o FullCalendar cria ao receber o drop
                 info.event.remove(); 
 
-                resetModal();
-                $('#modal-title').text('Novo Agendamento');
-                $('#event-start').val(droppedDate);
-                $('#event-categoria-modal').val(categoria);
-                $('#modal-event').modal('show');
+                openNewVisitModal(droppedDate, categoria);
             },
 
             dateClick: function(info) {
-                resetModal();
-                $('#modal-title').text('Novo Agendamento');
-                $('#event-start').val(moment(info.date).format('YYYY-MM-DDTHH:mm'));
-                $('#modal-event').modal('show');
+                openNewVisitModal(moment(info.date).format('YYYY-MM-DDTHH:mm'));
             },
 
             eventClick: function (info) {
@@ -480,6 +487,19 @@
             $('#btn-delete-event').hide();
             $('#cancel-reason-container').hide();
         }
+
+        function openNewVisitModal(startDate = '', category = 'GVI') {
+            resetModal();
+            applyActiveCommonToModal();
+            $('#modal-title').text('Novo Agendamento');
+            $('#event-start').val(startDate || moment().format('YYYY-MM-DDTHH:mm'));
+            $('#event-categoria-modal').val(category || 'GVI');
+            $('#modal-event').modal('show');
+        }
+
+        $('#btn-new-visit').on('click', function () {
+            openNewVisitModal();
+        });
 
         $('#form-event').on('submit', async function (e) {
             e.preventDefault();
@@ -604,7 +624,7 @@
 
 <div class="row">
     <div class="col-lg-3 col-xl-2 agenda-sidebar">
-        <button class="btn btn-primary w-100 fw-bold btn-floating-add mb-3" onclick="resetModal(); $('#modal-event').modal('show');">
+        <button type="button" id="btn-new-visit" class="btn btn-primary w-100 fw-bold btn-floating-add mb-3">
             <i class="fa fa-plus me-1"></i> Nova Visita
         </button>
         <button class="btn btn-warning w-100 fw-bold mb-3 shadow-sm" onclick="$('#modal-roteiro').modal('show');">

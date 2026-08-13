@@ -391,6 +391,13 @@
                                 <label class="form-label fw-bold small">CLASSIFICAÇÃO ADICIONAL</label>
                                 <input type="text" class="form-control border-0 bg-light" id="irm-classificacao-adicional" placeholder="Ex: Avivamento ou Resgate">
                             </div>
+                            {% if cadastro_pode_ver_apontamentos %}
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold small text-danger"><i class="fa fa-user-shield me-1"></i> APONTAMENTOS RESTRITOS</label>
+                                <textarea class="form-control border-danger-subtle bg-light" id="irm-apontamentos-restritos" rows="2" placeholder="Informações sensíveis para Coordenadores, Admin e Master"></textarea>
+                                <div class="form-text text-danger"><i class="fa fa-lock me-1"></i>Visível somente para Coordenadores ou perfis superiores.</div>
+                            </div>
+                            {% endif %}
                             <div class="col-md-8">
                                 <label class="form-label fw-bold small text-primary"><i class="fa fa-map-marker-alt me-1"></i> ENDEREÇO RESIDENCIAL COMPLETO</label>
                                 <input type="text" class="form-control border-0 bg-light fw-bold" id="irm-endereco" placeholder="Ex: Rua Rosângela Mariana Limas, 124, Itapevi - SP">
@@ -458,6 +465,7 @@
 							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Auxiliar de Escrita" name="cargo"><label class="form-check-label fw-bold">Auxiliar de Escrita</label></div></div>
 							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Fundo Bíblico" name="cargo"><label class="form-check-label fw-bold">Fundo Bíblico</label></div></div>
 							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Grupo de Visitas" name="cargo"><label class="form-check-label fw-bold text-teal">Grupo de Visitas</label></div></div>
+							<div class="col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" value="Testemunhado(a)" name="cargo"><label class="form-check-label fw-bold">Testemunhado(a)</label></div></div>
 							<div class="col-md-4">
 								<input type="text" class="form-control form-control-sm border-0 border-bottom bg-transparent" id="cargo-extra" placeholder="Outro cargo...">
 							</div>
@@ -493,6 +501,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <script>
         const userName = '{{ request.session.user_profile.full_name|default:"Usuário do Sistema"|escapejs }}';
+        const CAN_VIEW_RESTRICTED_NOTES = {{ cadastro_pode_ver_apontamentos|yesno:"true,false" }};
         let irmandadeData = [];
         let agendaData = [];
         const CADASTRO_ACCESS_LEVEL = '{{ cadastro_access_level|escapejs }}';
@@ -541,6 +550,7 @@
             ['data_culto_oficial', 'Culto oficial'], ['data_oficializacao', 'Oficialização'], ['familia', 'Família'],
             ['id_chefe_familia', 'ID chefe da família'], ['vinculo_tipo', 'Vínculo familiar'], ['categoria', 'Categoria'],
             ['equipe_visita', 'Equipe de visita'], ['classificacao_adicional', 'Classificação adicional'], ['observacoes', 'Observações'],
+            ...(CAN_VIEW_RESTRICTED_NOTES ? [['apontamentos_restritos', 'Apontamentos restritos']] : []),
             ['referencia_geografica', 'Referência geográfica'], ['url_foto', 'URL da foto'],
             ['origem_registro', 'Origem do registro'], ['data_cadastro', 'Data do cadastro'],
             ['created_at', 'Data do registro'], ['updated_at', 'Data da atualização'], ['id', 'ID do sistema']
@@ -711,6 +721,7 @@
             ['data_culto_oficial','Culto oficial'], ['data_oficializacao','Oficialização'], ['familia','Família'],
             ['id_chefe_familia','ID chefe da família'], ['vinculo_tipo','Vínculo familiar'], ['categoria','Categoria regional'],
             ['equipe_visita','Equipe de visita'], ['classificacao_adicional','Classificação adicional'], ['observacoes','Observações'],
+            ...(CAN_VIEW_RESTRICTED_NOTES ? [['apontamentos_restritos','Apontamentos']] : []),
             ['referencia_geografica','Referência geográfica'], ['url_foto','URL da foto']
         ];
         const downloadMatrix = () => {
@@ -769,6 +780,16 @@
                 // Compatibilidade com planilhas antigas: valores regionais permanecem em
                 // categoria; valores como Avivamento/Resgate são movidos abaixo para a classificação adicional.
                 headerMap.set(normalizeHeader('Categoria'), 'categoria');
+                if (CAN_VIEW_RESTRICTED_NOTES) {
+                    ['Apontamentos', 'Apontamento', 'Observações restritas', 'Observação restrita'].forEach(label => {
+                        headerMap.set(normalizeHeader(label), 'apontamentos_restritos');
+                    });
+                }
+                // As planilhas das comuns nem sempre usam o título extenso da matriz.
+                // Todos estes cabeçalhos representam o mesmo campo de preferência.
+                ['Período', 'Periodo', 'Período da visita', 'Turno', 'Preferência de período'].forEach(label => {
+                    headerMap.set(normalizeHeader(label), 'preferencia_periodo_visita');
+                });
                 const records = rows.map((row, rowIndex) => {
                     const item = {};
                     Object.entries(row).forEach(([header,value]) => { const key = headerMap.get(normalizeHeader(header)); if (key) item[key] = value; });
@@ -782,8 +803,10 @@
                     item.celular = formatCellPhone(item.celular);
                     if (item.preferencia_periodo_visita) {
                         const periodo = normalizeHeader(item.preferencia_periodo_visita);
-                        if (!['manha', 'tarde'].includes(periodo)) throw new Error(`A “Preferência de período de visita” está inválida na linha ${rowIndex + 2}. Use Manhã ou Tarde.`);
-                        item.preferencia_periodo_visita = periodo === 'manha' ? 'Manhã' : 'Tarde';
+                        const isManha = /(^|\s)manha(\s|$)/.test(periodo);
+                        const isTarde = /(^|\s)tarde(\s|$)/.test(periodo);
+                        if (isManha === isTarde) throw new Error(`A “Preferência de período de visita” está inválida na linha ${rowIndex + 2}. Use Manhã ou Tarde.`);
+                        item.preferencia_periodo_visita = isManha ? 'Manhã' : 'Tarde';
                     }
                     ['ultima_visita','data_nascimento','data_batismo','data_inicio_ensaios','data_culto_oficial','data_oficializacao'].forEach(key => {
                         if (!item[key]) { delete item[key]; return; }
@@ -829,6 +852,7 @@
                 });
                 if (!confirmation.isConfirmed) return;
                 let createdTotal = 0;
+                let updatedTotal = 0;
                 let skippedTotal = 0;
                 for (let start=0; start<records.length; start+=250) {
                     Swal.fire({title:'Sincronizando...', text:`Analisando ${Math.min(start+250, records.length)} de ${records.length}`, allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
@@ -836,11 +860,12 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(friendlyImportError(result, start, Math.min(start + 250, records.length)));
                     createdTotal += Number(result.created || 0);
+                    updatedTotal += Number(result.updated || 0);
                     skippedTotal += Number(result.skipped || 0);
                 }
                 await Swal.fire({
                     icon:'success', title:'Sincronização concluída',
-                    html:`<b>${createdTotal}</b> novo(s) membro(s) cadastrado(s).<br><b>${skippedTotal}</b> registro(s) já existente(s) foram preservados.`
+                    html:`<b>${createdTotal}</b> novo(s) membro(s) cadastrado(s).<br><b>${updatedTotal}</b> cadastro(s) receberam novas preferências/classificações.<br><b>${skippedTotal}</b> registro(s) já estavam atualizados e foram preservados.`
                 });
                 loadContent();
             } catch (error) { Swal.fire('Erro na importação', error.message, 'error'); }
@@ -1018,6 +1043,9 @@
                 const classificacaoAdicionalHtml = item.classificacao_adicional
                     ? `<span class="badge bg-teal-100 text-teal border" title="Classificação adicional; não altera a categoria regional"><i class="fa fa-tag me-1"></i>${item.classificacao_adicional}</span>`
                     : '';
+                const apontamentosRestritosHtml = CAN_VIEW_RESTRICTED_NOTES && item.apontamentos_restritos
+                    ? `<div class="alert alert-danger border-danger py-2 px-3 mt-2 mb-0 small" role="note"><i class="fa fa-user-shield me-1"></i><strong>Apontamento restrito:</strong> ${$('<div>').text(item.apontamentos_restritos).html()}</div>`
+                    : '';
                 const preferenciasHtml = periodoVisitaHtml || classificacaoAdicionalHtml
                     ? `<div class="d-flex flex-wrap align-items-center gap-2 mt-1">${periodoVisitaHtml}${classificacaoAdicionalHtml}</div>`
                     : '';
@@ -1043,6 +1071,7 @@
                                         return `<div class="mt-1"><span class="badge bg-blue-100 text-blue-700 border border-blue-200" style="font-size: 9px;"><i class="fa fa-users me-1"></i> ${item.vinculo_tipo || 'Membro'} de ${chefe ? chefe.nome : 'Chefe'}</span></div>`;
                                     })() : ''}
                                     ${preferenciasHtml}
+                                    ${apontamentosRestritosHtml}
                                 </div>
                             </div>
                         </td>
@@ -1262,6 +1291,7 @@
             $('#irm-setor').val(item.setor || '');
 			$('#irm-preferencia-periodo-visita').val(item.preferencia_periodo_visita || '');
 			$('#irm-classificacao-adicional').val(item.classificacao_adicional || '');
+			if (CAN_VIEW_RESTRICTED_NOTES) $('#irm-apontamentos-restritos').val(item.apontamentos_restritos || '');
 			$('#irm-celular').val(item.celular || '').trigger('input');
 			$('#irm-complemento').val(item.complemento || '');
 			$('#irm-chefe-select').val(item.id_chefe_familia || '').trigger('change');
@@ -1368,6 +1398,7 @@
                 setor: $('#irm-setor').val(),
                 preferencia_periodo_visita: $('#irm-preferencia-periodo-visita').val() || null,
                 classificacao_adicional: $('#irm-classificacao-adicional').val().trim() || null,
+                ...(CAN_VIEW_RESTRICTED_NOTES ? {apontamentos_restritos: $('#irm-apontamentos-restritos').val().trim() || null} : {}),
                 celular: $('#irm-celular').val().trim() || null,
                 complemento: $('#irm-complemento').val().trim() || null,
                 endereco: ($('#irm-gps').val() ? `[${$('#irm-gps').val()}] ` : '') + $('#irm-endereco').val(),

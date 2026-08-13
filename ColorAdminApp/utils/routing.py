@@ -381,7 +381,13 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     }
     
     # 1. Buscar todos os irmãos
-    resp_irm = requests.get(url_irmandade, headers=headers, params=[("select", "*")], timeout=10)
+    # Nunca carregue apontamentos_restritos neste fluxo compartilhado. A rota
+    # operacional pode ser usada por Instrutores e não deve transportar dados sensíveis.
+    safe_member_fields = (
+        "id,nome,comum,setor,endereco,status,categoria,equipe_visita,ultima_visita,"
+        "preferencia_periodo_visita,observacoes"
+    )
+    resp_irm = requests.get(url_irmandade, headers=headers, params=[("select", safe_member_fields)], timeout=10)
     if resp_irm.status_code != 200:
         return []
     todos_irmaos = resp_irm.json()
@@ -552,7 +558,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             'titulo': irmao.get('nome'),
             'setor': irmao.get('setor'),
             'endereco_visitado': irmao.get('endereco'),
-            'categoria': 'GVI',
+            'categoria': irmao.get('categoria') or 'GVI',
             'equipe_responsavel': equipe,
             'data_inicio': str_inicio,
             'data_fim': str_fim,

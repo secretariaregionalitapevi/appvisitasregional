@@ -513,6 +513,36 @@ class VisitTeamsTests(TestCase):
 
 
 class BrotherhoodUpdateTests(TestCase):
+    @patch("ColorAdminApp.views.requests.get")
+    def test_restricted_notes_are_removed_from_instructor_response(self, get):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{
+            "id": "member-1", "nome": "Criança", "comum": "COMUM A", "cidade": "ITAPEVI",
+            "apontamentos_restritos": "Visita somente com coordenador",
+        }]
+        request = RequestFactory().get("/visitas/api/irmandade/")
+        request.session = {"user_profile": {"role_id": 4, "comum": "COMUM A", "municipio": "ITAPEVI"}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("apontamentos_restritos", json.loads(response.content)[0])
+
+    @patch("ColorAdminApp.views.requests.get")
+    def test_restricted_notes_are_returned_to_coordinator(self, get):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{
+            "id": "member-1", "nome": "Criança", "comum": "COMUM A", "cidade": "ITAPEVI",
+            "apontamentos_restritos": "Visita somente com coordenador",
+        }]
+        request = RequestFactory().get("/visitas/api/irmandade/")
+        request.session = {"user_profile": {"role_id": 3, "municipio": "ITAPEVI"}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)[0]["apontamentos_restritos"], "Visita somente com coordenador")
+
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.post")
     @patch("ColorAdminApp.views.requests.get")
@@ -531,9 +561,35 @@ class BrotherhoodUpdateTests(TestCase):
         response = apiVisitasIrmandade(request)
         result = json.loads(response.content)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(result, {"created": 1, "skipped": 2, "smart_import": True})
+        self.assertEqual(result, {"created": 1, "updated": 0, "skipped": 2, "smart_import": True})
         self.assertEqual(len(post.call_args.kwargs["json"]), 1)
         self.assertEqual(post.call_args.kwargs["json"][0]["nome"], "Ana Souza")
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_smart_import_enriches_existing_visit_period(self, get, post, patch_request, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{
+            "id": "member-1", "nome": "Maria", "comum": "VILA DAS CHACARAS",
+            "preferencia_periodo_visita": None, "classificacao_adicional": "Avivamento",
+        }]
+        patch_request.return_value = Mock(status_code=204, text="")
+        payload = [{
+            "nome": "Maria", "comum": "VILA DAS CHACARAS",
+            "preferencia_periodo_visita": "Manhã", "classificacao_adicional": "Avivamento",
+        }]
+        request = RequestFactory().post("/visitas/api/irmandade/?smart=1", data=payload, content_type="application/json")
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content), {"created": 0, "updated": 1, "skipped": 0, "smart_import": True})
+        patch_request.assert_called_once()
+        self.assertEqual(patch_request.call_args.kwargs["json"], {"preferencia_periodo_visita": "Manhã"})
+        post.assert_not_called()
 
     @patch("ColorAdminApp.views.requests.get")
     def test_export_reads_all_supabase_pages(self, get):
@@ -583,6 +639,24 @@ class BrotherhoodUpdateTests(TestCase):
         response = apiVisitasIrmandade(request)
         self.assertEqual(response.status_code, 200)
         self.assertIn("/rest/v1/visitas_irmandade", get.call_args.args[0])
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.patch")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_instructor_cannot_write_restricted_notes_directly(self, get, patch_request, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{"id": "member-1", "nome": "Maria", "comum": "COMUM A", "cidade": "ITAPEVI"}]
+        patch_request.return_value = Mock(status_code=204, text="")
+        request = RequestFactory().patch(
+            "/visitas/api/irmandade/?id=member-1",
+            data={"nome": "Maria", "apontamentos_restritos": "Dado indevido"}, content_type="application/json",
+        )
+        request.session = {"user_profile": {"role_id": 4, "comum": "COMUM A", "municipio": "ITAPEVI"}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("apontamentos_restritos", patch_request.call_args.kwargs["json"])
 
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.patch")
