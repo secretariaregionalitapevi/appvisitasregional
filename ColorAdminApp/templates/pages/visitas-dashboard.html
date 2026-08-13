@@ -33,6 +33,7 @@
         padding-right: 11px;
     }
     .filter-period .form-control { min-width: 135px; }
+    .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
     .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
 
     @media (max-width: 1199.98px) {
@@ -49,9 +50,9 @@
         .filter-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .filter-actions .btn { width: 100%; padding-left: 8px; padding-right: 8px; }
         .filter-actions .btn-primary { grid-column: 1 / -1; grid-row: 1; }
-        .filter-period { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 8px; }
-        .filter-period .input-group-text:first-child { display: flex; border: 1px solid #d5dbe0 !important; border-radius: 5px; }
-        .filter-period .form-control { min-width: 0; width: 100%; border-radius: 5px !important; }
+        .filter-period { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;width:100%; }
+        .filter-period .input-group-text:first-child { display:none; }
+        .period-field{display:flex;flex-direction:column;gap:4px}.period-mobile-label{display:block;color:#6c757d;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}.filter-period .form-control { min-width:0;width:100%;border:1px solid #d5dbe0!important;border-radius:5px!important; }
         .filter-period .period-separator { display: none; }
         .page-header { font-size: 20px; }
         .kpi-card:hover { transform: none; }
@@ -788,9 +789,9 @@
                 style="font-size: 10px;">Período</label>
             <div class="input-group filter-period">
                 <span class="input-group-text bg-light border-gray-300"><i class="fa fa-calendar-alt"></i></span>
-                <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-de">
+                <div class="period-field"><span class="period-mobile-label">De</span><input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-de" aria-label="Data inicial"></div>
                 <span class="input-group-text bg-white border-0 shadow-none small px-1 period-separator">até</span>
-                <input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate">
+                <div class="period-field"><span class="period-mobile-label">Até</span><input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate" aria-label="Data final"></div>
             </div>
         </div>
         <div class="col-12 col-md-3 col-xl-2">
