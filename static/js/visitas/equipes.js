@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const csrf = () => document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const normalizeKey = value => String(value || '').trim().toLocaleUpperCase('pt-BR');
+  const isCoordinator = (member, team) => team?.tipo === 'REGIONAL' && (
+    /coordenador(?:a)?/i.test(String(member?.cargo_outros || '')) ||
+    (String(member?.grupo_regional_id || '') === String(team.id) && !member?.equipe_id)
+  );
   state.commons = Array.from(byId('member-common').options).slice(1).map(option => ({ common: option.value, city: option.dataset.city }));
 
   function alertMessage(message, type='danger') { byId('teams-alert').innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`; }
@@ -39,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderTeam=team => {
       const members=state.members.filter(member => String(team.tipo==='REGIONAL'?member.grupo_regional_id||'':member.equipe_id||'')===String(team.id));
       const rows=members.map(member => `<tr>
-        <td><div class="member-profile"><span class="member-avatar">${escapeHtml((member.nome||'?').trim().charAt(0).toUpperCase())}</span><div><div class="member-name">${escapeHtml(member.nome)}</div><div class="member-status">${escapeHtml(member.status||'Ativo')}</div></div></div></td>
+        <td><div class="member-profile"><span class="member-avatar">${escapeHtml((member.nome||'?').trim().charAt(0).toUpperCase())}</span><div><div class="member-name">${escapeHtml(member.nome)}${isCoordinator(member,team)?'<span class="coordinator-badge"><i class="fa fa-star"></i> Coordenador</span>':''}</div><div class="member-status">${escapeHtml(member.status||'Ativo')}</div></div></div></td>
         <td><span class="team-pill">${escapeHtml(team.nome)}</span></td>
         <td><span class="text-muted">${escapeHtml(member.municipio||team.municipio)}</span><br><span class="small">${escapeHtml(member.comum||team.comum||'Abrangência municipal')}</span></td>
         <td><div class="member-actions"><button type="button" class="btn btn-outline-primary edit-member" data-id="${escapeHtml(member.id)}" data-team-id="${escapeHtml(team.id)}" title="Alterar equipe"><i class="fa fa-pen"></i></button><button type="button" class="btn btn-outline-danger unlink-member" data-id="${escapeHtml(member.id)}" data-type="${team.tipo}" title="Desvincular da equipe"><i class="fa fa-unlink"></i></button></div></td>
