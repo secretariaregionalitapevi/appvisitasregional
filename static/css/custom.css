@@ -1,8 +1,6 @@
-/* Tipografia local e consistente.
-   O tema importa Open Sans de um servidor externo; além de depender da rede,
-   essa fonte tem desenho mais estreito em tamanhos pequenos. */
+/* Mantém a tipografia original e elegante do tema em todos os controles. */
 :root {
-    --app-font-family: Arial, Helvetica, sans-serif;
+    --app-font-family: "Open Sans", Arial, Helvetica, sans-serif;
     --bs-font-sans-serif: var(--app-font-family);
     --bs-body-font-family: var(--app-font-family);
 }
@@ -20,6 +18,7 @@ textarea,
 
 body {
     font-size: 13px;
+    font-weight: 400;
     line-height: 1.5;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
