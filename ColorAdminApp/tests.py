@@ -158,11 +158,14 @@ class PrintedRoutePresentationTests(TestCase):
             {'id': 'retry', 'nome': 'Retomar', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 2'},
             {'id': 'old', 'nome': 'Antiga', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 3'},
             {'id': 'recent', 'nome': 'Recente', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 4'},
+            {'id': 'frequent', 'nome': 'Mais visitada', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 5'},
         ]
         history = [
             {'irmandade_id': 'retry', 'status': 'Não realizada', 'endereco_visitado': 'Rua A, 2', 'data_inicio': '2026-07-20T09:00:00-03:00'},
             {'irmandade_id': 'old', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 3', 'data_inicio': '2026-01-10T09:00:00-03:00'},
             {'irmandade_id': 'recent', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 4', 'data_inicio': '2026-08-10T09:00:00-03:00'},
+            {'irmandade_id': 'frequent', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 5', 'data_inicio': '2025-01-10T09:00:00-03:00'},
+            {'irmandade_id': 'frequent', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 5', 'data_inicio': '2025-02-10T09:00:00-03:00'},
         ]
         member_response = Mock(status_code=200)
         member_response.json.return_value = members
@@ -179,7 +182,7 @@ class PrintedRoutePresentationTests(TestCase):
         created = auto_dispatch_visits('Grupo A', '2026-08-15', comum='COMUM A')
         self.assertEqual(
             [visit['titulo'] for visit in created],
-            ['Nunca', 'Retomar', 'Antiga', 'Recente'],
+            ['Nunca', 'Retomar', 'Antiga', 'Recente', 'Mais visitada'],
         )
 
 

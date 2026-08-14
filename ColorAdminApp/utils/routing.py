@@ -540,9 +540,19 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             )
             visit_date = str(v.get('data_inicio') or '')
             status_key = normalize_text(v.get('status'))
-            previous = household_history.get(address_key)
-            if visit_date and (not previous or visit_date > previous['date']):
-                household_history[address_key] = {'date': visit_date, 'status': status_key}
+            history = household_history.setdefault(address_key, {
+                'latest_event_date': '',
+                'latest_status': '',
+                'realized_count': 0,
+                'latest_realized_date': '',
+            })
+            if status_key == 'REALIZADA':
+                history['realized_count'] += 1
+                if visit_date > history['latest_realized_date']:
+                    history['latest_realized_date'] = visit_date
+            if visit_date and visit_date > history['latest_event_date']:
+                history['latest_event_date'] = visit_date
+                history['latest_status'] = status_key
 
             is_final = status_key in ('REALIZADA', 'CANCELADA', 'NAO REALIZADA')
             if visit_date[:10] >= data_filtro and not is_final:
@@ -565,17 +575,25 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         history = household_history.get(address_key)
         if not history and irmao.get('ultima_visita'):
             history = {
-                'date': str(irmao.get('ultima_visita')),
-                'status': 'REALIZADA',
+                'latest_event_date': str(irmao.get('ultima_visita')),
+                'latest_status': 'REALIZADA',
+                'realized_count': 1,
+                'latest_realized_date': str(irmao.get('ultima_visita')),
             }
         if not history:
-            priority = (0, '')  # Nunca visitada
-        elif history['status'] in ('CANCELADA', 'NAO REALIZADA'):
-            priority = (1, history['date'])  # Retomada necessária
-        elif history['status'] == 'REALIZADA':
-            priority = (2, history['date'])  # Mais antiga primeiro
+            priority = (0, '', '')  # Nunca visitada
+        elif history['latest_status'] in ('CANCELADA', 'NAO REALIZADA'):
+            priority = (1, history['latest_event_date'], '')  # Retomada necessária
+        elif history['realized_count']:
+            # Equilibra primeiro a quantidade de visitas. Entre casas com a
+            # mesma quantidade, atende quem está há mais tempo sem visita.
+            priority = (
+                2,
+                history['realized_count'],
+                history['latest_realized_date'],
+            )
         else:
-            priority = (1, history['date'])  # Agendamento antigo/inconclusivo
+            priority = (1, history['latest_event_date'], '')  # Agendamento antigo/inconclusivo
         
         item = {
             'irmao': irmao,
