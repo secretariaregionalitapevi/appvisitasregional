@@ -104,6 +104,17 @@
             border-radius: 8px !important;
             overflow: hidden !important;
         }
+        .family-option-name { display: block; font-weight: 700; color: #2d353c; }
+        .family-option-detail { display: block; margin-top: 2px; font-size: 11px; color: #707478; }
+        @media (max-width: 767.98px), (pointer: coarse) {
+            #modal-cadastro .modal-dialog { margin: 0; max-width: none; min-height: 100%; }
+            #modal-cadastro .modal-content { min-height: 100vh; min-height: 100dvh; border-radius: 0 !important; }
+            #modal-cadastro .modal-body { padding: 16px !important; }
+            #irm-chefe-select,
+            #irm-vinculo-tipo { min-height: 48px; font-size: 16px; }
+            #irm-chefe-select { display: block !important; width: 100% !important; }
+            #irm-chefe-select + .select2-container { display: none !important; }
+        }
 
         /* Aesthetics 4.0 Styles - Modal Histórico */
         .widget-header-premium {
@@ -940,23 +951,56 @@
         };
 
         const updateSelects = () => {
-            const options = irmandadeData.map(i => ({ id: i.id, text: i.nome }));
             const $select = $('#irm-chefe-select');
-            
-            // Apenas destruir se já existir para reiniciar limpo
-            if ($select.hasClass("select2-hidden-accessible")) {
+            const selectedValue = String($select.val() || '');
+            const currentId = String($('#irm-id').val() || '');
+            const candidates = irmandadeData.filter(i => String(i.id) !== currentId);
+            const useNativeSelect = window.matchMedia('(max-width: 767.98px), (pointer: coarse)').matches;
+
+            if ($select.hasClass('select2-hidden-accessible')) {
                 $select.select2('destroy');
             }
-            
-            $select.empty().append('<option value="">Nenhum (Este membro é o Chefe)</option>');
-            
-            // Inicialização robusta
+
+            $select.empty().append(new Option('Nenhum (Este membro é o Chefe)', ''));
+            candidates.forEach(member => {
+                const address = String(member.endereco || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+                const detail = member.setor || address;
+                const option = new Option(
+                    useNativeSelect && detail ? `${member.nome} — ${detail}` : member.nome,
+                    member.id
+                );
+                option.dataset.address = address;
+                option.dataset.sector = member.setor || '';
+                $select.append(option);
+            });
+            if (selectedValue && candidates.some(i => String(i.id) === selectedValue)) {
+                $select.val(selectedValue);
+            } else {
+                $select.val('');
+            }
+
+            // Em dispositivos touch, o select nativo é mais estável e acessível.
+            if (useNativeSelect || !$.fn.select2) {
+                $select.removeClass('select2-hidden-accessible').attr('tabindex', '0');
+                return;
+            }
+
             $select.select2({
-                data: options,
                 dropdownParent: $('#modal-cadastro'),
                 placeholder: 'Selecione o Chefe da Família...',
-                width: '100%'
+                allowClear: true,
+                width: '100%',
+                templateResult: option => {
+                    if (!option.id) return option.text;
+                    const element = option.element;
+                    const detail = element?.dataset?.sector || element?.dataset?.address || '';
+                    const $result = $('<span>');
+                    $('<span>', { class: 'family-option-name', text: option.text }).appendTo($result);
+                    if (detail) $('<span>', { class: 'family-option-detail', text: detail }).appendTo($result);
+                    return $result;
+                }
             });
+            $select.val(selectedValue || '').trigger('change.select2');
         };
 
         const getBadgeInfo = (cargo) => {

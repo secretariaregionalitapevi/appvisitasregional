@@ -8,6 +8,7 @@
 <link href="{% static 'plugins/datatables.net-bs5/css/dataTables.bootstrap5.min.css' %}" rel="stylesheet" />
 <link href="{% static 'plugins/datatables.net-responsive-bs5/css/responsive.bootstrap5.min.css' %}" rel="stylesheet" />
 <link href="{% static 'plugins/datatables.net-buttons-bs5/css/buttons.bootstrap5.min.css' %}" rel="stylesheet" />
+<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet" />
 <style>
     .filter-section {
         background: #fff;
@@ -34,6 +35,7 @@
     }
     .filter-period .form-control { min-width: 135px; }
     .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
+    .dashboard-common-filter .select2-container{width:100%!important}.dashboard-common-filter .select2-selection--single{height:34px!important;border-color:#d5dbe0!important}.dashboard-common-filter .select2-selection__rendered{line-height:32px!important;padding-left:12px!important}.dashboard-common-filter .select2-selection__arrow{height:32px!important}.dashboard-common-filter .select2-results__options{max-height:280px!important}
     .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
 
     @media (max-width: 1199.98px) {
@@ -146,6 +148,8 @@
 <script src="{% static 'plugins/datatables.net-bs5/js/dataTables.bootstrap5.min.js' %}"></script>
 <script src="{% static 'plugins/datatables.net-responsive/js/dataTables.responsive.min.js' %}"></script>
 <script src="{% static 'plugins/datatables.net-responsive-bs5/js/responsive.bootstrap5.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <!-- Export Libraries -->
@@ -692,10 +696,18 @@
 
     $(document).ready(function () {
         const rebuildDashboardCommons = (municipio, selected = '') => {
-            const select = $('#filter-comum').empty();
+            const select = $('#filter-comum');
+            if (select.hasClass('select2-hidden-accessible')) select.select2('destroy');
+            select.empty();
             if (dashboardAccessLevel !== 'local') select.append(new Option('Todas as comuns', ''));
             dashboardCommons.filter(item => !municipio || item.cidade === municipio).forEach(item => select.append(new Option(item.comum, item.comum)));
             select.val(selected || (dashboardAccessLevel === 'local' ? dashboardDefaultCommon : ''));
+            select.prop('disabled', dashboardAccessLevel === 'local').select2({
+                width: '100%', language: 'pt-BR',
+                placeholder: 'Pesquise pelo código ou nome da comum...',
+                allowClear: dashboardAccessLevel !== 'local',
+                dropdownParent: $('.dashboard-common-filter')
+            });
         };
         rebuildDashboardCommons($('#filter-municipio').val() || dashboardDefaultCity, dashboardDefaultCommon);
         $('#filter-municipio').on('change', function () {
@@ -794,7 +806,7 @@
                 <div class="period-field"><span class="period-mobile-label">Até</span><input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate" aria-label="Data final"></div>
             </div>
         </div>
-        <div class="col-12 col-md-3 col-xl-2">
+        <div class="col-12 col-md-3 col-xl-2 dashboard-common-filter">
             <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size:10px;">Município</label>
             {% if dashboard_access_level == 'regional' or dashboard_access_level == 'global' %}
             <select id="filter-municipio" class="form-select border-gray-300 shadow-none"><option value="">Todos</option>{% for item in dashboard_municipios %}<option value="{{ item }}" {% if item == dashboard_municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
