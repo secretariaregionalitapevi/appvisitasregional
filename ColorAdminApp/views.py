@@ -1320,17 +1320,12 @@ def visitasRoteiro(request):
         # 2. Despacho Automático: a meta operacional é de 10 casas, não de
         # 10 pessoas. Moradores do mesmo endereço contam como uma única parada.
         total_casas = len(group_route_visits_by_address(visitas_validas))
-        remaining_eligible_houses = 0
         if total_casas < 10 and equipe and data_filtro:
             novas_visitas = auto_dispatch_visits(
                 equipe, data_filtro, existing_visits=visitas_validas,
                 comum=comum or None, cidade=cidade_comum, bairro=bairro or None,
             )
             if novas_visitas:
-                remaining_eligible_houses = max(
-                    int(visit.get('_remaining_eligible_houses') or 0)
-                    for visit in novas_visitas
-                )
                 visitas_validas.extend(filter_rows(scope, novas_visitas))
 
         # Completa o roteiro com os dados permanentes do cadastro. Esses campos
@@ -1439,7 +1434,6 @@ def visitasRoteiro(request):
             'data': data_br,
             'comum': comum,
             'bairro': bairro,
-            'remaining_eligible_houses': remaining_eligible_houses,
         }
         return render(request, 'pages/visitas-roteiro-impresso.html', context)
     except Exception as e:

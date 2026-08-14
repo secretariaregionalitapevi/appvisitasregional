@@ -147,7 +147,6 @@ class PrintedRoutePresentationTests(TestCase):
         self.assertEqual(len(created), 10)
         self.assertEqual(len({route_address_key(visit) for visit in created}), 10)
         self.assertEqual(created[0]['titulo'], 'Pessoa 1 / Pessoa 1B')
-        self.assertEqual(created[0]['_remaining_eligible_houses'], 2)
 
     @patch('ColorAdminApp.utils.routing.get_common_coordinates', return_value=(-23.5, -46.9))
     @patch('ColorAdminApp.utils.routing.requests.post')

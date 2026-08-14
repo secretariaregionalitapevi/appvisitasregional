@@ -161,13 +161,6 @@
             Referência operacional: 5 visitas pela manhã e 5 visitas à tarde.
             A quantidade pode ser ajustada para manter o mesmo bairro e a mesma rua com uma única equipe.
         </p>
-        {% if remaining_eligible_houses %}
-            <div class="alert alert-warning mt-3 mb-0 py-2 small">
-                <strong>Atenção:</strong> ainda
-                {% if remaining_eligible_houses == 1 %}existe 1 casa elegível{% else %}existem {{ remaining_eligible_houses }} casas elegíveis{% endif %}
-                sem equipe neste roteiro. Gere outro grupo para completar a cobertura.
-            </div>
-        {% endif %}
     </div>
 
     {% if error %}

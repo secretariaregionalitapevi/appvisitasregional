@@ -685,9 +685,6 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         (address_key, household)
         for _, address_key, household in household_options[:num_to_generate]
     ]
-    available_house_keys = {
-        address_key for households in grupos_bairro.values() for address_key in households
-    }
     
     if not selected_households:
         return []
@@ -750,13 +747,11 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     
     if resp_post.status_code in [200, 201]:
         created = resp_post.json()
-        remaining_eligible_houses = max(0, len(available_house_keys) - len(selected_households))
         # Campos apenas em memória para que a auditoria de escopo também funcione
         # enquanto a agenda mantém o vínculo territorial pelo irmandade_id.
         for visit in created:
             visit['comum'] = comum or ''
             visit['municipio'] = cidade or ''
-            visit['_remaining_eligible_houses'] = remaining_eligible_houses
         return created
         
     return []
