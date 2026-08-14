@@ -232,6 +232,49 @@ def clean_visit_address(address):
     ).strip()
 
 
+def group_route_visits_by_address(visits):
+    """Consolida apenas a exibição do roteiro, sem criar vínculos entre cadastros."""
+    grouped = []
+    by_address = {}
+
+    def unique_join(current, incoming):
+        values = []
+        for value in (current, incoming):
+            value = ' '.join(str(value or '').strip().split())
+            if value and value not in values:
+                values.append(value)
+        return ' | '.join(values)
+
+    for position, source in enumerate(visits or []):
+        visit = dict(source)
+        clean_address = clean_visit_address(visit.get('endereco_visitado') or visit.get('endereco'))
+        address_key = re.sub(r'[^A-Z0-9]+', ' ', normalize_text(clean_address)).strip()
+        # Sem endereço confiável, cada cadastro continua sendo uma visita independente.
+        key = address_key or f'__SEM_ENDERECO_{position}'
+        existing = by_address.get(key)
+        if existing is None:
+            visit['endereco_visitado'] = clean_address or visit.get('endereco_visitado')
+            visit['_route_names'] = [str(visit.get('titulo') or '').strip()]
+            by_address[key] = visit
+            grouped.append(visit)
+            continue
+
+        name = str(visit.get('titulo') or '').strip()
+        if name and name not in existing['_route_names']:
+            existing['_route_names'].append(name)
+            existing['titulo'] = ' / '.join(filter(None, existing['_route_names']))
+
+        existing_times = [value for value in (existing.get('data_inicio'), visit.get('data_inicio')) if value]
+        if existing_times:
+            existing['data_inicio'] = min(existing_times)
+        for field in ('observacoes', 'apontamentos_restritos'):
+            existing[field] = unique_join(existing.get(field), visit.get(field))
+
+    for visit in grouped:
+        visit.pop('_route_names', None)
+    return grouped
+
+
 def order_route_chronologically(visits, start_coords=None):
     """Ordena o roteiro pelo horário e recalcula distâncias na sequência exibida."""
     indexed = list(enumerate(visits or []))

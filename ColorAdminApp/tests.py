@@ -8,7 +8,7 @@ from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
-from .utils.routing import clean_visit_address, limit_daily_route, optimize_route, order_route_chronologically, street_key
+from .utils.routing import clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -62,6 +62,32 @@ class PrintedRoutePresentationTests(TestCase):
         ]
         ordered = order_route_chronologically(visits)
         self.assertEqual([visit['titulo'] for visit in ordered], ['Primeira', 'Quarta', 'Terceira', 'Segunda'])
+
+    def test_same_address_is_one_route_visit_without_linking_records(self):
+        visits = [
+            {
+                'id': 'jorge-id', 'titulo': 'Jorge', 'data_inicio': '2026-08-15T09:00:00',
+                'endereco_visitado': 'Rua Pivadávia, 70', 'apontamentos_restritos': '4 crianças',
+            },
+            {
+                'id': 'renata-id', 'titulo': 'Renata', 'data_inicio': '2026-08-15T09:15:00',
+                'endereco_visitado': '[-23.1, -46.2] Rua Pivadavia, 70', 'apontamentos_restritos': '4 crianças',
+            },
+        ]
+        grouped = group_route_visits_by_address(visits)
+        self.assertEqual(len(grouped), 1)
+        self.assertEqual(grouped[0]['titulo'], 'Jorge / Renata')
+        self.assertEqual(grouped[0]['data_inicio'], '2026-08-15T09:00:00')
+        self.assertEqual(grouped[0]['apontamentos_restritos'], '4 crianças')
+        self.assertEqual(visits[0]['titulo'], 'Jorge')
+        self.assertEqual(visits[1]['titulo'], 'Renata')
+
+    def test_visits_without_address_are_not_grouped(self):
+        grouped = group_route_visits_by_address([
+            {'titulo': 'Pessoa A', 'endereco_visitado': ''},
+            {'titulo': 'Pessoa B', 'endereco_visitado': ''},
+        ])
+        self.assertEqual(len(grouped), 2)
 
 
 class RevokedSessionTests(TestCase):

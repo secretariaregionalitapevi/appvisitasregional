@@ -1315,7 +1315,7 @@ def visitasRoteiro(request):
                 if str(v.get('setor') or '').strip().casefold() == bairro.casefold()
             ]
         
-        from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, limit_daily_route, optimize_route, order_route_chronologically
+        from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically
         
         # 2. Despacho Automático (preenche até 10 visitas caso existam menos)
         if len(visitas_validas) < 10 and equipe and data_filtro:
@@ -1373,6 +1373,10 @@ def visitasRoteiro(request):
                     v['data_fim'] = dt.strftime('%Y-%m-%dT%H:%M:%S')
                 except:
                     pass
+
+        # Duas pessoas no mesmo endereço representam um único deslocamento neste
+        # roteiro. A consolidação é somente visual e não altera os agendamentos.
+        visitas_validas = group_route_visits_by_address(visitas_validas)
                     
         # 4. Separar manhã e tarde
         visitas_manha = []
