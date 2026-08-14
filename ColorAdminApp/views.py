@@ -1317,8 +1317,10 @@ def visitasRoteiro(request):
         
         from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically
         
-        # 2. Despacho Automático (preenche até 10 visitas caso existam menos)
-        if len(visitas_validas) < 10 and equipe and data_filtro:
+        # 2. Despacho Automático: a meta operacional é de 10 casas, não de
+        # 10 pessoas. Moradores do mesmo endereço contam como uma única parada.
+        total_casas = len(group_route_visits_by_address(visitas_validas))
+        if total_casas < 10 and equipe and data_filtro:
             novas_visitas = auto_dispatch_visits(
                 equipe, data_filtro, existing_visits=visitas_validas,
                 comum=comum or None, cidade=cidade_comum, bairro=bairro or None,
@@ -1403,7 +1405,9 @@ def visitasRoteiro(request):
         )
         # Limite operacional diário: 5 visitas de manhã e 5 à tarde.
         roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
-        selected_morning_count = min(len(roteiro_manha), 5)
+        selected_morning_count = min(
+            len(roteiro_manha), 5 + max(0, 5 - len(roteiro_tarde))
+        )
         for index, visit in enumerate(roteiro_otimizado, start=1):
             visit['route_number'] = index
             visit['route_period'] = 'manha' if index <= selected_morning_count else 'tarde'

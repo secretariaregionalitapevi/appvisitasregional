@@ -232,6 +232,15 @@ def clean_visit_address(address):
     ).strip()
 
 
+def route_address_key(visit, fallback=''):
+    """Identifica uma casa pelo endereço, independentemente do morador."""
+    clean_address = clean_visit_address(
+        (visit or {}).get('endereco_visitado') or (visit or {}).get('endereco')
+    )
+    address_key = re.sub(r'[^A-Z0-9]+', ' ', normalize_text(clean_address)).strip()
+    return address_key or str(fallback or '')
+
+
 def group_route_visits_by_address(visits):
     """Consolida apenas a exibição do roteiro, sem criar vínculos entre cadastros."""
     grouped = []
@@ -247,8 +256,7 @@ def group_route_visits_by_address(visits):
 
     for position, source in enumerate(visits or []):
         visit = dict(source)
-        clean_address = clean_visit_address(visit.get('endereco_visitado') or visit.get('endereco'))
-        address_key = re.sub(r'[^A-Z0-9]+', ' ', normalize_text(clean_address)).strip()
+        address_key = route_address_key(visit)
         # Sem endereço confiável, cada cadastro continua sendo uma visita independente.
         key = address_key or f'__SEM_ENDERECO_{position}'
         existing = by_address.get(key)
@@ -438,8 +446,15 @@ optimize_route = optimize_route_by_territory
 
 
 def limit_daily_route(morning, afternoon, per_shift=5):
-    """Mantém no máximo cinco visitas por turno e dez no roteiro diário."""
-    return list(morning)[:per_shift] + list(afternoon)[:per_shift]
+    """Entrega até dez casas, usando cinco por turno como referência."""
+    morning = list(morning)
+    afternoon = list(afternoon)
+    total_limit = per_shift * 2
+    # Uma vaga ociosa de um período pode ser ocupada pelo outro. Assim a
+    # referência 5 + 5 não reduz um roteiro válido para menos de dez casas.
+    morning_limit = min(len(morning), per_shift + max(0, per_shift - len(afternoon)))
+    afternoon_limit = min(len(afternoon), total_limit - morning_limit)
+    return morning[:morning_limit] + afternoon[:afternoon_limit]
 
 
 from datetime import datetime, timedelta
@@ -457,7 +472,11 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     if existing_visits is None:
         existing_visits = []
         
-    num_to_generate = 10 - len(existing_visits)
+    existing_address_keys = {
+        route_address_key(visit, fallback=f"__EXISTENTE_{position}")
+        for position, visit in enumerate(existing_visits)
+    }
+    num_to_generate = 10 - len(existing_address_keys)
     if num_to_generate <= 0:
         return []
     url_irmandade = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
@@ -599,14 +618,23 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         pair[0],
     ))
     selecionados = []
+    selected_address_keys = set(existing_address_keys)
     for _, grupo in grupos_ordenados:
         if len(selecionados) >= num_to_generate:
             break
         grupo.sort(key=lambda item: (
             street_key(item['irmao']), address_number(item['irmao']), item['dist']
         ))
-        vagas_restantes = num_to_generate - len(selecionados)
-        selecionados.extend(grupo[:vagas_restantes])
+        for item in grupo:
+            if len(selecionados) >= num_to_generate:
+                break
+            address_key = route_address_key(
+                item['irmao'], fallback=f"__MEMBRO_{item['irmao'].get('id')}"
+            )
+            if address_key in selected_address_keys:
+                continue
+            selected_address_keys.add(address_key)
+            selecionados.append(item)
     
     if not selecionados:
         return []
@@ -618,7 +646,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     payload_bulk = []
     
     # Continuar índice baseado nos existentes
-    start_index = len(existing_visits)
+    start_index = len(existing_address_keys)
     
     for i, item in enumerate(selecionados):
         irmao = item['irmao']

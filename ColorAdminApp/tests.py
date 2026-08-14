@@ -8,7 +8,7 @@ from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
-from .utils.routing import clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, street_key
+from .utils.routing import clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -104,6 +104,15 @@ class PrintedRoutePresentationTests(TestCase):
             {'titulo': 'Pessoa B', 'endereco_visitado': ''},
         ])
         self.assertEqual(len(grouped), 2)
+
+    def test_route_address_key_counts_people_at_same_house_once(self):
+        visits = [
+            {'titulo': 'Pessoa A', 'endereco_visitado': '[-23.1, -46.2] Rua Um, 10'},
+            {'titulo': 'Pessoa B', 'endereco_visitado': 'Rua Um, 10'},
+            {'titulo': 'Pessoa C', 'endereco_visitado': 'Rua Um, 20'},
+        ]
+        keys = {route_address_key(visit) for visit in visits}
+        self.assertEqual(len(keys), 2)
 
 
 class RevokedSessionTests(TestCase):
@@ -359,6 +368,13 @@ class IntelligentRouteTests(TestCase):
         self.assertEqual(len(route), 10)
         self.assertEqual([item["id"] for item in route[:5]], [f"m-{index}" for index in range(5)])
         self.assertEqual([item["id"] for item in route[5:]], [f"t-{index}" for index in range(5)])
+
+    def test_unused_shift_slots_are_filled_to_keep_ten_houses(self):
+        morning = [{"id": f"m-{index}"} for index in range(7)]
+        afternoon = [{"id": f"t-{index}"} for index in range(3)]
+        route = limit_daily_route(morning, afternoon)
+        self.assertEqual(len(route), 10)
+        self.assertEqual([item["id"] for item in route[:7]], [f"m-{index}" for index in range(7)])
 
 
 class MapScopeFilterTests(TestCase):
