@@ -1315,7 +1315,7 @@ def visitasRoteiro(request):
                 if str(v.get('setor') or '').strip().casefold() == bairro.casefold()
             ]
         
-        from .utils.routing import optimize_route, auto_dispatch_visits, get_common_coordinates, limit_daily_route
+        from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, limit_daily_route, optimize_route, order_route_chronologically
         
         # 2. Despacho Automático (preenche até 10 visitas caso existam menos)
         if len(visitas_validas) < 10 and equipe and data_filtro:
@@ -1391,17 +1391,26 @@ def visitasRoteiro(request):
                 
         # 5. Otimizar Rota (separadamente)
         ponto_comum = get_common_coordinates(comum, cidade_comum) if comum else None
-        roteiro_manha = optimize_route(visitas_manha, start_coords=ponto_comum)
-        roteiro_tarde = optimize_route(visitas_tarde, start_coords=ponto_comum)
+        roteiro_manha = order_route_chronologically(
+            optimize_route(visitas_manha, start_coords=ponto_comum), start_coords=ponto_comum
+        )
+        roteiro_tarde = order_route_chronologically(
+            optimize_route(visitas_tarde, start_coords=ponto_comum), start_coords=ponto_comum
+        )
         # Limite operacional diário: 5 visitas de manhã e 5 à tarde.
         roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
+        selected_morning_count = min(len(roteiro_manha), 5)
+        for index, visit in enumerate(roteiro_otimizado, start=1):
+            visit['route_number'] = index
+            visit['route_period'] = 'manha' if index <= selected_morning_count else 'tarde'
 
         navigation_base_url = request.build_absolute_uri(reverse('ColorAdminApp:visitasNavegar'))
         for visit in roteiro_otimizado:
+            visit['endereco_exibicao'] = clean_visit_address(visit.get('endereco_visitado'))
             if visit.get('lat') not in (None, '') and visit.get('lng') not in (None, ''):
                 navigation_params = {'lat': visit['lat'], 'lng': visit['lng']}
             else:
-                navigation_params = {'endereco': visit.get('endereco_visitado') or ''}
+                navigation_params = {'endereco': visit['endereco_exibicao']}
             visit['navigation_url'] = f'{navigation_base_url}?{urlencode(navigation_params)}'
             visit['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?' + urlencode({
                 'size': '180x180', 'data': visit['navigation_url']

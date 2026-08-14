@@ -8,7 +8,7 @@ from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
-from .utils.routing import limit_daily_route, optimize_route, street_key
+from .utils.routing import clean_visit_address, limit_daily_route, optimize_route, order_route_chronologically, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -44,6 +44,24 @@ class VisitNavigationChooserTests(TestCase):
         response = visitasNavegar(request)
         self.assertEqual(response.status_code, 400)
         self.assertContains(response, 'Não foi possível identificar o destino', status_code=400)
+
+
+class PrintedRoutePresentationTests(TestCase):
+    def test_coordinate_prefix_is_hidden_from_printed_address(self):
+        self.assertEqual(
+            clean_visit_address('[-23.6203724, -46.9369216] Estrada Velha da Olaria, 1990'),
+            'Estrada Velha da Olaria, 1990',
+        )
+
+    def test_route_is_ordered_by_scheduled_time(self):
+        visits = [
+            {'titulo': 'Segunda', 'data_inicio': '2026-08-14T09:45:00'},
+            {'titulo': 'Quarta', 'data_inicio': '2026-08-14T09:15:00'},
+            {'titulo': 'Terceira', 'data_inicio': '2026-08-14T09:30:00'},
+            {'titulo': 'Primeira', 'data_inicio': '2026-08-14T09:00:00'},
+        ]
+        ordered = order_route_chronologically(visits)
+        self.assertEqual([visit['titulo'] for visit in ordered], ['Primeira', 'Quarta', 'Terceira', 'Segunda'])
 
 
 class RevokedSessionTests(TestCase):

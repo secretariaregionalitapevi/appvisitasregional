@@ -160,20 +160,21 @@
     {% else %}
         
         {% for visit in roteiro %}
-            
-            {% if forloop.counter == 1 %}
-                <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã — referência de 5 visitas</div>
-            {% elif forloop.counter == 6 %}
-                <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde — referência de 5 visitas</div>
-            {% endif %}
+            {% ifchanged visit.route_period %}
+                {% if visit.route_period == "manha" %}
+                    <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã — referência de 5 visitas</div>
+                {% else %}
+                    <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde — referência de 5 visitas</div>
+                {% endif %}
+            {% endifchanged %}
 
             <div class="visit-card">
                 <div class="visit-number">
-                    #{{ forloop.counter }}
+                    #{{ visit.route_number }}
                 </div>
                 <div class="visit-info">
                     <h6 class="fw-bold mb-0 text-dark" style="font-size: 14px;">{{ visit.titulo }}</h6>
-                    <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_visitado|default:"Endereço não cadastrado" }}</p>
+                    <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_exibicao|default:"Endereço não cadastrado" }}</p>
                     
                     <div class="d-flex flex-wrap gap-2 mt-1">
                         <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-clock me-1"></i> {{ visit.data_inicio|slice:"11:16" }}</span>

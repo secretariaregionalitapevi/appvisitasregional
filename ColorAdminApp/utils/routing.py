@@ -223,6 +223,35 @@ def get_visit_coordinates(visit):
     coords = geocode_address_fallback(addr)
     return coords
 
+
+def clean_visit_address(address):
+    """Remove o prefixo técnico de coordenadas sem alterar o endereço cadastrado."""
+    return re.sub(
+        r'^\s*\[\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\]\s*',
+        '', str(address or '')
+    ).strip()
+
+
+def order_route_chronologically(visits, start_coords=None):
+    """Ordena o roteiro pelo horário e recalcula distâncias na sequência exibida."""
+    indexed = list(enumerate(visits or []))
+    indexed.sort(key=lambda pair: (
+        not bool(pair[1].get('data_inicio')),
+        str(pair[1].get('data_inicio') or ''),
+        pair[0],
+    ))
+    ordered = [visit for _, visit in indexed]
+    current_loc = start_coords or (-23.538263, -46.926524)
+    for visit in ordered:
+        coords = get_visit_coordinates(visit)
+        if coords:
+            visit['distance_meters'] = haversine_distance(current_loc, coords)
+            visit['lat'], visit['lng'] = coords
+            current_loc = coords
+        else:
+            visit.pop('distance_meters', None)
+    return ordered
+
 def _optimize_route_nearest_neighbor_legacy(visits, start_coords=None):
     """
     Ordena uma lista de visitas usando o algoritmo Nearest Neighbor (Vizinho Mais Próximo).
