@@ -25,9 +25,18 @@
         }
         body {
             background: #fff !important;
-            font-family: 'Arial', sans-serif !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-synthesis: none !important;
             -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
             color: #000 !important;
+        }
+        .print-container,
+        .print-container * {
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-synthesis: none !important;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: geometricPrecision;
         }
         .print-container {
             padding: 0 !important;
@@ -38,11 +47,17 @@
         }
         .text-muted, .text-secondary {
             color: #333 !important;
-            font-weight: 500 !important;
+            font-weight: 400 !important;
         }
         h6.text-dark {
             color: #000 !important;
-            font-weight: 900 !important;
+            font-weight: 700 !important;
+        }
+        .visit-number,
+        .fw-bolder,
+        .fw-bold,
+        strong {
+            font-weight: 700 !important;
         }
     }
     
