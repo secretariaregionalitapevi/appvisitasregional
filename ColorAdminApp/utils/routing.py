@@ -253,11 +253,18 @@ def group_route_visits_by_address(visits):
         key = address_key or f'__SEM_ENDERECO_{position}'
         existing = by_address.get(key)
         if existing is None:
-            visit['endereco_visitado'] = clean_address or visit.get('endereco_visitado')
             visit['_route_names'] = [str(visit.get('titulo') or '').strip()]
             by_address[key] = visit
             grouped.append(visit)
             continue
+
+        # O prefixo [latitude, longitude] não é exibido no roteiro, mas precisa
+        # continuar no dado interno para evitar geocodificação ambígua de ruas
+        # homônimas. Se somente um dos moradores tiver coordenadas, use esse valor.
+        existing_address = existing.get('endereco_visitado') or existing.get('endereco') or ''
+        incoming_address = visit.get('endereco_visitado') or visit.get('endereco') or ''
+        if not extract_coords_from_address(existing_address) and extract_coords_from_address(incoming_address):
+            existing['endereco_visitado'] = incoming_address
 
         name = str(visit.get('titulo') or '').strip()
         if name and name not in existing['_route_names']:
@@ -284,11 +291,16 @@ def order_route_chronologically(visits, start_coords=None):
         pair[0],
     ))
     ordered = [visit for _, visit in indexed]
-    current_loc = start_coords or (-23.538263, -46.926524)
+    current_loc = start_coords
     for visit in ordered:
         coords = get_visit_coordinates(visit)
         if coords:
-            visit['distance_meters'] = haversine_distance(current_loc, coords)
+            if current_loc:
+                visit['distance_meters'] = haversine_distance(current_loc, coords)
+            else:
+                # Sem coordenada real da comum, não inventa distância para a
+                # primeira parada. As próximas partem desta localização real.
+                visit.pop('distance_meters', None)
             visit['lat'], visit['lng'] = coords
             current_loc = coords
         else:
@@ -365,7 +377,7 @@ def optimize_route_by_territory(visits, start_coords=None):
     """Ordena bairro, rua e número sem permitir uma sequência A -> B -> A."""
     if not visits:
         return []
-    current_loc = start_coords or (-23.538263, -46.926524)
+    current_loc = start_coords
 
     def group_coordinates(items):
         coords = [get_visit_coordinates(item) for item in items]
@@ -385,7 +397,7 @@ def optimize_route_by_territory(visits, start_coords=None):
     while pending:
         pending.sort(key=lambda group: (
             group['coords'] is None,
-            haversine_distance(current_loc, group['coords']) if group['coords'] else float('inf'),
+            haversine_distance(current_loc, group['coords']) if current_loc and group['coords'] else 0,
             group['key'],
         ))
         neighborhood = pending.pop(0)
@@ -399,7 +411,7 @@ def optimize_route_by_territory(visits, start_coords=None):
         while street_groups:
             street_groups.sort(key=lambda group: (
                 group['coords'] is None,
-                haversine_distance(current_loc, group['coords']) if group['coords'] else float('inf'),
+                haversine_distance(current_loc, group['coords']) if current_loc and group['coords'] else 0,
                 group['key'],
             ))
             street = street_groups.pop(0)
@@ -409,9 +421,14 @@ def optimize_route_by_territory(visits, start_coords=None):
             for visit in houses:
                 coords = get_visit_coordinates(visit)
                 if coords:
-                    visit['distance_meters'] = haversine_distance(current_loc, coords)
+                    if current_loc:
+                        visit['distance_meters'] = haversine_distance(current_loc, coords)
+                    else:
+                        visit.pop('distance_meters', None)
                     visit['lat'], visit['lng'] = coords
                     current_loc = coords
+                else:
+                    visit.pop('distance_meters', None)
                 route.append(visit)
     return route
 

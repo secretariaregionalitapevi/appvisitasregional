@@ -79,8 +79,24 @@ class PrintedRoutePresentationTests(TestCase):
         self.assertEqual(grouped[0]['titulo'], 'Jorge / Renata')
         self.assertEqual(grouped[0]['data_inicio'], '2026-08-15T09:00:00')
         self.assertEqual(grouped[0]['apontamentos_restritos'], '4 crianças')
+        self.assertEqual(grouped[0]['endereco_visitado'], '[-23.1, -46.2] Rua Pivadavia, 70')
         self.assertEqual(visits[0]['titulo'], 'Jorge')
         self.assertEqual(visits[1]['titulo'], 'Renata')
+
+    def test_missing_common_coordinates_does_not_create_fake_itapevi_distance(self):
+        visits = [
+            {
+                'titulo': 'Jorge / Renata', 'data_inicio': '2026-08-15T09:00:00',
+                'endereco_visitado': '[-23.6200000, -46.9360000] Rua Rivadávia, 70',
+            },
+            {
+                'titulo': 'Maria', 'data_inicio': '2026-08-15T09:30:00',
+                'endereco_visitado': '[-23.6203000, -46.9362000] Rua Rivadávia, 130',
+            },
+        ]
+        ordered = order_route_chronologically(visits, start_coords=None)
+        self.assertNotIn('distance_meters', ordered[0])
+        self.assertLess(ordered[1]['distance_meters'], 100)
 
     def test_visits_without_address_are_not_grouped(self):
         grouped = group_route_visits_by_address([
