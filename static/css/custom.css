@@ -1,4 +1,36 @@
-/* Mantém a tipografia original e elegante do tema em todos os controles. */
+/* Open Sans hospedada localmente para manter localhost e produção idênticos. */
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+    src: url("../fonts/open-sans/open-sans-300.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../fonts/open-sans/open-sans-400.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("../fonts/open-sans/open-sans-600.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("../fonts/open-sans/open-sans-700.ttf") format("truetype");
+}
+
 :root {
     --app-font-family: "Open Sans", Arial, Helvetica, sans-serif;
     --bs-font-sans-serif: var(--app-font-family);
@@ -14,6 +46,7 @@ textarea,
 .tooltip,
 .popover {
     font-family: var(--app-font-family);
+    font-synthesis: none;
 }
 
 body {
