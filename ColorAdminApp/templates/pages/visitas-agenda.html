@@ -328,6 +328,21 @@
         loadComunsList();
         loadVisitTeams();
 
+        const saoPauloDateTimeInput = value => {
+            const date = new Date(value);
+            if (!value || Number.isNaN(date.getTime())) return '';
+            const parts = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+            }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+            return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+        };
+
+        const updateEventStartLabel = () => {
+            const completed = $('#event-status').val() === 'Realizada';
+            $('#event-start-label').text(completed ? 'DATA E HORA DE INÍCIO REAL' : 'DATA E HORA PROPOSTA');
+        };
+
         $('#event-member-select').on('change', function () {
             const idOrText = $(this).val();
             if (!idOrText) {
@@ -407,7 +422,7 @@
                 }
                 const params = new URLSearchParams({ start_date: info.startStr, end_date: info.endStr });
                 if (selectedCommon) params.set('comum', selectedCommon);
-                fetch(`/visitas/api/agenda/?${params.toString()}`).then(res => {
+                fetch(`/visitas/api/agenda/?${params.toString()}`, { cache: 'no-store' }).then(res => {
                     if (!res.ok) throw new Error('Nao foi possivel carregar a agenda.');
                     return res.json();
                 }).then(data => {
@@ -460,7 +475,7 @@
                 $('#event-id').val(e.id);
                 $('#event-member-select').val(e.irmandade_id).trigger('change');
                 $('#event-titulo').val(e.titulo);
-                $('#event-start').val(moment(e.data_inicio).format('YYYY-MM-DDTHH:mm'));
+                $('#event-start').val(saoPauloDateTimeInput(e.data_inicio));
                 refreshTeamOptions(e.equipe_responsavel || '', e.equipe_id || '');
                 $('#event-categoria-modal').val(e.categoria || 'GVI');
                 $('#event-status').val(e.status).trigger('change');
@@ -561,6 +576,7 @@
             $('#btn-save-event').show();
             $('#btn-delete-event').hide();
             $('#cancel-reason-container').hide();
+            updateEventStartLabel();
         }
 
         function openNewVisitModal(startDate = '', category = 'GVI') {
@@ -656,6 +672,7 @@
         $('#event-status').on('change', function() {
             if($(this).val() === 'Cancelada' || $(this).val() === 'Não realizada') $('#cancel-reason-container').show();
             else $('#cancel-reason-container').hide();
+            updateEventStartLabel();
         });
     });
 </script>
@@ -779,7 +796,7 @@
                             <select class="form-select" id="event-equipe" required><option value="">Carregando equipes...</option></select>
                         </div>
                         <div class="col-md-12 text-center py-2 bg-light rounded border">
-                            <label class="form-label fw-bold small text-muted d-block">DATA E HORA PROPOSTA</label>
+                            <label class="form-label fw-bold small text-muted d-block" id="event-start-label">DATA E HORA PROPOSTA</label>
                             <input type="datetime-local" class="form-control text-center border-0 bg-transparent fw-bold" id="event-start" required style="font-size: 1.1rem;">
                         </div>
                         <div class="col-md-4">
