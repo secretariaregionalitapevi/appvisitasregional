@@ -15,6 +15,7 @@ class SupabaseAuthMiddleware:
             '/user/login-v1',
             '/user/cadastro',
             '/api/auth/',
+            '/visitas/navegar/',
             '/static/',
         ]
         

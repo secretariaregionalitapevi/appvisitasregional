@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#245aa5">
+    <title>Escolher navegação | Visitas Regional</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #eef3fa; color: #17233a; font-family: Arial, sans-serif; }
+        main { width: min(100%, 430px); padding: 30px 24px; border-radius: 26px; background: #fff; box-shadow: 0 18px 55px rgba(30, 64, 120, .15); text-align: center; }
+        .eyebrow { margin: 0 0 8px; color: #476487; font-size: 12px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+        h1 { margin: 0; font-size: 27px; line-height: 1.15; }
+        .destination { margin: 18px 0 24px; padding: 14px; border-radius: 14px; background: #f4f7fb; color: #536782; font-size: 14px; line-height: 1.45; }
+        .destination strong { display: block; margin-bottom: 4px; color: #17233a; font-size: 16px; }
+        .choices { display: grid; gap: 13px; }
+        .choice { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 12px 18px; border-radius: 15px; color: #fff; font-size: 17px; font-weight: 800; text-decoration: none; }
+        .choice span { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; background: rgba(255,255,255,.2); font-size: 19px; }
+        .waze { background: #16a9d5; }
+        .maps { background: #2878dc; }
+        .choice:active { transform: scale(.985); }
+        .hint { margin: 18px 0 0; color: #718199; font-size: 12px; line-height: 1.4; }
+        .error { margin-top: 20px; padding: 14px; border-radius: 14px; background: #fff1f1; color: #a52a2a; }
+    </style>
+</head>
+<body>
+<main>
+    <p class="eyebrow">Roteiro de visitas</p>
+    <h1>Como deseja navegar?</h1>
+    {% if has_destination %}
+        <div class="destination">
+            {% if title %}<strong>{{ title }}</strong>{% endif %}
+            {{ address|default:"Destino localizado pelo GPS" }}
+        </div>
+        <div class="choices">
+            <a class="choice waze" href="{{ waze_url }}"><span>🚙</span> Abrir no Waze</a>
+            <a class="choice maps" href="{{ google_maps_url }}"><span>📍</span> Abrir no Google Maps</a>
+        </div>
+        <p class="hint">Se o aplicativo não estiver instalado, será aberta a versão disponível no navegador.</p>
+    {% else %}
+        <div class="error">Não foi possível identificar o destino deste QR Code.</div>
+    {% endif %}
+</main>
+</body>
+</html>

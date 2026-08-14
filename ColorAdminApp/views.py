@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import json
 import re
 import unicodedata
+from urllib.parse import urlencode
 from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
 
 
@@ -15,6 +16,22 @@ def normalize_visit_team(value):
     name = ' '.join(str(value or '').strip().split())
     match = re.fullmatch(r'equipe(?:\s+de\s+visitas?)?\s+0*(\d+)', name, flags=re.IGNORECASE)
     return f'Equipe {int(match.group(1))}' if match else name
+
+
+VISIT_PERIOD_MARKER_RE = re.compile(r'\s*\[\[periodo_planejado:(manha|tarde|noite)\]\]\s*', re.IGNORECASE)
+
+
+def split_visit_period_metadata(notes):
+    text = str(notes or '')
+    match = VISIT_PERIOD_MARKER_RE.search(text)
+    visible = VISIT_PERIOD_MARKER_RE.sub(' ', text)
+    visible = re.sub(r'\s{2,}', ' ', visible).strip()
+    return visible, (match.group(1).lower() if match else '')
+
+
+def merge_visit_period_metadata(notes, period):
+    visible, _ = split_visit_period_metadata(notes)
+    return f'{visible}{" " if visible else ""}[[periodo_planejado:{period}]]' if period else visible
 
 
 def normalize_regional_group(value):
@@ -1201,6 +1218,39 @@ def visitasRoteiroForm(request):
     })
 
 
+def visitasNavegar(request):
+    """Página pública e segura para escolher o aplicativo de navegação do QR Code."""
+    lat_raw = (request.GET.get('lat') or '').strip()
+    lng_raw = (request.GET.get('lng') or '').strip()
+    address = ' '.join((request.GET.get('endereco') or '').strip().split())[:300]
+    title = ' '.join((request.GET.get('nome') or '').strip().split())[:100]
+    destination = ''
+    has_coordinates = False
+
+    if lat_raw and lng_raw:
+        try:
+            lat = float(lat_raw.replace(',', '.'))
+            lng = float(lng_raw.replace(',', '.'))
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                raise ValueError
+            destination = f'{lat:.7f},{lng:.7f}'
+            has_coordinates = True
+        except ValueError:
+            destination = ''
+
+    if not destination and address:
+        destination = address
+
+    context = {'title': title, 'address': address, 'has_destination': bool(destination)}
+    if destination:
+        waze_params = {'ll': destination, 'navigate': 'yes'} if has_coordinates else {'q': destination, 'navigate': 'yes'}
+        context.update({
+            'waze_url': f'https://waze.com/ul?{urlencode(waze_params)}',
+            'google_maps_url': f'https://www.google.com/maps/dir/?{urlencode({"api": "1", "destination": destination})}',
+        })
+    return render(request, 'pages/visitas-navegar.html', context, status=200 if destination else 400)
+
+
 def apiRoteiroBairros(request):
     """Lista bairros da comum ordenados pela proximidade do ponto central."""
     if request.method != "GET":
@@ -1345,6 +1395,17 @@ def visitasRoteiro(request):
         roteiro_tarde = optimize_route(visitas_tarde, start_coords=ponto_comum)
         # Limite operacional diário: 5 visitas de manhã e 5 à tarde.
         roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
+
+        navigation_base_url = request.build_absolute_uri(reverse('ColorAdminApp:visitasNavegar'))
+        for visit in roteiro_otimizado:
+            if visit.get('lat') not in (None, '') and visit.get('lng') not in (None, ''):
+                navigation_params = {'lat': visit['lat'], 'lng': visit['lng']}
+            else:
+                navigation_params = {'endereco': visit.get('endereco_visitado') or ''}
+            visit['navigation_url'] = f'{navigation_base_url}?{urlencode(navigation_params)}'
+            visit['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?' + urlencode({
+                'size': '180x180', 'data': visit['navigation_url']
+            })
         
         data_br = data_filtro
         if data_filtro and len(data_filtro) == 10:
@@ -1405,6 +1466,9 @@ def apiVisitasAgenda(request):
             for row in rows:
                 if row.get('equipe_responsavel'):
                     row['equipe_responsavel'] = normalize_visit_team(row['equipe_responsavel'])
+                visible_notes, planned_period = split_visit_period_metadata(row.get('observacoes'))
+                row['observacoes'] = visible_notes
+                row['periodo_planejado'] = planned_period
 
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
@@ -1460,6 +1524,10 @@ def apiVisitasAgenda(request):
             current = []
             if id:
                 current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
+                if current and 'observacoes' in data:
+                    _, current_period = split_visit_period_metadata(current[0].get('observacoes'))
+                    if current_period:
+                        data['observacoes'] = merge_visit_period_metadata(data.get('observacoes'), current_period)
             candidate = {**(current[0] if current else {}), **data}
             if (id and not current) or not can_access(scope, candidate):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)

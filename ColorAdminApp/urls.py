@@ -27,6 +27,7 @@ urlpatterns = [
     path('visitas/api/roteiro-bairros/', views.apiRoteiroBairros, name='apiRoteiroBairros'),
     path('visitas/mapa/', views.visitasMapa, name='visitasMapa'),
     path('visitas/roteiro/', views.visitasRoteiro, name='visitasRoteiro'),
+    path('visitas/navegar/', views.visitasNavegar, name='visitasNavegar'),
     path('visitas/api/irmandade/', views.apiVisitasIrmandade, name='apiVisitasIrmandade'),
     path('visitas/api/comuns/', views.apiVisitasComuns, name='apiVisitasComuns'),
     path('visitas/api/agenda/', views.apiVisitasAgenda, name='apiVisitasAgenda'),

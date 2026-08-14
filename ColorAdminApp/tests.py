@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import limit_daily_route, optimize_route, street_key
 
 CATALOG = [
@@ -15,6 +15,35 @@ CATALOG = [
     {"comum": "BR-02 - JARDIM JANDIRA", "cidade": "JANDIRA"},
     {"comum": "BR-03 - ALTO ITAPEVI", "cidade": "ITAPEVI"},
 ]
+
+
+class VisitNavigationChooserTests(TestCase):
+    def test_coordinates_create_waze_and_google_maps_links(self):
+        request = RequestFactory().get('/visitas/navegar/', {
+            'lat': '-23.5416042', 'lng': '-46.9271697', 'nome': 'Madalena',
+            'endereco': 'Avenida Carolina de Abreu Paulino, 3',
+        })
+        request.session = {}
+        response = visitasNavegar(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Abrir no Waze')
+        self.assertContains(response, 'Abrir no Google Maps')
+        self.assertContains(response, 'll=-23.5416042%2C-46.9271697', html=False)
+        self.assertContains(response, 'destination=-23.5416042%2C-46.9271697', html=False)
+
+    def test_address_is_used_when_coordinates_are_missing(self):
+        request = RequestFactory().get('/visitas/navegar/', {'endereco': 'Rua das Flores, 10'})
+        request.session = {}
+        response = visitasNavegar(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Rua das Flores, 10')
+
+    def test_missing_destination_returns_bad_request(self):
+        request = RequestFactory().get('/visitas/navegar/')
+        request.session = {}
+        response = visitasNavegar(request)
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Não foi possível identificar o destino', status_code=400)
 
 
 class RevokedSessionTests(TestCase):

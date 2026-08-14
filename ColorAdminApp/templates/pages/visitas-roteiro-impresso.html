@@ -90,13 +90,13 @@
         text-align: center;
         border-left: 1px dashed #ccc;
         padding-left: 10px;
-        width: 70px;
+        width: 84px;
         flex-shrink: 0;
     }
     
     .qr-code-box img {
-        width: 60px;
-        height: 60px;
+        width: 74px;
+        height: 74px;
         border: 1px solid #eee;
         border-radius: 3px;
     }
@@ -196,14 +196,8 @@
                     {% endif %}
                 </div>
                 <div class="qr-code-box">
-                    {% if visit.lat and visit.lng %}
-                        <!-- QR Code apontando para o Waze com coordenadas -->
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://waze.com/ul?ll={{ visit.lat|stringformat:"f" }},{{ visit.lng|stringformat:"f" }}%26navigate=yes" alt="QR Waze">
-                    {% else %}
-                        <!-- QR Code apontando para busca no Google Maps -->
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://maps.google.com/?q={{ visit.endereco_visitado|urlencode }}" alt="QR Maps">
-                    {% endif %}
-                    <div class="fw-bold text-muted mt-1" style="font-size: 8px;">ESCANEAR GPS</div>
+                    <img src="{{ visit.qr_url }}" alt="QR para escolher o aplicativo de navegação">
+                    <div class="fw-bold text-muted mt-1" style="font-size: 8px;">ESCANEAR E ESCOLHER GPS</div>
                 </div>
             </div>
             
