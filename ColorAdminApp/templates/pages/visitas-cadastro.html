@@ -571,6 +571,10 @@
             [['perfil_musico','Músico'],['cargo_organista','Organista'],['perfil_mocidade','Mocidade'],['perfil_enfermo','Enfermo'],['cargo_porteiro','Porteiro'],['cargo_auxiliar_porta','Auxiliar da Porta'],['cargo_cozinha','Cozinha'],['cargo_limpeza','Limpeza']].forEach(([key,label]) => { if (item[key]) values.push(label); });
             return [...new Set(values)].join(', ') || '-';
         };
+        const normalizeHouseAddress = value => String(value || '')
+            .replace(/^\s*\[[^\]]+\]\s*/, '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
         const formatCellPhone = value => {
             let digits = String(value || '').replace(/\D/g, '');
             if (digits.length === 13 && digits.startsWith('55')) digits = digits.slice(2);
@@ -1053,12 +1057,21 @@
                 }
 
                 // Cálculo de Próxima Visita (Agendada)
-                const futureVisits = agendaData.filter(a => (a.irmandade_id == item.id || a.id_membro == item.id) && a.status !== 'Realizada' && moment(a.data_inicio).isSameOrAfter(moment().startOf('day')));
+                const finalStatuses = new Set(['Realizada', 'Cancelada', 'Não realizada']);
+                const itemAddress = normalizeHouseAddress(item.endereco);
+                const futureVisits = agendaData.filter(a => {
+                    if (finalStatuses.has(a.status) || !moment(a.data_inicio).isSameOrAfter(moment().startOf('day'))) return false;
+                    const sameMember = a.irmandade_id == item.id || a.id_membro == item.id;
+                    const sameHouse = itemAddress && normalizeHouseAddress(a.endereco_visitado) === itemAddress;
+                    return sameMember || sameHouse;
+                });
                 let nextVisitHtml = '<span class="text-muted small">-</span>';
                 
                 if (futureVisits.length > 0) {
                     const nextDate = moment(Math.min(...futureVisits.map(v => new Date(v.data_inicio))));
-                    nextVisitHtml = `<span class="badge bg-indigo-100 text-indigo border border-indigo" title="Visita Agendada"><i class="fa fa-calendar-alt me-1"></i>${nextDate.format('DD/MM/YY')}</span>`;
+                    const directlyScheduled = futureVisits.some(a => a.irmandade_id == item.id || a.id_membro == item.id);
+                    const title = directlyScheduled ? 'Visita agendada' : 'Casa incluída no roteiro por outro morador';
+                    nextVisitHtml = `<span class="badge bg-indigo-100 text-indigo border border-indigo" title="${title}"><i class="fa fa-calendar-alt me-1"></i>${nextDate.format('DD/MM/YY')}</span>`;
                 }
 
                 // Renderização de Cargos (Agregação de Fontes)

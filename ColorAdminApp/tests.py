@@ -8,7 +8,7 @@ from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
-from .utils.routing import clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
+from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -113,6 +113,74 @@ class PrintedRoutePresentationTests(TestCase):
         ]
         keys = {route_address_key(visit) for visit in visits}
         self.assertEqual(len(keys), 2)
+
+    @patch('ColorAdminApp.utils.routing.get_common_coordinates', return_value=(-23.5, -46.9))
+    @patch('ColorAdminApp.utils.routing.requests.post')
+    @patch('ColorAdminApp.utils.routing.requests.get')
+    def test_auto_dispatch_fills_houses_and_combines_residents(self, get, post, _common):
+        members = []
+        for number in range(1, 13):
+            members.append({
+                'id': f'm-{number}', 'nome': f'Pessoa {number}', 'comum': 'COMUM A',
+                'setor': 'Centro', 'status': 'Ativo',
+                'endereco': f'[-23.5, -46.9] Rua Teste, {number}',
+            })
+        members.append({
+            'id': 'm-1b', 'nome': 'Pessoa 1B', 'comum': 'COMUM A',
+            'setor': 'Centro', 'status': 'Ativo',
+            'endereco': '[-23.5, -46.9] Rua Teste, 1',
+        })
+        member_response = Mock(status_code=200)
+        member_response.json.return_value = members
+        agenda_response = Mock(status_code=200)
+        agenda_response.json.return_value = []
+        get.side_effect = [member_response, agenda_response]
+
+        def created_response(*_args, **kwargs):
+            response = Mock(status_code=201)
+            response.json.return_value = [dict(item) for item in kwargs['json']]
+            return response
+
+        post.side_effect = created_response
+        created = auto_dispatch_visits('Grupo A', '2026-08-15', comum='COMUM A')
+
+        self.assertEqual(len(created), 10)
+        self.assertEqual(len({route_address_key(visit) for visit in created}), 10)
+        self.assertEqual(created[0]['titulo'], 'Pessoa 1 / Pessoa 1B')
+        self.assertEqual(created[0]['_remaining_eligible_houses'], 2)
+
+    @patch('ColorAdminApp.utils.routing.get_common_coordinates', return_value=(-23.5, -46.9))
+    @patch('ColorAdminApp.utils.routing.requests.post')
+    @patch('ColorAdminApp.utils.routing.requests.get')
+    def test_auto_dispatch_prioritizes_never_then_retry_then_oldest_visit(self, get, post, _common):
+        members = [
+            {'id': 'never', 'nome': 'Nunca', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 1'},
+            {'id': 'retry', 'nome': 'Retomar', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 2'},
+            {'id': 'old', 'nome': 'Antiga', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 3'},
+            {'id': 'recent', 'nome': 'Recente', 'comum': 'COMUM A', 'setor': 'Centro', 'status': 'Ativo', 'endereco': '[-23.5, -46.9] Rua A, 4'},
+        ]
+        history = [
+            {'irmandade_id': 'retry', 'status': 'Não realizada', 'endereco_visitado': 'Rua A, 2', 'data_inicio': '2026-07-20T09:00:00-03:00'},
+            {'irmandade_id': 'old', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 3', 'data_inicio': '2026-01-10T09:00:00-03:00'},
+            {'irmandade_id': 'recent', 'status': 'Realizada', 'endereco_visitado': 'Rua A, 4', 'data_inicio': '2026-08-10T09:00:00-03:00'},
+        ]
+        member_response = Mock(status_code=200)
+        member_response.json.return_value = members
+        agenda_response = Mock(status_code=200)
+        agenda_response.json.return_value = history
+        get.side_effect = [member_response, agenda_response]
+
+        def created_response(*_args, **kwargs):
+            response = Mock(status_code=201)
+            response.json.return_value = [dict(item) for item in kwargs['json']]
+            return response
+
+        post.side_effect = created_response
+        created = auto_dispatch_visits('Grupo A', '2026-08-15', comum='COMUM A')
+        self.assertEqual(
+            [visit['titulo'] for visit in created],
+            ['Nunca', 'Retomar', 'Antiga', 'Recente'],
+        )
 
 
 class RevokedSessionTests(TestCase):

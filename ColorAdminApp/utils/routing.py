@@ -509,45 +509,80 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             item for item in todos_irmaos
             if normalize_text(item.get('setor')) == normalize_text(bairro)
         ]
+    todos_irmaos = [
+        item for item in todos_irmaos
+        if 'INATIV' not in normalize_text(item.get('status'))
+    ]
+    member_ids_da_comum = {str(item.get('id')) for item in todos_irmaos if item.get('id')}
     
-    # 2. Buscar visitas recentes/futuras
-    try:
-        data_obj = datetime.strptime(data_filtro, "%Y-%m-%d")
-    except:
-        data_obj = datetime.now()
-        
-    limite_passado = (data_obj - timedelta(days=15)).strftime("%Y-%m-%dT00:00:00")
-    
+    # 2. Buscar todo o histórico necessário para priorizar corretamente as
+    # casas nunca visitadas e, depois, as visitas mais antigas.
     params_agenda = [
         ("select", "irmandade_id,status,setor,endereco_visitado,equipe_responsavel,data_inicio"),
-        ("data_inicio", f"gte.{limite_passado}")
+        ("limit", "5000"),
     ]
     resp_agenda = requests.get(url_agenda, headers=headers, params=params_agenda, timeout=10)
     
-    visitados_recentemente = set()
     neighborhood_owners = {}
+    occupied_day_addresses = set(existing_address_keys)
+    scheduled_future_addresses = set()
+    household_history = {}
+    members_by_id = {str(item.get('id')): item for item in todos_irmaos if item.get('id')}
     if resp_agenda.status_code == 200:
         for v in resp_agenda.json():
-            if v.get('status') != 'Cancelada' and v.get('irmandade_id'):
-                visitados_recentemente.add(str(v['irmandade_id']))
+            member_id = str(v.get('irmandade_id') or '')
+            if member_id not in member_ids_da_comum:
+                continue
+            member = members_by_id.get(member_id) or {}
+            address_key = route_address_key(
+                v if v.get('endereco_visitado') else member,
+                fallback=f"__MEMBRO_{member_id}",
+            )
+            visit_date = str(v.get('data_inicio') or '')
+            status_key = normalize_text(v.get('status'))
+            previous = household_history.get(address_key)
+            if visit_date and (not previous or visit_date > previous['date']):
+                household_history[address_key] = {'date': visit_date, 'status': status_key}
+
+            is_final = status_key in ('REALIZADA', 'CANCELADA', 'NAO REALIZADA')
+            if visit_date[:10] >= data_filtro and not is_final:
+                scheduled_future_addresses.add(address_key)
             if str(v.get('data_inicio') or '')[:10] == data_filtro and v.get('equipe_responsavel'):
                 neighborhood_owners.setdefault(neighborhood_key(v), v.get('equipe_responsavel'))
+                if not is_final:
+                    occupied_day_addresses.add(address_key)
                 
     # 3. Filtrar elegíveis e extrair coordenadas
     elegiveis = []
     sem_coords = []
     
     for irmao in todos_irmaos:
-        if str(irmao.get('id')) in visitados_recentemente:
-            continue
-            
         addr = irmao.get('endereco') or ''
         coords = extract_coords_from_address(addr)
+        address_key = route_address_key(
+            irmao, fallback=f"__MEMBRO_{irmao.get('id')}"
+        )
+        history = household_history.get(address_key)
+        if not history and irmao.get('ultima_visita'):
+            history = {
+                'date': str(irmao.get('ultima_visita')),
+                'status': 'REALIZADA',
+            }
+        if not history:
+            priority = (0, '')  # Nunca visitada
+        elif history['status'] in ('CANCELADA', 'NAO REALIZADA'):
+            priority = (1, history['date'])  # Retomada necessária
+        elif history['status'] == 'REALIZADA':
+            priority = (2, history['date'])  # Mais antiga primeiro
+        else:
+            priority = (1, history['date'])  # Agendamento antigo/inconclusivo
         
         item = {
             'irmao': irmao,
             'coords': coords,
-            'setor': irmao.get('setor') or ''
+            'setor': irmao.get('setor') or '',
+            'address_key': address_key,
+            'priority': priority,
         }
         
         if coords:
@@ -594,10 +629,8 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             
     # 4. Calcular distância real até a igreja
     igreja_coords = get_common_coordinates(comum, cidade) if comum else None
-    if not igreja_coords:
-        igreja_coords = (-23.538263, -46.926524)
     for item in elegiveis:
-        if item['coords']:
+        if item['coords'] and igreja_coords:
             item['dist'] = haversine_distance(igreja_coords, item['coords'])
         elif 'dist' not in item:
             item['dist'] = 999999 
@@ -606,37 +639,39 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     grupos_bairro = {}
     for item in elegiveis:
         key = neighborhood_key(item['irmao'])
-        owner = neighborhood_owners.get(key)
-        if owner and owner != equipe:
+        address_key = route_address_key(
+            item['irmao'], fallback=f"__MEMBRO_{item['irmao'].get('id')}"
+        )
+        # Uma casa já atribuída a qualquer grupo nesta data não pode ser
+        # consumida novamente por outro morador do mesmo endereço.
+        if address_key in occupied_day_addresses or address_key in scheduled_future_addresses:
             continue
-        grupos_bairro.setdefault(key, []).append(item)
+        bairro_group = grupos_bairro.setdefault(key, {})
+        bairro_group.setdefault(address_key, []).append(item)
 
     bairros_atuais = {neighborhood_key(item) for item in existing_visits}
-    grupos_ordenados = sorted(grupos_bairro.items(), key=lambda pair: (
-        pair[0] not in bairros_atuais,
-        min(item['dist'] for item in pair[1]),
-        pair[0],
+    household_options = []
+    for neighborhood, households in grupos_bairro.items():
+        for address_key, household in households.items():
+            household_options.append((neighborhood, address_key, household))
+    household_options.sort(key=lambda option: (
+        min(item['priority'] for item in option[2]),
+        option[0] not in bairros_atuais,
+        bool(neighborhood_owners.get(option[0]) and neighborhood_owners.get(option[0]) != equipe),
+        min(item['dist'] for item in option[2]),
+        option[0],
+        street_key(option[2][0]['irmao']),
+        address_number(option[2][0]['irmao']),
     ))
-    selecionados = []
-    selected_address_keys = set(existing_address_keys)
-    for _, grupo in grupos_ordenados:
-        if len(selecionados) >= num_to_generate:
-            break
-        grupo.sort(key=lambda item: (
-            street_key(item['irmao']), address_number(item['irmao']), item['dist']
-        ))
-        for item in grupo:
-            if len(selecionados) >= num_to_generate:
-                break
-            address_key = route_address_key(
-                item['irmao'], fallback=f"__MEMBRO_{item['irmao'].get('id')}"
-            )
-            if address_key in selected_address_keys:
-                continue
-            selected_address_keys.add(address_key)
-            selecionados.append(item)
+    selected_households = [
+        (address_key, household)
+        for _, address_key, household in household_options[:num_to_generate]
+    ]
+    available_house_keys = {
+        address_key for households in grupos_bairro.values() for address_key in households
+    }
     
-    if not selecionados:
+    if not selected_households:
         return []
         
     # 5. Criar na Agenda
@@ -648,7 +683,8 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     # Continuar índice baseado nos existentes
     start_index = len(existing_address_keys)
     
-    for i, item in enumerate(selecionados):
+    for i, (_, household) in enumerate(selected_households):
+        item = household[0]
         irmao = item['irmao']
         
         current_idx = start_index + i
@@ -672,7 +708,12 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         
         visit = {
             'irmandade_id': irmao.get('id'),
-            'titulo': irmao.get('nome'),
+            # Consolida visualmente os moradores elegíveis da casa sem criar
+            # relacionamento permanente entre seus cadastros.
+            'titulo': ' / '.join(dict.fromkeys(
+                str(person['irmao'].get('nome') or '').strip()
+                for person in household if person['irmao'].get('nome')
+            )),
             'setor': irmao.get('setor'),
             'endereco_visitado': irmao.get('endereco'),
             'categoria': irmao.get('categoria') or 'GVI',
@@ -691,11 +732,13 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     
     if resp_post.status_code in [200, 201]:
         created = resp_post.json()
+        remaining_eligible_houses = max(0, len(available_house_keys) - len(selected_households))
         # Campos apenas em memória para que a auditoria de escopo também funcione
         # enquanto a agenda mantém o vínculo territorial pelo irmandade_id.
         for visit in created:
             visit['comum'] = comum or ''
             visit['municipio'] = cidade or ''
+            visit['_remaining_eligible_houses'] = remaining_eligible_houses
         return created
         
     return []
