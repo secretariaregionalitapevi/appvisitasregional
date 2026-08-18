@@ -547,11 +547,20 @@ def apiVisitas(request):
             if response.status_code != 200:
                 return JsonResponse({"error": "Supabase Error", "status": response.status_code, "details": response.text}, status=response.status_code)
             rows = filter_rows(scope, response.json())
+            # Monthly reports store musicians as `gvmu`; `gve` is the dashboard alias.
+            for row in rows:
+                row['gve'] = int(row.get('gvmu') or 0)
             catalog = {str(item.get('comum') or '').strip(): str(item.get('cidade') or '').strip() for item in visible_commons(scope)}
             if municipio:
                 if municipio not in set(catalog.values()):
                     return JsonResponse({"error": "Município fora do seu escopo de acesso."}, status=403)
-                rows = [row for row in rows if catalog.get(str(row.get('comum') or '').strip()) == municipio]
+                rows = [row for row in rows if (
+                    str(row.get('municipio') or row.get('cidade') or '').strip() == municipio
+                    or (
+                        not str(row.get('municipio') or row.get('cidade') or '').strip()
+                        and catalog.get(str(row.get('comum') or '').strip()) == municipio
+                    )
+                )]
             if comum and comum != 'all':
                 if comum not in catalog:
                     return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
@@ -564,11 +573,13 @@ def apiVisitas(request):
         import json
         try:
             data = json.loads(request.body)
+            if 'gve' in data and 'gvmu' not in data:
+                data['gvmu'] = data.pop('gve')
             if not can_access(scope, data):
                 return JsonResponse({"error": "Localidade fora do seu escopo de acesso."}, status=403)
             # Garantir calculo do total se não enviado
             if 'total_visitas' not in data:
-                data['total_visitas'] = int(data.get('gvi', 0)) + int(data.get('gvm', 0)) + int(data.get('gve', 0)) + int(data.get('rf', 0)) + int(data.get('re', 0))
+                data['total_visitas'] = int(data.get('gvi', 0)) + int(data.get('gvm', 0)) + int(data.get('gvmu', 0)) + int(data.get('rf', 0)) + int(data.get('re', 0))
             if 'total' not in data:
                 data['total'] = data['total_visitas']
                 
@@ -1535,7 +1546,8 @@ def apiVisitasAgenda(request):
             rows = response.json()
             for row in rows:
                 if row.get('equipe_responsavel'):
-                    row['equipe_responsavel'] = normalize_visit_team(row['equipe_responsavel'])
+                    row['equipe_tipo'] = row.get('equipe_tipo') or visit_team_type(row['equipe_responsavel'])
+                    row['equipe_responsavel'] = normalize_team_name(row['equipe_responsavel'], row['equipe_tipo'])
                 notes_without_times, visit_times = split_visit_time_metadata(row.get('observacoes'))
                 visible_notes, planned_period = split_visit_period_metadata(notes_without_times)
                 row['observacoes'] = visible_notes

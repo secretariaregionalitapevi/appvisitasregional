@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -536,6 +536,25 @@ class VisitTeamsTests(TestCase):
     def test_legacy_team_names_are_normalized(self):
         self.assertEqual(normalize_visit_team("Equipe 01"), "Equipe 1")
         self.assertEqual(normalize_visit_team("Equipe de Visitas 02"), "Equipe 2")
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=CATALOG)
+    @patch("ColorAdminApp.views.requests.get")
+    def test_monthly_dashboard_uses_recorded_city_and_gvmu_musicians(self, get, _commons):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [
+            {"comum": "LEGACY ITAPEVI", "municipio": "ITAPEVI", "gvi": 238, "gvm": 142, "gvmu": 23, "rf": 280, "re": 74},
+            {"comum": "BR-02 - JARDIM JANDIRA", "municipio": "JANDIRA", "gvi": 215, "gvm": 60, "gvmu": 24, "rf": 126, "re": 64},
+        ]
+        request = RequestFactory().get('/visitas/api/dashboard/', {"ano": "2026", "mes": "7", "municipio": "ITAPEVI"})
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitas(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["municipio"], "ITAPEVI")
+        self.assertEqual(payload[0]["gve"], 23)
 
     def test_report_names_use_consistent_capitalization(self):
         self.assertEqual(format_display_name("ADERBAL BAZANTE"), "Aderbal Bazante")

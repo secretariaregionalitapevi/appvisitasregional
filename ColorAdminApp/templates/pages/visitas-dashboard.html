@@ -37,7 +37,9 @@
     .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
     .dashboard-common-filter .select2-container{width:100%!important}.dashboard-common-filter .select2-selection--single{height:34px!important;border-color:#d5dbe0!important}.dashboard-common-filter .select2-selection__rendered{line-height:32px!important;padding-left:12px!important}.dashboard-common-filter .select2-selection__arrow{height:32px!important}.dashboard-common-filter .select2-results__options{max-height:280px!important}
     .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
-    .visit-when{display:flex;flex-direction:column;gap:4px;min-width:128px}.visit-date{color:#2d353c;font-weight:700;line-height:1.15;white-space:nowrap}.visit-time-line{display:flex;align-items:center;gap:6px;color:#6c757d;font-size:11px;line-height:1;white-space:nowrap}.visit-time-line .fa{color:#348fe2}.visit-duration{display:inline-flex;align-items:center;gap:4px;color:#495057;font-weight:600}.visit-time-separator{width:3px;height:3px;border-radius:50%;background:#adb5bd}.visit-note-empty{color:#adb5bd;font-size:12px;font-style:italic}
+    .visit-when{display:flex;flex-direction:column;gap:4px;min-width:128px}.visit-date{color:#2d353c;font-weight:700;line-height:1.15;white-space:nowrap}.visit-time-line,.visit-duration-line{display:flex;align-items:center;gap:6px;color:#6c757d;font-size:11px;line-height:1;white-space:nowrap}.visit-time-line .fa{color:#348fe2}.visit-duration-line{color:#495057;font-weight:600}.visit-duration-line .fa{color:#727cb6}.visit-note-empty{color:#adb5bd;font-size:12px;font-style:italic}
+    .context-switch{display:inline-flex;padding:4px;background:#eef1f5;border-radius:9px;gap:3px}.context-switch .btn{border:0;border-radius:7px!important;color:#66707a;font-weight:600;padding:7px 13px;box-shadow:none}.context-switch .btn.active{background:#fff;color:#348fe2;box-shadow:0 2px 7px rgba(45,53,60,.12)}.context-description{color:#7c858d;font-size:12px}.ops-card{border:1px solid #e8ebef!important;border-radius:8px;box-shadow:0 3px 12px rgba(45,53,60,.05)}.ops-card .ops-icon{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:#eef5fc;color:#348fe2}.ops-value{font-size:20px;font-weight:700;color:#2d353c;line-height:1}.ops-label{font-size:10px;font-weight:700;color:#8a929a;text-transform:uppercase;letter-spacing:.04em}
+    .ranking-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}.ranking-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid #e8ebef;border-radius:8px;background:#fff}.ranking-position{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:#eef5fc;color:#348fe2;font-size:12px;font-weight:700}.ranking-main{min-width:0}.ranking-name{color:#2d353c;font-size:12px;font-weight:600;line-height:1.25;white-space:normal;overflow-wrap:anywhere}.ranking-track{height:4px;margin-top:7px;border-radius:4px;background:#edf0f3;overflow:hidden}.ranking-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#348fe2,#00acac)}.ranking-value{text-align:right;white-space:nowrap}.ranking-count{display:block;color:#2d353c;font-size:15px;font-weight:700}.ranking-share{display:block;color:#8a929a;font-size:10px}.ranking-empty{padding:28px;text-align:center;color:#8a929a;border:1px dashed #d9dee3;border-radius:8px}
 
     @media (max-width: 1199.98px) {
         .filter-actions {
@@ -59,6 +61,8 @@
         .filter-period .period-separator { display: none; }
         .page-header { font-size: 20px; }
         .kpi-card:hover { transform: none; }
+        .context-switch{display:grid;grid-template-columns:1fr;width:100%}.context-switch .btn{text-align:left}.ops-card .card-body{padding:12px!important}.ops-value{font-size:18px}
+        .ranking-grid{grid-template-columns:1fr}.ranking-item{grid-template-columns:30px minmax(0,1fr) auto;padding:10px}
     }
 
     .executive-summary {
@@ -162,6 +166,7 @@
     let currentData = [];
     let trendChart = null;
     let mixChart = null;
+    let dashboardGroupContext = 'ALL';
     const dashboardAccessLevel = '{{ dashboard_access_level|escapejs }}';
     const dashboardDefaultCommon = '{{ dashboard_comum_padrao|escapejs }}';
     const dashboardDefaultCity = '{{ dashboard_municipio_padrao|escapejs }}';
@@ -186,6 +191,12 @@
         if (normalized === 'RE' || normalized.includes('EVANGELIZACAO')) return {label:'RE — Evangelização', css:'category-re'};
         return {label:formatDisplayText(value || 'Não informada'), css:'category-other'};
     };
+    const agendaTeamType = item => {
+        const explicit = String(item.equipe_tipo || '').toUpperCase();
+        if (explicit === 'LOCAL' || explicit === 'REGIONAL') return explicit;
+        return /^Grupo\s+[A-Z]$/i.test(String(item.equipe_responsavel || '').trim()) ? 'REGIONAL' : 'LOCAL';
+    };
+    const normalizedStatus = item => String(item.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     const renderDashboards = (data, agendaData = []) => {
         if (!Array.isArray(data)) {
@@ -193,10 +204,15 @@
             return;
         }
         
+        const contextualAgenda = dashboardGroupContext === 'ALL'
+            ? agendaData
+            : agendaData.filter(item => agendaTeamType(item) === dashboardGroupContext);
+        // Monthly totals are the local project. Detailed agenda visits are an
+        // additional source and may belong to local or regional teams.
+        const contextualData = dashboardGroupContext === 'REGIONAL' ? [] : data;
         const getKey = (mes, ano, comum) => `${mes}-${ano}-${comum}`;
-        const agendaKeys = new Set();
         let agendaGVI = 0, agendaGVM = 0, agendaGVE = 0, agendaRF = 0, agendaRE = 0;
-        agendaData.forEach(item => {
+        contextualAgenda.forEach(item => {
             const dt = moment(item.data_inicio);
             const mes = dt.month() + 1;
             const ano = dt.year();
@@ -204,9 +220,6 @@
             if (!comum || comum === 'null' || !comum.includes(' - ')) {
                 comum = 'COMUM NAO INFORMADA';
             }
-            const k = getKey(mes, ano, comum);
-            agendaKeys.add(k);
-
             const cat = (item.categoria || '').toUpperCase().trim();
             if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) agendaGVI++;
             else if (cat === 'GVM' || cat.includes('MOCIDADE')) agendaGVM++;
@@ -217,15 +230,12 @@
         });
 
         let manualGVI = 0, manualGVM = 0, manualGVE = 0, manualRF = 0, manualRE = 0;
-        data.forEach(d => {
-            const k = getKey(d.referencia_mes, d.referencia_ano, d.comum);
-            if (!agendaKeys.has(k)) {
-                manualGVI += parseInt(d.gvi || 0, 10);
-                manualGVM += parseInt(d.gvm || 0, 10);
-                manualGVE += parseInt(d.gve || 0, 10);
-                manualRF += parseInt(d.rf || 0, 10);
-                manualRE += parseInt(d.re || 0, 10);
-            }
+        contextualData.forEach(d => {
+            manualGVI += parseInt(d.gvi || 0, 10);
+            manualGVM += parseInt(d.gvm || 0, 10);
+            manualGVE += parseInt(d.gve || 0, 10);
+            manualRF += parseInt(d.rf || 0, 10);
+            manualRE += parseInt(d.re || 0, 10);
         });
 
         const totals = {
@@ -245,26 +255,39 @@
         $('#kpi-rf').text(formatNum(totals.rf));
         $('#kpi-re').text(formatNum(totals.re));
 
-        $('#exec-text').html(`<b>Dashboard Consolidado:</b> Exibindo o resumo de visitas. Para localidades que usam a Agenda, os apontamentos individuais sobrepõem o relatório manual para garantir precisão e evitar duplicidade. O volume total atingiu ${formatNum(totals.visitas)} atendimentos registrados no período.`);
+        const statusCount = status => contextualAgenda.filter(item => normalizedStatus(item) === status).length;
+        const realized = statusCount('realizada');
+        const notRealized = statusCount('nao realizada');
+        const cancelled = statusCount('cancelada');
+        const durations = contextualAgenda.map(item => Number(item.duracao_minutos)).filter(value => Number.isFinite(value) && value > 0);
+        const completionBase = realized + notRealized + cancelled;
+        $('#ops-realizadas').text(formatNum(realized));
+        $('#ops-nao-realizadas').text(formatNum(notRealized));
+        $('#ops-canceladas').text(formatNum(cancelled));
+        $('#ops-taxa').text(completionBase ? `${Math.round((realized / completionBase) * 100)}%` : '\u2014');
+        $('#ops-duracao').text(durations.length ? `${Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)} min` : '\u2014');
+
+        const manualTotal = manualGVI + manualGVM + manualGVE + manualRF + manualRE;
+        const detailedTotal = agendaGVI + agendaGVM + agendaGVE + agendaRF + agendaRE;
+        const contextLabel = dashboardGroupContext === 'LOCAL' ? 'Projeto local' : (dashboardGroupContext === 'REGIONAL' ? 'Projeto regional' : 'Geral');
+        const sourceDetail = dashboardGroupContext === 'REGIONAL'
+            ? `${formatNum(detailedTotal)} visitas pontuais regionais`
+            : `${formatNum(manualTotal)} do relat\u00f3rio mensal + ${formatNum(detailedTotal)} visitas pontuais`;
+        $('#exec-text').html(`<b>${contextLabel}: ${formatNum(totals.visitas)} visitas.</b> ${sourceDetail}.`);
 
         // Mesclar data e agendaData para a Tabela
         const tableMap = {};
         
-        data.forEach(d => {
+        contextualData.forEach(d => {
             const k = getKey(d.referencia_mes, d.referencia_ano, d.comum);
-            if (!agendaKeys.has(k)) {
-                tableMap[k] = { ...d, 
-                    gvi: parseInt(d.gvi || 0, 10), 
-                    gvm: parseInt(d.gvm || 0, 10), 
-                    gve: parseInt(d.gve || 0, 10), 
-                    rf: parseInt(d.rf || 0, 10), 
-                    re: parseInt(d.re || 0, 10) 
-                };
-                tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
-            }
+            if (!tableMap[k]) tableMap[k] = { ...d, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, total_visitas: 0, status: 'Mensal' };
+            ['gvi', 'gvm', 'gve', 'rf', 're'].forEach(category => {
+                tableMap[k][category] += parseInt(d[category] || 0, 10);
+            });
+            tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
         });
 
-        agendaData.forEach(item => {
+        contextualAgenda.forEach(item => {
             const dt = moment(item.data_inicio);
             const mes = dt.month() + 1;
             const ano = dt.year();
@@ -277,7 +300,9 @@
             const k = getKey(mes, ano, comum);
 
             if (!tableMap[k]) {
-                tableMap[k] = { referencia_mes: mes, referencia_ano: ano, comum: comum, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, status: 'Consolidado' };
+                tableMap[k] = { referencia_mes: mes, referencia_ano: ano, comum: comum, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, status: 'Agenda' };
+            } else if (tableMap[k].status === 'Mensal') {
+                tableMap[k].status = 'Mensal + Agenda';
             }
             
             const cat = (item.categoria || '').toUpperCase().trim();
@@ -297,8 +322,9 @@
             return a.comum.localeCompare(b.comum);
         });
 
-        renderTrendChart(agendaData, combinedTableData);
+        renderTrendChart(contextualAgenda, combinedTableData);
         renderMixChart(totals);
+        renderRankingList(combinedTableData);
         renderTable(combinedTableData);
     };
 
@@ -311,19 +337,30 @@
         const agruparPorDia = (mesFiltro !== 'all') || (dataDe && dataAte);
 
         const seriesData = {};
+        const emptyPoint = () => ({ gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0 });
+        const categoryKey = value => {
+            const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+            if (normalized === 'GVM' || normalized.includes('MOCIDADE')) return 'gvm';
+            if (normalized === 'GVE' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO')) return 'gve';
+            if (normalized === 'RF' || normalized.includes('REUNIAO FAMILIAR')) return 'rf';
+            if (normalized === 'RE' || normalized.includes('EVANGELIZACAO')) return 're';
+            return 'gvi';
+        };
         
         if (agruparPorDia) {
             // Relatórios mensais não têm dia exato, então no gráfico diário plotamos apenas a Agenda.
             agendaData.forEach(d => {
                 const key = moment(d.data_inicio).format('DD/MM');
-                seriesData[key] = (seriesData[key] || 0) + 1;
+                seriesData[key] ||= emptyPoint();
+                seriesData[key][categoryKey(d.categoria)]++;
             });
         } else {
             // Gráfico Mensal: Plotamos a tabela combinada (Relatórios + Agenda)
             combinedTableData.forEach(d => {
                 const mesStr = d.referencia_mes.toString().padStart(2, '0');
                 const key = `${mesStr}/${d.referencia_ano}`;
-                seriesData[key] = (seriesData[key] || 0) + (d.total_visitas || 0);
+                seriesData[key] ||= emptyPoint();
+                ['gvi', 'gvm', 'gve', 'rf', 're'].forEach(category => seriesData[key][category] += Number(d[category] || 0));
             });
         }
         
@@ -331,21 +368,30 @@
             const formatStr = agruparPorDia ? 'DD/MM' : 'MM/YYYY';
             return moment(a, formatStr) - moment(b, formatStr);
         });
-        const vals = cats.map(c => seriesData[c]);
+        const categorySeries = [
+            { name: 'GVI', key: 'gvi' }, { name: 'GVM', key: 'gvm' },
+            { name: 'GVE', key: 'gve' }, { name: 'RF', key: 'rf' }, { name: 'RE', key: 're' }
+        ].map(item => ({ name: item.name, type: 'column', data: cats.map(cat => seriesData[cat][item.key]) }));
+        const totals = cats.map(cat => Object.values(seriesData[cat]).reduce((sum, value) => sum + value, 0));
 
         // Se houver apenas 1 ponto de dados, um gráfico de área fica invisível (apenas um ponto). Mudamos para barra.
-        const chartType = cats.length <= 1 ? 'bar' : 'area';
+        const chartType = 'line';
 
         if (trendChart) trendChart.destroy();
         trendChart = new ApexCharts(document.querySelector("#chart-evolution"), {
-            series: [{ name: 'Visitas', data: vals }],
-            chart: { type: chartType, height: 300, toolbar: { show: false } },
-            colors: ['#3498db'],
-            stroke: { curve: 'smooth', width: chartType === 'area' ? 2 : 0 },
-            plotOptions: { bar: { columnWidth: '15%', borderRadius: 4 } },
-            xaxis: { categories: cats },
+            series: [...categorySeries, { name: 'Total', type: 'line', data: totals }],
+            chart: { type: chartType, height: 320, stacked: true, stackOnlyBar: true, toolbar: { show: true, tools: { download: true, selection: false, zoom: false, zoomin: false, zoomout: false, pan: false, reset: false } } },
+            colors: ['#348fe2', '#00acac', '#f5b041', '#727cb6', '#ff5b57', '#2d353c'],
+            stroke: { curve: 'smooth', width: [0, 0, 0, 0, 0, 3] },
+            markers: { size: [0, 0, 0, 0, 0, 4] },
+            plotOptions: { bar: { columnWidth: '58%', borderRadius: 3 } },
+            xaxis: { categories: cats, axisBorder: { show: false }, axisTicks: { show: false } },
+            yaxis: { min: 0, forceNiceScale: true, labels: { formatter: value => Math.round(value) } },
+            grid: { borderColor: '#eef1f4', strokeDashArray: 4 },
+            legend: { position: 'top', horizontalAlign: 'left' },
             dataLabels: { enabled: false },
-            tooltip: { theme: 'dark' }
+            tooltip: { shared: true, intersect: false, theme: 'light' },
+            noData: { text: 'Sem dados para o contexto selecionado.' }
         });
         trendChart.render();
     };
@@ -358,6 +404,8 @@
             labels: ['Irmandade (GVI)', 'Mocidade (GVM)', 'Encarregados (GVE)', 'Família (RF)', 'Evangelização (RE)'],
             colors: ['#348fe2', '#00acac', '#f5b041', '#2d353c', '#ff5b57'],
             legend: { position: 'bottom' },
+            plotOptions: { pie: { donut: { size: '68%', labels: { show: true, name: { show: true }, value: { show: true, formatter: value => formatNum(value) }, total: { show: true, label: 'Total', formatter: () => formatNum(totals.visitas) } } } } },
+            dataLabels: { enabled: true, formatter: value => `${Math.round(value)}%` },
             tooltip: {
                 custom: function({series, seriesIndex, dataPointIndex, w}) {
                     return '<div style="background-color: #222 !important; color: #fff !important; padding: 6px 12px; border-radius: 4px; font-weight: bold; border: 1px solid #444; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">' +
@@ -367,6 +415,36 @@
             }
         });
         mixChart.render();
+    };
+
+    const renderRankingList = data => {
+        const ranking = {};
+        data.forEach(item => {
+            const common = formatDisplayText(item.comum || 'Localidade nao informada');
+            ranking[common] = (ranking[common] || 0) + Number(item.total_visitas || 0);
+        });
+        const rows = Object.entries(ranking).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        const total = Object.values(ranking).reduce((sum, value) => sum + value, 0);
+        const maximum = rows[0]?.[1] || 1;
+        const container = $('#locality-ranking').empty();
+        if (!rows.length) {
+            container.html('<div class="ranking-empty"><i class="fa fa-info-circle me-1"></i>Sem localidades para o contexto selecionado.</div>');
+            return;
+        }
+        const grid = $('<div class="ranking-grid"></div>');
+        rows.forEach(([name, value], index) => {
+            const share = total ? (value / total) * 100 : 0;
+            grid.append(`
+                <div class="ranking-item">
+                    <span class="ranking-position">${index + 1}&ordm;</span>
+                    <div class="ranking-main">
+                        <div class="ranking-name">${escapeHtml(name)}</div>
+                        <div class="ranking-track" aria-hidden="true"><div class="ranking-fill" style="width:${Math.max(3, (value / maximum) * 100)}%"></div></div>
+                    </div>
+                    <div class="ranking-value"><span class="ranking-count">${formatNum(value)}</span><span class="ranking-share">${share.toLocaleString('pt-BR', {maximumFractionDigits: 1})}%</span></div>
+                </div>`);
+        });
+        container.append(grid);
     };
 
     const renderTable = (data) => {
@@ -450,6 +528,7 @@
                 filteredAgenda = dataAgenda.filter(v => v.status !== 'Agendada');
                 
                 window.globalAgendaVisitas = filteredAgenda;
+                window.dashboardAgendaData = filteredAgenda;
                 renderRealizedVisits(filteredAgenda.filter(item => String(item.status || '').toLocaleLowerCase('pt-BR') === 'realizada'));
             }
 
@@ -490,7 +569,7 @@
             const hasDuration = item.duracao_minutos !== null && item.duracao_minutos !== undefined
                 && Number.isFinite(duration) && duration >= 0;
             const durationDisplay = hasDuration
-                ? `<span class="visit-time-separator" aria-hidden="true"></span><span class="visit-duration"><i class="fa fa-hourglass-half" aria-hidden="true"></i>Dura&ccedil;&atilde;o: ${duration} min</span>`
+                ? `<div class="visit-duration-line"><i class="fa fa-hourglass-half" aria-hidden="true"></i><span>Dura&ccedil;&atilde;o: ${duration} min</span></div>`
                 : '';
             const observationDisplay = note
                 ? escapeHtml(note)
@@ -500,7 +579,8 @@
                         <td data-order="${visitDateValue.getTime()}">
                             <div class="visit-when">
                                 <div class="visit-date"><i class="fa fa-calendar-o text-muted me-1" aria-hidden="true"></i>${visitDate}</div>
-                                <div class="visit-time-line"><i class="fa fa-clock-o" aria-hidden="true"></i><span>${escapeHtml(visitStartTime)}</span>${durationDisplay}</div>
+                                <div class="visit-time-line"><i class="fa fa-clock-o" aria-hidden="true"></i><span>${escapeHtml(visitStartTime)}</span></div>
+                                ${durationDisplay}
                             </div>
                         </td>
                         <td>${escapeHtml(formatDisplayText(item.titulo) || '-')}</td>
@@ -728,12 +808,31 @@
                 dropdownParent: $('.dashboard-common-filter')
             });
         };
-        rebuildDashboardCommons($('#filter-municipio').val() || dashboardDefaultCity, dashboardDefaultCommon);
+        rebuildDashboardCommons(
+            $('#filter-municipio').val() || dashboardDefaultCity,
+            dashboardAccessLevel === 'local' ? dashboardDefaultCommon : ''
+        );
         $('#filter-municipio').on('change', function () {
             rebuildDashboardCommons($(this).val(), '');
             applyFilters();
         });
         $('#filter-comum').on('change', applyFilters);
+
+        $('[data-group-context]').on('click', function () {
+            dashboardGroupContext = $(this).data('group-context');
+            $('[data-group-context]').removeClass('active').attr('aria-pressed', 'false');
+            $(this).addClass('active').attr('aria-pressed', 'true');
+            const descriptions = {
+                ALL: 'Relatorio mensal local + agenda local + agenda regional.',
+                LOCAL: 'Relatorio mensal + visitas pontuais das equipes locais.',
+                REGIONAL: 'Visitas pontuais realizadas pelos grupos regionais.'
+            };
+            $('#context-description').text(descriptions[dashboardGroupContext]);
+            const agenda = window.dashboardAgendaData || [];
+            const contextualAgenda = dashboardGroupContext === 'ALL' ? agenda : agenda.filter(item => agendaTeamType(item) === dashboardGroupContext);
+            renderDashboards(currentData, agenda);
+            renderRealizedVisits(contextualAgenda.filter(item => normalizedStatus(item) === 'realizada'));
+        });
 
         // Auto-update on filter change
         $('#filter-ano, #filter-mes, #peridodo-de, #peridodo-ate').on('change', applyFilters);
@@ -754,7 +853,10 @@
             $('#filter-mes').val('all');
             $('#filter-ano').val(new Date().getFullYear());
             if (dashboardAccessLevel === 'regional' || dashboardAccessLevel === 'global') $('#filter-municipio').val(dashboardDefaultCity);
-            rebuildDashboardCommons($('#filter-municipio').val() || dashboardDefaultCity, dashboardDefaultCommon);
+            rebuildDashboardCommons(
+                $('#filter-municipio').val() || dashboardDefaultCity,
+                dashboardAccessLevel === 'local' ? dashboardDefaultCommon : ''
+            );
             $('#peridodo-de, #peridodo-ate').val('');
             applyFilters();
         });
@@ -786,6 +888,18 @@
     <li class="breadcrumb-item active">Visitas</li>
 </ol>
 <h1 class="page-header mb-3">Relatórios e Filtros Rápidos</h1>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <div class="fw-bold text-dark">Contexto do trabalho</div>
+        <div class="context-description" id="context-description">Relat&oacute;rio mensal local + agenda local + agenda regional.</div>
+    </div>
+    <div class="context-switch" role="group" aria-label="Contexto dos grupos">
+        <button type="button" class="btn active" data-group-context="ALL"><i class="fa fa-layer-group me-1"></i> Consolidado</button>
+        <button type="button" class="btn" data-group-context="LOCAL"><i class="fa fa-home me-1"></i> Grupos locais</button>
+        <button type="button" class="btn" data-group-context="REGIONAL"><i class="fa fa-map-marked-alt me-1"></i> Grupos regionais</button>
+    </div>
+</div>
 
 <!-- FILTROS -->
 <div class="filter-section py-3 mb-4 bg-white shadow-sm border-0">
@@ -850,6 +964,14 @@
 </div>
 
 <div class="executive-summary" id="exec-text">Analisando registros de visitas...</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-lg"><div class="card ops-card h-100"><div class="card-body d-flex align-items-center gap-3 py-3"><span class="ops-icon"><i class="fa fa-check"></i></span><div><div class="ops-value" id="ops-realizadas">0</div><div class="ops-label">Realizadas</div></div></div></div></div>
+    <div class="col-6 col-lg"><div class="card ops-card h-100"><div class="card-body d-flex align-items-center gap-3 py-3"><span class="ops-icon"><i class="fa fa-times"></i></span><div><div class="ops-value" id="ops-nao-realizadas">0</div><div class="ops-label">N&atilde;o realizadas</div></div></div></div></div>
+    <div class="col-6 col-lg"><div class="card ops-card h-100"><div class="card-body d-flex align-items-center gap-3 py-3"><span class="ops-icon"><i class="fa fa-ban"></i></span><div><div class="ops-value" id="ops-canceladas">0</div><div class="ops-label">Canceladas</div></div></div></div></div>
+    <div class="col-6 col-lg"><div class="card ops-card h-100"><div class="card-body d-flex align-items-center gap-3 py-3"><span class="ops-icon"><i class="fa fa-percent"></i></span><div><div class="ops-value" id="ops-taxa">&mdash;</div><div class="ops-label">Taxa de realiza&ccedil;&atilde;o</div></div></div></div></div>
+    <div class="col-12 col-lg"><div class="card ops-card h-100"><div class="card-body d-flex align-items-center gap-3 py-3"><span class="ops-icon"><i class="fa fa-hourglass-half"></i></span><div><div class="ops-value" id="ops-duracao">&mdash;</div><div class="ops-label">Dura&ccedil;&atilde;o m&eacute;dia</div></div></div></div></div>
+</div>
 
 <!-- KPIs -->
 <div class="row g-2 mb-4">
@@ -931,6 +1053,14 @@
             </div>
         </div>
     </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3 border-0">
+        <h5 class="mb-1 fw-bold"><i class="fa fa-map-marker-alt text-primary me-2"></i>Localidades com mais visitas</h5>
+        <div class="small text-muted">Ranking dentro do per&iacute;odo, territ&oacute;rio e contexto de grupo selecionados.</div>
+    </div>
+    <div class="card-body pt-0"><div id="locality-ranking"></div></div>
 </div>
 
 <!-- TABLE -->
