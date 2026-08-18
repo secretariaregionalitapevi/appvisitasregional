@@ -78,7 +78,8 @@ def visit_team_type(value):
 
 
 def normalize_team_name(value, team_type=None):
-    return normalize_regional_group(value) if team_type == 'REGIONAL' else normalize_visit_team(value)
+    normalized_type = str(team_type or '').strip().upper()
+    return normalize_regional_group(value) if normalized_type == 'REGIONAL' else normalize_visit_team(value)
 
 
 def format_display_name(value):
@@ -847,7 +848,8 @@ def visitasDashboard(request):
     scope = user_scope(request)
     comuns = visible_commons(scope)
     comum_padrao = scope.get('comum') or ''
-    comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
+    comum_key = comum_padrao.strip().casefold()
+    comum_row = next((row for row in comuns if str(row.get('comum') or '').strip().casefold() == comum_key), {})
     return render(request, "pages/visitas-dashboard.html", {
         'dashboard_access_level': scope.get('level'),
         'dashboard_comum_padrao': comum_padrao,
@@ -1546,7 +1548,7 @@ def apiVisitasAgenda(request):
             rows = response.json()
             for row in rows:
                 if row.get('equipe_responsavel'):
-                    row['equipe_tipo'] = row.get('equipe_tipo') or visit_team_type(row['equipe_responsavel'])
+                    row['equipe_tipo'] = str(row.get('equipe_tipo') or visit_team_type(row['equipe_responsavel'])).upper()
                     row['equipe_responsavel'] = normalize_team_name(row['equipe_responsavel'], row['equipe_tipo'])
                 notes_without_times, visit_times = split_visit_time_metadata(row.get('observacoes'))
                 visible_notes, planned_period = split_visit_period_metadata(notes_without_times)
@@ -1558,42 +1560,51 @@ def apiVisitasAgenda(request):
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
             # pois essa coluna nem sempre existe/esta preenchida na agenda.
-            if comum or municipio:
-                members_url = (
-                    f"{settings.SUPABASE_URL}/rest/v1/"
-                    f"{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+            members_url = (
+                f"{settings.SUPABASE_URL}/rest/v1/"
+                f"{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+            )
+            target_commons = {comum} if comum else {
+                str(item.get('comum') or '').strip() for item in visible_catalog
+                if not municipio or str(item.get('cidade') or '').strip() == municipio
+            }
+            common_cities = {
+                str(item.get('comum') or '').strip(): str(item.get('cidade') or '').strip()
+                for item in visible_catalog
+            }
+            member_locations = {}
+            offset = 0
+            page_size = 1000
+            while True:
+                page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
+                members_response = requests.get(
+                    members_url,
+                    headers=page_headers,
+                    params=[("select", "id,comum")],
+                    timeout=15,
                 )
-                member_ids = set()
-                member_locations = {}
-                target_commons = {comum} if comum else {
-                    str(item.get('comum') or '').strip() for item in visible_catalog
-                    if str(item.get('cidade') or '').strip() == municipio
-                }
-                offset = 0
-                page_size = 1000
-                while True:
-                    page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
-                    members_response = requests.get(
-                        members_url,
-                        headers=page_headers,
-                        params=[("select", "id,comum")],
-                        timeout=15,
-                    )
-                    members_response.raise_for_status()
-                    member_page = members_response.json()
-                    for item in member_page:
-                        if item.get('id') and str(item.get('comum') or '').strip() in target_commons:
-                            member_ids.add(str(item['id']))
-                            member_locations[str(item['id'])] = str(item.get('comum') or '')
-                    if len(member_page) < page_size:
-                        break
-                    offset += page_size
-                rows = [row for row in rows if str(row.get("irmandade_id") or "") in member_ids]
-                for row in rows:
-                    row['comum'] = member_locations.get(str(row.get('irmandade_id') or ''), '')
-                    row['municipio'] = next((str(item.get('cidade') or '') for item in visible_catalog if item.get('comum') == row['comum']), '')
-            else:
-                rows = filter_rows(scope, rows)
+                members_response.raise_for_status()
+                member_page = members_response.json()
+                for item in member_page:
+                    member_common = str(item.get('comum') or '').strip()
+                    if item.get('id') and member_common in target_commons:
+                        member_locations[str(item['id'])] = member_common
+                if len(member_page) < page_size:
+                    break
+                offset += page_size
+
+            hydrated_rows = []
+            for row in rows:
+                row_common = member_locations.get(
+                    str(row.get('irmandade_id') or ''),
+                    str(row.get('comum') or '').strip(),
+                )
+                if row_common not in target_commons:
+                    continue
+                row['comum'] = row_common
+                row['municipio'] = common_cities.get(row_common, '')
+                hydrated_rows.append(row)
+            rows = filter_rows(scope, hydrated_rows)
 
             return JsonResponse(rows, safe=False)
         except Exception as e:

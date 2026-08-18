@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_team_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -536,6 +536,8 @@ class VisitTeamsTests(TestCase):
     def test_legacy_team_names_are_normalized(self):
         self.assertEqual(normalize_visit_team("Equipe 01"), "Equipe 1")
         self.assertEqual(normalize_visit_team("Equipe de Visitas 02"), "Equipe 2")
+        self.assertEqual(normalize_team_name("Grupo e", "regional"), "Grupo E")
+        self.assertEqual(normalize_team_name("grupo a", "REGIONAL"), "Grupo A")
 
     @patch("ColorAdminApp.views.visible_commons", return_value=CATALOG)
     @patch("ColorAdminApp.views.requests.get")
@@ -555,6 +557,29 @@ class VisitTeamsTests(TestCase):
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["municipio"], "ITAPEVI")
         self.assertEqual(payload[0]["gve"], 23)
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=CATALOG)
+    @patch("ColorAdminApp.views.requests.get")
+    def test_unfiltered_agenda_hydrates_common_from_member(self, get, _commons):
+        agenda_response = Mock(status_code=200)
+        agenda_response.json.return_value = [{
+            "id": "visit-1", "irmandade_id": "member-1", "comum": None,
+            "data_inicio": "2026-08-01T09:00:00-03:00", "categoria": "GVI",
+        }]
+        members_response = Mock(status_code=200)
+        members_response.json.return_value = [{"id": "member-1", "comum": "BR-01 - CENTRAL ITAPEVI"}]
+        get.side_effect = [agenda_response, members_response]
+        request = RequestFactory().get('/visitas/api/agenda/', {
+            "start_date": "2026-01-01T00:00:00", "end_date": "2027-01-01T00:00:00",
+        })
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload[0]["comum"], "BR-01 - CENTRAL ITAPEVI")
+        self.assertEqual(payload[0]["municipio"], "ITAPEVI")
 
     def test_report_names_use_consistent_capitalization(self):
         self.assertEqual(format_display_name("ADERBAL BAZANTE"), "Aderbal Bazante")
