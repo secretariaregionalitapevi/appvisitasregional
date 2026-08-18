@@ -33,6 +33,9 @@
         padding-left: 11px;
         padding-right: 11px;
     }
+    @media (min-width: 1200px) {
+        .filter-actions{flex-wrap:nowrap;gap:6px}.filter-actions .btn{padding-left:9px;padding-right:9px;font-size:12px}.filter-actions .btn-primary{flex:1 0 auto}
+    }
     .filter-period .form-control { min-width: 135px; }
     .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
     .dashboard-common-filter .select2-container{width:100%!important}.dashboard-common-filter .select2-selection--single{height:34px!important;border-color:#d5dbe0!important}.dashboard-common-filter .select2-selection__rendered{line-height:32px!important;padding-left:12px!important}.dashboard-common-filter .select2-selection__arrow{height:32px!important}.dashboard-common-filter .select2-results__options{max-height:280px!important}
@@ -966,7 +969,7 @@
                 <div class="period-field"><span class="period-mobile-label">Até</span><input type="date" class="form-control border-gray-300 shadow-none" id="peridodo-ate" aria-label="Data final"></div>
             </div>
         </div>
-        <div class="col-12 col-md-3 col-xl-2 dashboard-common-filter">
+        <div class="col-12 col-md-3 col-xl-1 dashboard-common-filter">
             <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size:10px;">Município</label>
             {% if dashboard_access_level == 'regional' or dashboard_access_level == 'global' %}
             <select id="filter-municipio" class="form-select border-gray-300 shadow-none"><option value="">Todos</option>{% for item in dashboard_municipios %}<option value="{{ item }}" {% if item == dashboard_municipio_padrao %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
@@ -978,7 +981,7 @@
             <label class="form-label fw-bold small text-muted text-uppercase mb-1" style="font-size:10px;">Comum</label>
             <select id="filter-comum" class="form-select border-gray-300 shadow-none" {% if dashboard_access_level == 'local' %}disabled{% endif %}></select>
         </div>
-        <div class="col-12 col-xl-3">
+        <div class="col-12 col-xl-4">
             <div class="filter-actions">
                 <button class="btn btn-white border-gray-400" id="btn-refresh" title="Atualizar"><i class="fa fa-sync-alt text-primary"></i><span class="d-none d-sm-inline ms-1">Atualizar</span></button>
                 <button class="btn btn-white border-gray-400" id="btn-excel" title="Excel"><i class="fa fa-file-excel text-success"></i><span class="d-none d-sm-inline ms-1">Excel</span></button>
