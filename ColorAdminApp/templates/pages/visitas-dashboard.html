@@ -181,8 +181,11 @@
     const formatNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const formatDisplayText = value => {
+        const rawText = String(value || '').trim();
+        const regionalGroup = rawText.match(/^grupo\s+([a-z])$/i);
+        if (regionalGroup) return `Grupo ${regionalGroup[1].toLocaleUpperCase('pt-BR')}`;
         const connectors = new Set(['a','as','da','das','de','do','dos','e','em','na','nas','no','nos']);
-        return String(value || '').trim().toLocaleLowerCase('pt-BR').split(/\s+/).map((word, index) => {
+        return rawText.toLocaleLowerCase('pt-BR').split(/\s+/).map((word, index) => {
             if (/^[a-z]{2}-\d/i.test(word)) return word.toLocaleUpperCase('pt-BR');
             if (/^(?=[ivxlcdm]+$)m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$/i.test(word)) return word.toLocaleUpperCase('pt-BR');
             if (index > 0 && connectors.has(word)) return word;
