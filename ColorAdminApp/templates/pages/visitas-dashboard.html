@@ -37,6 +37,7 @@
     .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
     .dashboard-common-filter .select2-container{width:100%!important}.dashboard-common-filter .select2-selection--single{height:34px!important;border-color:#d5dbe0!important}.dashboard-common-filter .select2-selection__rendered{line-height:32px!important;padding-left:12px!important}.dashboard-common-filter .select2-selection__arrow{height:32px!important}.dashboard-common-filter .select2-results__options{max-height:280px!important}
     .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
+    .visit-when{display:flex;flex-direction:column;gap:4px;min-width:128px}.visit-date{color:#2d353c;font-weight:700;line-height:1.15;white-space:nowrap}.visit-time-line{display:flex;align-items:center;gap:6px;color:#6c757d;font-size:11px;line-height:1;white-space:nowrap}.visit-time-line .fa{color:#348fe2}.visit-duration{display:inline-flex;align-items:center;gap:4px;color:#495057;font-weight:600}.visit-time-separator{width:3px;height:3px;border-radius:50%;background:#adb5bd}.visit-note-empty{color:#adb5bd;font-size:12px;font-style:italic}
 
     @media (max-width: 1199.98px) {
         .filter-actions {
@@ -473,7 +474,10 @@
         const body = $('#table-visitas-realizadas tbody').empty();
 
         data.forEach(item => {
-            const dataHora = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
+            const visitDateValue = new Date(item.data_inicio);
+            const visitDate = visitDateValue.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            const scheduledTime = visitDateValue.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+            const visitStartTime = item.horario_inicio || scheduledTime;
             const category = categoryPresentation(item.categoria);
             let statusBadge = '';
             if (item.status === 'Cancelada') {
@@ -481,14 +485,29 @@
             } else if (item.status === 'Não realizada') {
                 statusBadge = '<span class="badge bg-warning text-dark ms-2">Não Realizada</span>';
             }
+            const note = String(item.observacoes || '').trim();
+            const duration = Number(item.duracao_minutos);
+            const hasDuration = item.duracao_minutos !== null && item.duracao_minutos !== undefined
+                && Number.isFinite(duration) && duration >= 0;
+            const durationDisplay = hasDuration
+                ? `<span class="visit-time-separator" aria-hidden="true"></span><span class="visit-duration"><i class="fa fa-hourglass-half" aria-hidden="true"></i>Dura&ccedil;&atilde;o: ${duration} min</span>`
+                : '';
+            const observationDisplay = note
+                ? escapeHtml(note)
+                : '<span class="visit-note-empty">Sem observa&ccedil;&otilde;es</span>';
             body.append(`
                     <tr>
-                        <td class="fw-bold">${dataHora}</td>
+                        <td data-order="${visitDateValue.getTime()}">
+                            <div class="visit-when">
+                                <div class="visit-date"><i class="fa fa-calendar-o text-muted me-1" aria-hidden="true"></i>${visitDate}</div>
+                                <div class="visit-time-line"><i class="fa fa-clock-o" aria-hidden="true"></i><span>${escapeHtml(visitStartTime)}</span>${durationDisplay}</div>
+                            </div>
+                        </td>
                         <td>${escapeHtml(formatDisplayText(item.titulo) || '-')}</td>
                         <td>${escapeHtml(formatDisplayText(item.comum || item.endereco_visitado) || '-')}</td>
                         <td class="text-center"><span class="category-badge ${category.css}">${escapeHtml(category.label)}</span>${statusBadge}</td>
                         <td class="text-center">${escapeHtml(formatDisplayText(item.equipe_responsavel) || '-')}</td>
-                        <td>${escapeHtml(item.observacoes || '-')}</td>
+                        <td>${observationDisplay}</td>
                         <td class="text-center" style="white-space: nowrap;">
                             <button onclick="viewVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #00acac;"><i class="fa fa-eye me-1"></i> VER</button>
                             <button onclick="editVisita('${item.id}')" class="btn btn-xs fw-bold text-white me-1 shadow-sm px-2" style="background-color: #f5b041;"><i class="fa fa-edit me-1"></i> EDITAR</button>

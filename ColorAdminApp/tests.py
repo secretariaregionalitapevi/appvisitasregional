@@ -98,6 +98,16 @@ class PrintedRoutePresentationTests(TestCase):
         self.assertNotIn('distance_meters', ordered[0])
         self.assertLess(ordered[1]['distance_meters'], 100)
 
+    def test_afternoon_continues_from_last_morning_house(self):
+        route = [
+            {'titulo': 'Manhã 1', 'data_inicio': '2026-08-15T09:00:00', 'endereco_visitado': '[-23.5000, -46.8990] Rua A, 1'},
+            {'titulo': 'Manhã 2', 'data_inicio': '2026-08-15T09:15:00', 'endereco_visitado': '[-23.5000, -46.8980] Rua A, 2'},
+            {'titulo': 'Tarde 1', 'data_inicio': '2026-08-15T14:00:00', 'endereco_visitado': '[-23.5000, -46.8970] Rua A, 3'},
+        ]
+        ordered = order_route_chronologically(route, start_coords=(-23.5000, -46.9000))
+        self.assertLess(ordered[2]['distance_meters'], 150)
+        self.assertGreater(ordered[2]['distance_meters'], 50)
+
     def test_visits_without_address_are_not_grouped(self):
         grouped = group_route_visits_by_address([
             {'titulo': 'Pessoa A', 'endereco_visitado': ''},
@@ -431,15 +441,15 @@ class IntelligentRouteTests(TestCase):
             ],
         )
 
-    def test_printed_route_is_limited_to_five_visits_per_shift(self):
+    def test_printed_route_keeps_every_scheduled_visit_above_reference(self):
         morning = [{"id": f"m-{index}"} for index in range(8)]
         afternoon = [{"id": f"t-{index}"} for index in range(8)]
         route = limit_daily_route(morning, afternoon)
-        self.assertEqual(len(route), 10)
-        self.assertEqual([item["id"] for item in route[:5]], [f"m-{index}" for index in range(5)])
-        self.assertEqual([item["id"] for item in route[5:]], [f"t-{index}" for index in range(5)])
+        self.assertEqual(len(route), 16)
+        self.assertEqual([item["id"] for item in route[:8]], [f"m-{index}" for index in range(8)])
+        self.assertEqual([item["id"] for item in route[8:]], [f"t-{index}" for index in range(8)])
 
-    def test_unused_shift_slots_are_filled_to_keep_ten_houses(self):
+    def test_reference_does_not_remove_visits_from_either_shift(self):
         morning = [{"id": f"m-{index}"} for index in range(7)]
         afternoon = [{"id": f"t-{index}"} for index in range(3)]
         route = limit_daily_route(morning, afternoon)
@@ -540,6 +550,10 @@ class VisitTeamsTests(TestCase):
         response = visitasRelatoriosEquipes(request)
         self.assertContains(response, 'id="report-city" class="form-select" disabled')
         self.assertContains(response, 'id="report-common" class="form-select" disabled')
+        self.assertContains(response, 'id="report-podium"')
+        self.assertContains(response, 'id="ranking-chart"')
+        self.assertContains(response, 'id="status-chart"')
+        self.assertContains(response, 'id="trend-chart"')
 
     @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}, {"comum": "COMUM B", "cidade": "ITAPEVI"}])
     def test_municipal_team_report_locks_city_but_allows_common_search(self, _commons):

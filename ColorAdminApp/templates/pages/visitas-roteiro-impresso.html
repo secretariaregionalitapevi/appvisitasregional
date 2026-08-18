@@ -159,7 +159,7 @@
         <p class="small text-muted mt-3 mb-0">
             <i class="fa fa-clock me-1"></i>
             Referência operacional: 5 visitas pela manhã e 5 visitas à tarde.
-            A quantidade pode ser ajustada para manter o mesmo bairro e a mesma rua com uma única equipe.
+            Todas as visitas programadas são exibidas, mesmo quando a referência for excedida.
         </p>
     </div>
 
@@ -173,6 +173,13 @@
             <h5>Nenhuma visita encontrada para os filtros selecionados.</h5>
         </div>
     {% else %}
+        {% if roteiro_excede_referencia %}
+            <div class="alert alert-warning border-warning mb-3" role="alert">
+                <strong>Atenção:</strong> este roteiro possui {{ total_visitas_roteiro }} visitas,
+                acima da referência operacional de 10. Nenhuma visita foi ocultada;
+                avalie a redistribuição entre os grupos antes da saída.
+            </div>
+        {% endif %}
         
         {% for visit in roteiro %}
             {% ifchanged visit.route_period %}
@@ -201,7 +208,7 @@
                             <span class="badge badge-compact bg-warning text-dark"><i class="fa fa-sun me-1"></i> Prefere {{ visit.preferencia_periodo_visita|lower }}</span>
                         {% endif %}
                         {% if visit.distance_meters %}
-                            <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_meters|floatformat:0 }}m do último ponto</span>
+                            <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_meters|floatformat:0 }}m {% if visit.route_number == 1 %}da congregação{% else %}do último ponto{% endif %}</span>
                         {% endif %}
                     </div>
                     {% if visit.observacoes %}

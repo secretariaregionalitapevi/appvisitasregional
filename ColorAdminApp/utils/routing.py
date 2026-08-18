@@ -446,15 +446,13 @@ optimize_route = optimize_route_by_territory
 
 
 def limit_daily_route(morning, afternoon, per_shift=5):
-    """Entrega até dez casas, usando cinco por turno como referência."""
+    """Mantém todas as casas; cinco por turno é somente referência operacional."""
     morning = list(morning)
     afternoon = list(afternoon)
-    total_limit = per_shift * 2
-    # Uma vaga ociosa de um período pode ser ocupada pelo outro. Assim a
-    # referência 5 + 5 não reduz um roteiro válido para menos de dez casas.
-    morning_limit = min(len(morning), per_shift + max(0, per_shift - len(afternoon)))
-    afternoon_limit = min(len(afternoon), total_limit - morning_limit)
-    return morning[:morning_limit] + afternoon[:afternoon_limit]
+    # Nunca descarte uma visita que já esteja programada. A meta de 5 + 5
+    # orienta o despacho automático, mas excedentes devem aparecer no PDF para
+    # que a equipe e a supervisão possam redistribuí-los conscientemente.
+    return morning + afternoon
 
 
 from datetime import datetime, timedelta

@@ -19,6 +19,7 @@ def normalize_visit_team(value):
 
 
 VISIT_PERIOD_MARKER_RE = re.compile(r'\s*\[\[periodo_planejado:(manha|tarde|noite)\]\]\s*', re.IGNORECASE)
+VISIT_TIME_MARKER_RE = re.compile(r'\s*\[\[horario_(inicio|fim):(\d{1,2}:\d{2})\]\]\s*', re.IGNORECASE)
 
 
 def split_visit_period_metadata(notes):
@@ -27,6 +28,37 @@ def split_visit_period_metadata(notes):
     visible = VISIT_PERIOD_MARKER_RE.sub(' ', text)
     visible = re.sub(r'\s{2,}', ' ', visible).strip()
     return visible, (match.group(1).lower() if match else '')
+
+
+def split_visit_time_metadata(notes):
+    """Separa os marcadores de horario do texto visivel da observacao."""
+    text = str(notes or '')
+    times = {
+        match.group(1).lower(): match.group(2)
+        for match in VISIT_TIME_MARKER_RE.finditer(text)
+    }
+    visible = VISIT_TIME_MARKER_RE.sub(' ', text)
+    visible = re.sub(r'\s{2,}', ' ', visible).strip()
+    return visible, times
+
+
+def merge_visit_time_metadata(notes, times):
+    visible, _ = split_visit_time_metadata(notes)
+    markers = ' '.join(
+        f'[[horario_{key}:{times[key]}]]'
+        for key in ('inicio', 'fim') if times.get(key)
+    )
+    return f'{visible}{" " if visible and markers else ""}{markers}'
+
+
+def visit_duration_minutes(times):
+    try:
+        start = datetime.strptime(times.get('inicio', ''), '%H:%M')
+        end = datetime.strptime(times.get('fim', ''), '%H:%M')
+        minutes = int((end - start).total_seconds() // 60)
+        return minutes if minutes >= 0 else minutes + (24 * 60)
+    except (TypeError, ValueError):
+        return None
 
 
 def merge_visit_period_metadata(notes, period):
@@ -919,6 +951,7 @@ def apiVisitasRelatoriosEquipes(request):
         selected_common = (request.GET.get('comum') or '').strip()
         selected_type = (request.GET.get('tipo') or '').strip().upper()
         grouped = {}
+        trend_grouped = {}
         for visit in agenda_rows:
             member = members.get(str(visit.get('irmandade_id') or ''))
             if not member:
@@ -947,12 +980,25 @@ def apiVisitasRelatoriosEquipes(request):
             elif status == 'cancelada': row['canceladas'] += 1
             elif status in {'não realizada', 'nao realizada'}: row['nao_realizadas'] += 1
             else: row['agendadas'] += 1
+            month = str(visit.get('data_inicio') or '')[:7]
+            if re.fullmatch(r'\d{4}-\d{2}', month):
+                trend_key = (team_type, month)
+                trend = trend_grouped.setdefault(trend_key, {
+                    'tipo': team_type, 'mes': month, 'total': 0, 'realizadas': 0,
+                    'agendadas': 0, 'nao_realizadas': 0, 'canceladas': 0,
+                })
+                trend['total'] += 1
+                if status == 'realizada': trend['realizadas'] += 1
+                elif status == 'cancelada': trend['canceladas'] += 1
+                elif status in {'não realizada', 'nao realizada'}: trend['nao_realizadas'] += 1
+                else: trend['agendadas'] += 1
         def report_sort_key(row):
             regional_match = re.fullmatch(r'Grupo\s+([A-Z])', str(row.get('equipe') or ''), flags=re.IGNORECASE)
             team_order = regional_match.group(1).upper() if regional_match else str(row.get('equipe') or '').casefold()
             return (row['tipo'], row['municipio'], row['comum'], team_order)
         rows = sorted(grouped.values(), key=report_sort_key)
-        return JsonResponse({'rows': rows, 'local': [r for r in rows if r['tipo'] == 'LOCAL'], 'regional': [r for r in rows if r['tipo'] == 'REGIONAL']})
+        trends = sorted(trend_grouped.values(), key=lambda item: (item['tipo'], item['mes']))
+        return JsonResponse({'rows': rows, 'local': [r for r in rows if r['tipo'] == 'LOCAL'], 'regional': [r for r in rows if r['tipo'] == 'REGIONAL'], 'trends': trends})
     except requests.RequestException as exc:
         return JsonResponse({'error': 'Não foi possível gerar os relatórios.', 'details': str(exc)}, status=502)
 
@@ -1403,11 +1449,16 @@ def visitasRoteiro(request):
         roteiro_tarde = order_route_chronologically(
             optimize_route(visitas_tarde, start_coords=ponto_comum), start_coords=ponto_comum
         )
-        # Limite operacional diário: 5 visitas de manhã e 5 à tarde.
+        # A referência operacional continua sendo 5 + 5, mas nenhuma visita já
+        # programada pode desaparecer do documento quando houver excedente.
         roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
-        selected_morning_count = min(
-            len(roteiro_manha), 5 + max(0, 5 - len(roteiro_tarde))
+        # O grupo parte uma única vez da congregação. Recalcula a sequência
+        # completa para que a primeira distância seja desde o marco zero e todas
+        # as demais partam da casa anterior, inclusive na troca de período.
+        roteiro_otimizado = order_route_chronologically(
+            roteiro_otimizado, start_coords=ponto_comum
         )
+        selected_morning_count = len(roteiro_manha)
         for index, visit in enumerate(roteiro_otimizado, start=1):
             visit['route_number'] = index
             visit['route_period'] = 'manha' if index <= selected_morning_count else 'tarde'
@@ -1434,6 +1485,8 @@ def visitasRoteiro(request):
             'data': data_br,
             'comum': comum,
             'bairro': bairro,
+            'total_visitas_roteiro': len(roteiro_otimizado),
+            'roteiro_excede_referencia': len(roteiro_otimizado) > 10,
         }
         return render(request, 'pages/visitas-roteiro-impresso.html', context)
     except Exception as e:
@@ -1483,9 +1536,12 @@ def apiVisitasAgenda(request):
             for row in rows:
                 if row.get('equipe_responsavel'):
                     row['equipe_responsavel'] = normalize_visit_team(row['equipe_responsavel'])
-                visible_notes, planned_period = split_visit_period_metadata(row.get('observacoes'))
+                notes_without_times, visit_times = split_visit_time_metadata(row.get('observacoes'))
+                visible_notes, planned_period = split_visit_period_metadata(notes_without_times)
                 row['observacoes'] = visible_notes
                 row['periodo_planejado'] = planned_period
+                row['horario_inicio'] = visit_times.get('inicio') or None
+                row['duracao_minutos'] = visit_duration_minutes(visit_times)
 
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
@@ -1542,9 +1598,12 @@ def apiVisitasAgenda(request):
             if id:
                 current = requests.get(url, headers=headers, params=[("id", f"eq.{id}"), ("select", "*")], timeout=10).json()
                 if current and 'observacoes' in data:
-                    _, current_period = split_visit_period_metadata(current[0].get('observacoes'))
+                    current_notes, current_times = split_visit_time_metadata(current[0].get('observacoes'))
+                    _, current_period = split_visit_period_metadata(current_notes)
                     if current_period:
                         data['observacoes'] = merge_visit_period_metadata(data.get('observacoes'), current_period)
+                    if current_times:
+                        data['observacoes'] = merge_visit_time_metadata(data.get('observacoes'), current_times)
             candidate = {**(current[0] if current else {}), **data}
             if (id and not current) or not can_access(scope, candidate):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
