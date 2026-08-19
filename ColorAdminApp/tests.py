@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, format_display_name, normalize_team_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -15,6 +15,30 @@ CATALOG = [
     {"comum": "BR-02 - JARDIM JANDIRA", "cidade": "JANDIRA"},
     {"comum": "BR-03 - ALTO ITAPEVI", "cidade": "ITAPEVI"},
 ]
+
+
+class ActualVisitTimeTests(TestCase):
+    def test_mobile_actual_times_replace_calendar_times_on_same_local_date(self):
+        visit = {
+            'data_inicio': '2026-08-19T23:00:00+00:00',
+            'data_fim': '2026-08-20T00:00:00+00:00',
+        }
+
+        apply_actual_visit_times(visit, {'inicio': '14:35', 'fim': '15:00'})
+
+        self.assertEqual(visit['data_inicio'], '2026-08-19T14:35:00-03:00')
+        self.assertEqual(visit['data_fim'], '2026-08-19T15:00:00-03:00')
+
+    def test_original_calendar_times_remain_without_mobile_actual_times(self):
+        visit = {
+            'data_inicio': '2026-08-19T23:00:00+00:00',
+            'data_fim': '2026-08-20T00:00:00+00:00',
+        }
+
+        apply_actual_visit_times(visit, {})
+
+        self.assertEqual(visit['data_inicio'], '2026-08-19T23:00:00+00:00')
+        self.assertEqual(visit['data_fim'], '2026-08-20T00:00:00+00:00')
 
 
 class VisitNavigationChooserTests(TestCase):
@@ -793,6 +817,29 @@ class VisitTeamsTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertIn("já possui uma visita", json.loads(response.content)["error"])
+        post.assert_not_called()
+
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_visit_without_responsible_team_is_rejected(self, get, post):
+        request = RequestFactory().post(
+            "/visitas/api/agenda/",
+            data={
+                "irmandade_id": "member-claudia",
+                "data_inicio": "2026-08-15T14:00:00-03:00",
+                "status": "Realizada",
+                "categoria": "GVI",
+                "equipe_responsavel": "",
+            },
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("equipe responsável", json.loads(response.content)["error"])
+        get.assert_not_called()
         post.assert_not_called()
 
 

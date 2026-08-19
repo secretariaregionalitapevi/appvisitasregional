@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.views import generic
 from django.http import HttpResponse
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import json
 import re
 import unicodedata
@@ -59,6 +60,32 @@ def visit_duration_minutes(times):
         return minutes if minutes >= 0 else minutes + (24 * 60)
     except (TypeError, ValueError):
         return None
+
+
+def apply_actual_visit_times(visit, times):
+    """Aplica no evento os horarios reais registrados pelo app mobile."""
+    start_time = str(times.get('inicio') or '').strip()
+    end_time = str(times.get('fim') or '').strip()
+    if not start_time and not end_time:
+        return visit
+
+    original_start = visit.get('data_inicio')
+    try:
+        from dateutil import parser
+        parsed_start = parser.parse(str(original_start))
+        if parsed_start.tzinfo:
+            parsed_start = parsed_start.astimezone(ZoneInfo('America/Sao_Paulo'))
+        visit_date = parsed_start.strftime('%Y-%m-%d')
+    except (TypeError, ValueError, OverflowError):
+        visit_date = str(original_start or '')[:10]
+
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', visit_date):
+        return visit
+    if start_time:
+        visit['data_inicio'] = f'{visit_date}T{start_time}:00-03:00'
+    if end_time:
+        visit['data_fim'] = f'{visit_date}T{end_time}:00-03:00'
+    return visit
 
 
 def merge_visit_period_metadata(notes, period):
@@ -1555,7 +1582,9 @@ def apiVisitasAgenda(request):
                 row['observacoes'] = visible_notes
                 row['periodo_planejado'] = planned_period
                 row['horario_inicio'] = visit_times.get('inicio') or None
+                row['horario_fim'] = visit_times.get('fim') or None
                 row['duracao_minutos'] = visit_duration_minutes(visit_times)
+                apply_actual_visit_times(row, visit_times)
 
             # A agenda se vincula territorialmente pelo UUID da irmandade. Filtrar
             # diretamente pela coluna `comum` deixava registros antigos invisiveis,
@@ -1634,6 +1663,15 @@ def apiVisitasAgenda(request):
             # Reserva territorial também para criações e edições manuais.
             # Esta regra também vale para lançamentos retroativos e é separada
             # da reserva territorial usada para organizar a agenda futura.
+            candidate_team = normalize_team_name(
+                candidate.get('equipe_responsavel'),
+                candidate.get('equipe_tipo'),
+            )
+            if not candidate_team:
+                return JsonResponse({
+                    "error": "Selecione a equipe responsável pela visita."
+                }, status=400)
+
             candidate_member = str(candidate.get('irmandade_id') or '').strip()
             candidate_start = str(candidate.get('data_inicio') or '').strip()
             if candidate_member and candidate_start:

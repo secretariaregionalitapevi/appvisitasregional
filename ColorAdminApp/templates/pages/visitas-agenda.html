@@ -33,6 +33,8 @@
     .agenda-filter-card .form-label { min-height: 17px; }
     .agenda-filter-card .form-control,
     .agenda-filter-card .form-select { height: 38px; }
+    .calendar { width: 100%; min-width: 0; }
+    .calendar .fc-view-harness { min-width: 0; }
     .fc-daygrid-day-frame { min-height: 105px; }
     .fc-daygrid-event { border-radius: 4px !important; margin-top: 2px !important; }
     .fc-daygrid-more-link {
@@ -216,6 +218,7 @@
         const commonFilter = $('#agenda-comum-filter');
         const selectedAgendaIds = new Set();
         let addressCoordinates = '';
+        let editingVisitDurationMinutes = 60;
 
         const showAgendaSuccess = (title, text) => Swal.fire({
             icon: 'success',
@@ -422,15 +425,16 @@
             buttonText: { today: 'Hoje', month: 'Mês', week: 'Semana', list: 'Lista' },
             noEventsContent: 'Nenhuma visita para exibir',
             initialView: window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth',
-            height: window.innerWidth < 768 ? 'auto' : Math.max(650, window.innerHeight - 240),
+            height: 'auto',
+            contentHeight: 'auto',
             expandRows: true,
             dayMaxEvents: 4,
             moreLinkClick: 'popover',
             moreLinkContent: function (arg) { return `+ ${arg.num} visitas`; },
             windowResize: function (arg) {
                 const isMobile = window.innerWidth < 768;
-                calendar.setOption('height', isMobile ? 'auto' : Math.max(650, window.innerHeight - 240));
                 if (isMobile && arg.view.type !== 'listMonth') calendar.changeView('listMonth');
+                calendar.updateSize();
             },
             editable: true,
             droppable: true,
@@ -499,6 +503,11 @@
                 $('#event-member-select').val(e.irmandade_id).trigger('change');
                 $('#event-titulo').val(e.titulo);
                 $('#event-start').val(saoPauloDateTimeInput(e.data_inicio));
+                const storedDuration = Number(e.duracao_minutos);
+                const eventDuration = moment(e.data_fim).diff(moment(e.data_inicio), 'minutes');
+                editingVisitDurationMinutes = storedDuration > 0
+                    ? storedDuration
+                    : (eventDuration > 0 ? eventDuration : 60);
                 refreshTeamOptions(e.equipe_responsavel || '', e.equipe_id || '');
                 $('#event-categoria-modal').val(e.categoria || 'GVI');
                 $('#event-status').val(e.status).trigger('change');
@@ -598,6 +607,7 @@
 
         function resetModal() {
             addressCoordinates = '';
+            editingVisitDurationMinutes = 60;
             $('#form-event')[0].reset();
             $('#event-id').val('');
             $('#event-member-select').val(null).trigger('change');
@@ -663,7 +673,7 @@
                 irmandade_id: irmandade_id,
                 titulo: typedName,
                 data_inicio: moment($('#event-start').val()).format('YYYY-MM-DDTHH:mm:ss-03:00'),
-                data_fim: moment($('#event-start').val()).add(60, 'minutes').format('YYYY-MM-DDTHH:mm:ss-03:00'),
+                data_fim: moment($('#event-start').val()).add(editingVisitDurationMinutes, 'minutes').format('YYYY-MM-DDTHH:mm:ss-03:00'),
                 equipe_responsavel: $('#event-equipe').val(),
                 equipe_id: $('#event-equipe option:selected').data('id') || null,
                 equipe_tipo: $('#event-equipe option:selected').data('type') || null,
@@ -842,7 +852,7 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
+                            <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL <span class="text-danger">*</span></label>
                             <select class="form-select" id="event-equipe" required><option value="">Carregando equipes...</option></select>
                         </div>
                         <div class="col-md-12 text-center py-2 bg-light rounded border">
