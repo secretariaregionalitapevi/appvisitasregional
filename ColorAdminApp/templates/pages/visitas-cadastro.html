@@ -295,7 +295,7 @@
             <div class="p-3 bg-light-100 border-bottom">
                 <div class="input-group">
                     <div class="input-group-text bg-none border-0 pe-0"><i class="fa fa-search opacity-5"></i></div>
-                    <input type="text" class="form-control border-0 bg-transparent px-2" placeholder="Pesquisar nomes (separe por vírgula)..." onkeyup="handleSearch(this.value)" />
+                    <input type="search" id="irmandade-search" class="form-control border-0 bg-transparent px-2" placeholder="Pesquisar nomes (separe por vírgula)..." oninput="handleSearch(this.value)" autocomplete="off" />
                 </div>
             </div>
 
@@ -522,6 +522,7 @@
         const CADASTRO_COMMONS = JSON.parse(document.getElementById('cadastro-commons-data')?.textContent || '[]');
         let cadastroSelectedCity = CADASTRO_DEFAULT_CITY;
         let cadastroSelectedCommon = CADASTRO_DEFAULT_COMMON;
+        const INITIAL_IRMANDADE_SEARCH = new URLSearchParams(window.location.search).get('q') || '';
         const escapeHtml = value => $('<div>').text(String(value ?? '')).html();
 
         // Inicialização Profissional
@@ -547,7 +548,11 @@
                 
                 updateWidgets(irmandadeData);
                 updateSelects();
-                renderItems(irmandadeData);
+                const searchInput = document.getElementById('irmandade-search');
+                if (searchInput && INITIAL_IRMANDADE_SEARCH && !searchInput.value) {
+                    searchInput.value = INITIAL_IRMANDADE_SEARCH;
+                }
+                handleSearch(searchInput?.value || '');
             } catch (err) {
                 console.error("Erro ao carregar dados:", err);
             }

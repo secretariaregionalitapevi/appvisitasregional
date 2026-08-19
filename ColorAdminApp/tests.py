@@ -2,6 +2,7 @@ import json
 from unittest.mock import Mock, patch
 
 from django.http import HttpResponse
+from django.template.loader import render_to_string
 from django.test import RequestFactory, TestCase
 
 from .access_control import can_access, filter_rows, user_scope
@@ -39,6 +40,18 @@ class ActualVisitTimeTests(TestCase):
 
         self.assertEqual(visit['data_inicio'], '2026-08-19T23:00:00+00:00')
         self.assertEqual(visit['data_fim'], '2026-08-20T00:00:00+00:00')
+
+
+class HeaderBrotherhoodSearchTests(TestCase):
+    def test_header_search_uses_safe_get_request_with_named_query(self):
+        request = RequestFactory().get('/', {'q': 'Rutinha'})
+
+        html = render_to_string('partial/header.html', {'request': request})
+
+        self.assertIn('action="/visitas/cadastro/"', html)
+        self.assertIn('method="GET"', html)
+        self.assertIn('name="q"', html)
+        self.assertNotIn('method="POST" name="search"', html)
 
 
 class VisitNavigationChooserTests(TestCase):
