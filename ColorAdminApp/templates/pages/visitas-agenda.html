@@ -719,13 +719,58 @@
 
         $('#btn-delete-event').on('click', async function () {
             const id = $('#event-id').val();
-            const { isConfirmed } = await Swal.fire({ title: 'Excluir?', text: "Remover este agendamento?", icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim, excluir' });
-            if (isConfirmed) {
-                const res = await fetch(`/visitas/api/agenda/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
-                if (res.ok) {
-                    $('#modal-event').modal('hide');
-                    calendar.refetchEvents();
-                }
+            const button = $(this);
+            const memberName = String($('#event-titulo').val() || 'esta pessoa').trim();
+            if (!id) return;
+
+            const confirmation = await Swal.fire({
+                title: `Excluir agendamento de ${memberName}?`,
+                text: 'Esta ação é irreversível e removerá definitivamente o agendamento do calendário.',
+                icon: 'warning',
+                showCancelButton: true,
+                reverseButtons: true,
+                focusCancel: true,
+                confirmButtonText: 'Excluir',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ff5b57',
+                cancelButtonColor: '#6c757d'
+            });
+            if (!confirmation.isConfirmed) return;
+
+            try {
+                button.prop('disabled', true);
+                Swal.fire({
+                    title: 'Excluindo agendamento...',
+                    text: 'Aguarde enquanto o agendamento é removido.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const res = await fetch(`/visitas/api/agenda/?id=${encodeURIComponent(id)}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                });
+                const result = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(result.error || result.details || 'Não foi possível excluir o agendamento.');
+
+                $('#modal-event').modal('hide');
+                calendar.refetchEvents();
+                await showAgendaSuccess(
+                    'Agendamento excluído!',
+                    `O agendamento de ${memberName} foi excluído com sucesso.`
+                );
+            } catch (error) {
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Não foi possível excluir',
+                    text: error.message,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#348fe2'
+                });
+            } finally {
+                button.prop('disabled', false);
             }
         });
 
