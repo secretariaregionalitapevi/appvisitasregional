@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }).on('select2:select select2:clear', comumAlterada);
     }
     equipe.replaceChildren(option('', 'Selecione primeiro a comum...')); equipe.disabled = true;
-    bairro.replaceChildren(option('', 'Todos — manter sequência geral')); bairro.disabled = true;
+    bairro.replaceChildren(option('', 'Todos - manter sequência geral')); bairro.disabled = true;
   }
 
   async function carregarEquipes() {
@@ -48,14 +48,14 @@ document.addEventListener('DOMContentLoaded', () => {
       equipe.replaceChildren(option('', ativas.length ? 'Selecione a equipe...' : 'Nenhuma equipe ativa cadastrada'));
       ativas.forEach((item) => {
         const integrantes = (item.integrantes || []).map(primeiroNome).filter(Boolean).join(', ');
-        equipe.append(option(item.nome, integrantes ? `${item.nome} — ${integrantes}` : item.nome));
+        equipe.append(option(item.nome, integrantes ? `${item.nome} - ${integrantes}` : item.nome));
       });
       equipe.disabled = !ativas.length;
     } catch (error) { equipe.replaceChildren(option('', error.message)); }
   }
 
   async function carregarBairros() {
-    bairro.replaceChildren(option('', 'Todos — manter sequência geral')); bairro.disabled = true;
+    bairro.replaceChildren(option('', 'Todos - manter sequência geral')); bairro.disabled = true;
     if (!comumValida()) { ajuda.textContent = 'Selecione uma comum válida para mapear os bairros mais próximos.'; return; }
     ajuda.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Mapeando bairros a partir da comum...';
     try {
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error(payload.error || 'Falha ao carregar os bairros.');
       payload.bairros.forEach((item) => {
         const distancia = item.distancia_metros == null ? 'distância não calculada' : item.distancia_metros < 1000 ? `${item.distancia_metros} m da comum` : `${(item.distancia_metros / 1000).toFixed(1).replace('.', ',')} km da comum`;
-        bairro.append(option(item.nome, `${item.nome} — ${item.quantidade} casa(s) disponível(is), ${distancia}`));
+        bairro.append(option(item.nome, `${item.nome} - ${item.quantidade} casa(s) disponível(is), ${distancia}`));
       });
       bairro.disabled = false;
       ajuda.textContent = payload.bairros.length ? 'Bairros ordenados do mais próximo ao mais distante da comum.' : 'Nenhum bairro cadastrado para esta comum. A sequência geral será utilizada.';

@@ -295,7 +295,7 @@
             <div class="p-3 bg-light-100 border-bottom">
                 <div class="input-group">
                     <div class="input-group-text bg-none border-0 pe-0"><i class="fa fa-search opacity-5"></i></div>
-                    <input type="text" class="form-control border-0 bg-transparent px-2" placeholder="Pesquisar por nome ou família..." onkeyup="handleSearch(this.value)" />
+                    <input type="text" class="form-control border-0 bg-transparent px-2" placeholder="Pesquisar nomes (separe por vírgula)..." onkeyup="handleSearch(this.value)" />
                 </div>
             </div>
 
@@ -305,7 +305,7 @@
                         <tr>
                             <th class="ps-3" width="25%">Membro / Nome Completo</th>
                             <th width="30%">Cargo / Ministério</th>
-                            <th class="text-center" width="15%">Última Visita</th>
+                            <th class="text-center" width="15%">Última visita / tentativa</th>
                             <th class="text-center" width="15%">Próxima Visita</th>
                             <th class="text-center" width="5%">Status</th>
                             <th class="text-center" width="10%">Ações</th>
@@ -521,6 +521,7 @@
         const CADASTRO_COMMONS = JSON.parse(document.getElementById('cadastro-commons-data')?.textContent || '[]');
         let cadastroSelectedCity = CADASTRO_DEFAULT_CITY;
         let cadastroSelectedCommon = CADASTRO_DEFAULT_COMMON;
+        const escapeHtml = value => $('<div>').text(String(value ?? '')).html();
 
         // Inicialização Profissional
         const loadContent = async () => {
@@ -899,6 +900,7 @@
                 return i.id < i.id_chefe_familia ? i.id : i.id_chefe_familia;
             };
             const recentVisits = agendaData.filter(v => v.status === 'Realizada' && moment(v.data_inicio).isAfter(last30d));
+            const recentAttempts = agendaData.filter(v => v.status === 'Não realizada' && moment(v.data_inicio).isAfter(last30d));
             const visitedFamilyIds = new Set();
             recentVisits.forEach(v => {
                 const member = data.find(m => m.id == v.irmandade_id);
@@ -951,7 +953,10 @@
             $('#widget-total-base').text(totalBase);
             $('#widget-total-agenda').text(visitasAgendadas);
 
-            $('#exec-text').html(`<b>Relatório Consolidado:</b> Foram analisados <b>${data.length}</b> membros. Identificado que <b>${famAtendidas}</b> núcleos familiares receberam assistência recente.`);
+            const attemptSummary = recentAttempts.length
+                ? ` Também houve <b>${recentAttempts.length}</b> tentativa${recentAttempts.length === 1 ? '' : 's'} de visita sem atendimento nos últimos 30 dias.`
+                : '';
+            $('#exec-text').html(`<b>Relatório Consolidado:</b> Foram analisados <b>${data.length}</b> membros. Identificado que <b>${famAtendidas}</b> núcleos familiares receberam assistência recente.${attemptSummary}`);
         };
 
         const updateSelects = () => {
@@ -970,7 +975,7 @@
                 const address = String(member.endereco || '').replace(/^\[[^\]]+\]\s*/, '').trim();
                 const detail = member.setor || address;
                 const option = new Option(
-                    useNativeSelect && detail ? `${member.nome} — ${detail}` : member.nome,
+                    useNativeSelect && detail ? `${member.nome} - ${detail}` : member.nome,
                     member.id
                 );
                 option.dataset.address = address;
@@ -1043,17 +1048,33 @@
             tbody.empty();
             
             items.forEach(item => {
-                // Cálculo de Última Visita
-                const visits = agendaData.filter(a => (a.irmandade_id == item.id || a.id_membro == item.id) && a.status === 'Realizada');
+                // Acompanhamento mais recente: realizada ou tentativa presencial.
+                // Cancelada não conta, pois a equipe não chegou a realizar a saída.
+                const visits = agendaData.filter(a =>
+                    (a.irmandade_id == item.id || a.id_membro == item.id)
+                    && (a.status === 'Realizada' || a.status === 'Não realizada')
+                );
                 let lastVisitHtml = '<span class="text-muted small">Nunca Visitado</span>';
                 
                 if (visits.length > 0) {
-                    const lastDate = moment(Math.max(...visits.map(v => new Date(v.data_inicio))));
+                    const latestVisit = visits.reduce((latest, visit) =>
+                        new Date(visit.data_inicio) > new Date(latest.data_inicio) ? visit : latest
+                    );
+                    const lastDate = moment(latestVisit.data_inicio);
                     const diffDays = moment().diff(lastDate, 'days');
-                    let color = 'success';
-                    if (diffDays > 30) color = 'warning';
-                    if (diffDays > 60) color = 'danger';
-                    lastVisitHtml = `<span class="badge bg-${color}-100 text-${color} border border-${color}">${lastDate.fromNow()}</span>`;
+                    if (latestVisit.status === 'Não realizada') {
+                        const attemptReason = escapeHtml(latestVisit.motivo_cancelamento || 'A equipe esteve no local, mas a visita não foi realizada.');
+                        lastVisitHtml = `
+                            <div class="text-center" title="${attemptReason}">
+                                <span class="badge bg-warning-100 text-warning border border-warning">Tentativa ${lastDate.fromNow()}</span>
+                                <div class="small text-warning mt-1"><i class="fa fa-exclamation-circle me-1"></i>Sem atendimento</div>
+                            </div>`;
+                    } else {
+                        let color = 'success';
+                        if (diffDays > 30) color = 'warning';
+                        if (diffDays > 60) color = 'danger';
+                        lastVisitHtml = `<span class="badge bg-${color}-100 text-${color} border border-${color}">${lastDate.fromNow()}</span>`;
+                    }
                 }
 
                 // Cálculo de Próxima Visita (Agendada)
@@ -1518,8 +1539,33 @@
         };
 
         const handleSearch = (val) => {
-            const query = val.toLowerCase();
-            const filtered = irmandadeData.filter(i => i.nome.toLowerCase().includes(query) || (i.comum && i.comum.toLowerCase().includes(query)));
+            const normalizeSearch = value => String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .trim();
+            const terms = String(val || '')
+                .split(',')
+                .map(normalizeSearch)
+                .filter(Boolean);
+            const filtered = !terms.length ? irmandadeData : irmandadeData.filter(item => {
+                const familyHead = item.id_chefe_familia
+                    ? irmandadeData.find(member => member.id == item.id_chefe_familia)?.nome
+                    : '';
+                const searchableText = normalizeSearch([
+                    item.nome,
+                    item.comum,
+                    item.familia,
+                    familyHead
+                ].filter(Boolean).join(' '));
+                const searchableWords = searchableText.split(/\s+/).filter(Boolean);
+                return terms.some(term => {
+                    const requestedWords = term.split(/\s+/).filter(Boolean);
+                    return requestedWords.every(requestedWord =>
+                        searchableWords.some(word => word.startsWith(requestedWord))
+                    );
+                });
+            });
             renderItems(filtered);
         };
 

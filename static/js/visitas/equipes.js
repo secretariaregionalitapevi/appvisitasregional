@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function loadTeamChoices() {
     const select=byId('member-team'), teams=availableTeams(byId('member-city').value,byId('member-common').value);
-    select.replaceChildren(new Option('Selecione...', '')); teams.forEach(team=>{const option=new Option(`${team.nome} — ${team.tipo==='LOCAL'?'Local':'Regional'}`,team.id);option.dataset.name=team.nome;select.add(option);}); select.disabled=!teams.length;
+    select.replaceChildren(new Option('Selecione...', '')); teams.forEach(team=>{const option=new Option(`${team.nome} - ${team.tipo==='LOCAL'?'Local':'Regional'}`,team.id);option.dataset.name=team.nome;select.add(option);}); select.disabled=!teams.length;
   }
   async function openMemberModal(member=null, selectedTeamId='') {
     byId('member-form').reset(); const city=member?.municipio||'', common=member?.comum||'';

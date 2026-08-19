@@ -1632,10 +1632,35 @@ def apiVisitasAgenda(request):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
 
             # Reserva territorial também para criações e edições manuais.
+            # Esta regra também vale para lançamentos retroativos e é separada
+            # da reserva territorial usada para organizar a agenda futura.
+            candidate_member = str(candidate.get('irmandade_id') or '').strip()
+            candidate_start = str(candidate.get('data_inicio') or '').strip()
+            if candidate_member and candidate_start:
+                duplicate_response = requests.get(url, headers=headers, params=[
+                    ("select", "id,status"),
+                    ("irmandade_id", f"eq.{candidate_member}"),
+                    ("data_inicio", f"eq.{candidate_start}"),
+                ], timeout=10)
+                if duplicate_response.status_code == 200:
+                    duplicate = next((
+                        item for item in duplicate_response.json()
+                        if str(item.get('id')) != str(id or '')
+                        and item.get('status') != 'Cancelada'
+                    ), None)
+                    if duplicate:
+                        return JsonResponse({
+                            "error": "Esta pessoa já possui uma visita registrada nesta data e horário."
+                        }, status=409)
+
             candidate_day = str(candidate.get('data_inicio') or '')[:10]
             candidate_sector = str(candidate.get('setor') or '').strip()
             candidate_team = normalize_team_name(candidate.get('equipe_responsavel'), candidate.get('equipe_tipo'))
-            if candidate_day and candidate_sector and candidate_team:
+            # A reserva territorial organiza a agenda futura. Registros históricos
+            # já concluídos não devem ser rejeitados por uma escala planejada para
+            # outra equipe no mesmo bairro e dia.
+            is_scheduled_visit = candidate.get('status') == 'Marcada'
+            if is_scheduled_visit and candidate_day and candidate_sector and candidate_team:
                 day_visits_response = requests.get(url, headers=headers, params=[
                     ("select", "id,setor,equipe_responsavel,equipe_tipo,status"),
                     ("data_inicio", f"gte.{candidate_day}T00:00:00"),

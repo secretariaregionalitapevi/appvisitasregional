@@ -98,6 +98,16 @@
         font-weight: 600;
     }
 
+    /* Cancelada é diferente de não realizada: não houve tentativa de visita. */
+    .fc-event.agenda-event-cancelled {
+        border: 1px solid #ef9a9a !important;
+    }
+
+    .fc-event.agenda-event-cancelled .fc-event-title,
+    .fc-event.agenda-event-cancelled .fc-event-main {
+        color: #8b1e1e !important;
+    }
+
     .modal-header-calendar {
         background: #1e4b7a;
         color: white;
@@ -207,6 +217,18 @@
         const selectedAgendaIds = new Set();
         let addressCoordinates = '';
 
+        const showAgendaSuccess = (title, text) => Swal.fire({
+            icon: 'success',
+            title: title,
+            text: text,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#348fe2',
+            timer: 2000,
+            timerProgressBar: true,
+            allowOutsideClick: true,
+            allowEscapeKey: true
+        });
+
         const updateBulkToolbar = () => {
             const listMode = calendar && calendar.view.type.startsWith('list');
             $('#agenda-bulk-toolbar').toggleClass('active', Boolean(listMode));
@@ -303,12 +325,12 @@
             const eligible = visitTeams.filter(team => team.ativo !== false && team.municipio === city && (team.tipo === 'REGIONAL' || team.comum === common));
             const select = $('#event-equipe').empty().append(new Option('Selecione a equipe...', ''));
             eligible.forEach(team => {
-                const option = new Option(`${team.nome} — ${team.tipo === 'LOCAL' ? 'Local' : 'Regional'}`, team.nome);
+                const option = new Option(`${team.nome} - ${team.tipo === 'LOCAL' ? 'Local' : 'Regional'}`, team.nome);
                 option.dataset.id = team.id; option.dataset.type = team.tipo;
                 select.append(option);
             });
             if (selectedName && !eligible.some(team => team.nome === selectedName)) {
-                const legacy = new Option(`${selectedName} — histórico`, selectedName);
+                const legacy = new Option(`${selectedName} - histórico`, selectedName);
                 legacy.dataset.id = selectedId || ''; legacy.dataset.type = /^Grupo\s+[A-Z]$/i.test(selectedName) ? 'REGIONAL' : 'LOCAL';
                 select.append(legacy);
             }
@@ -321,7 +343,7 @@
             visitTeams = await response.json();
             refreshTeamOptions();
             const route = $('#route-team').empty().append(new Option('Selecione a equipe...', ''));
-            visitTeams.filter(team => team.ativo !== false).forEach(team => route.append(new Option(`${team.nome} — ${team.municipio}`, team.nome)));
+            visitTeams.filter(team => team.ativo !== false).forEach(team => route.append(new Option(`${team.nome} - ${team.municipio}`, team.nome)));
         };
 
         loadIrmandadeList();
@@ -441,9 +463,10 @@
                             title: displayTitle,
                             start: item.data_inicio,
                             end: item.data_fim,
-                            backgroundColor: item.status === 'Não realizada' ? '#fd7e14' : baseColor,
+                            classNames: item.status === 'Cancelada' ? ['agenda-event-cancelled'] : [],
+                            backgroundColor: item.status === 'Cancelada' ? '#fde8e8' : (item.status === 'Não realizada' ? '#fd7e14' : baseColor),
                             borderColor: item.status === 'Cancelada' ? '#ff5b57' : (item.status === 'Não realizada' ? '#fd7e14' : (item.status === 'Realizada' ? '#28a745' : baseColor)),
-                            textColor: '#ffffff',
+                            textColor: item.status === 'Cancelada' ? '#8b1e1e' : '#ffffff',
                             extendedProps: { ...item }
                         };
                     });
@@ -527,7 +550,10 @@
                         data_fim: info.event.end ? moment(info.event.end).format('YYYY-MM-DDTHH:mm:ss-03:00') : moment(info.event.start).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss-03:00')
                     })
                 });
-                if (res.ok) Swal.fire({ icon: 'success', title: 'Data atualizada', timer: 1000, showConfirmButton: false });
+                if (res.ok) showAgendaSuccess(
+                    'Data atualizada com sucesso!',
+                    'A visita foi movida para o novo dia e horário.'
+                );
                 else info.revert();
             }
         });
@@ -562,7 +588,10 @@
                 if (!res.ok) throw new Error(result.error || 'Não foi possível excluir as visitas.');
                 clearBulkSelection();
                 calendar.refetchEvents();
-                Swal.fire({ icon: 'success', title: `${result.deleted} visita${result.deleted === 1 ? '' : 's'} excluída${result.deleted === 1 ? '' : 's'}`, timer: 1600, showConfirmButton: false });
+                showAgendaSuccess(
+                    `${result.deleted} visita${result.deleted === 1 ? '' : 's'} excluída${result.deleted === 1 ? '' : 's'}!`,
+                    'A agenda foi atualizada com a remoção selecionada.'
+                );
             } catch (error) { Swal.fire('Erro', error.message, 'error'); }
             finally { button.prop('disabled', selectedAgendaIds.size === 0); }
         });
@@ -653,7 +682,28 @@
             if (res.ok) {
                 $('#modal-event').modal('hide');
                 calendar.refetchEvents();
-                Swal.fire({ icon: 'success', title: 'Salvo com sucesso!', timer: 1500, showConfirmButton: false });
+                const successTitle = data.status === 'Realizada'
+                    ? 'Visita registrada com sucesso!'
+                    : 'Visita agendada com sucesso!';
+                const successText = data.status === 'Realizada'
+                    ? 'O lançamento da visita realizada foi incluído no calendário.'
+                    : 'O novo agendamento foi incluído no calendário de visitas.';
+                showAgendaSuccess(successTitle, successText);
+            } else {
+                let message = 'Não foi possível salvar a visita.';
+                try {
+                    const result = await res.json();
+                    message = result.error || message;
+                } catch (error) {
+                    // Mantém a mensagem padrão quando a resposta não vier em JSON.
+                }
+                Swal.fire({
+                    icon: res.status === 409 ? 'warning' : 'error',
+                    title: res.status === 409 ? 'Visita duplicada ou conflitante' : 'Erro ao salvar',
+                    text: message,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#348fe2'
+                });
             }
         });
 

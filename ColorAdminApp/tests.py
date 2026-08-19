@@ -744,6 +744,57 @@ class VisitTeamsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(patch_request.call_args.kwargs["json"]["equipe_responsavel"], "Equipe 1")
 
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_retroactive_completed_visit_ignores_territorial_reservation(self, get, post, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = []
+        post.return_value = Mock(status_code=201, text='[{"id":"visit-retroactive"}]')
+        post.return_value.json.return_value = [{"id": "visit-retroactive"}]
+        request = RequestFactory().post(
+            "/visitas/api/agenda/",
+            data={
+                "irmandade_id": "member-1",
+                "data_inicio": "2026-08-01T10:30:00-03:00",
+                "status": "Realizada",
+                "setor": "Vila Aurora",
+                "equipe_responsavel": "Equipe 1",
+            },
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 200)
+        get.assert_called_once()
+        post.assert_called_once()
+
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_duplicate_retroactive_visit_is_rejected(self, get, post):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [{"id": "existing-visit", "status": "Realizada"}]
+        request = RequestFactory().post(
+            "/visitas/api/agenda/",
+            data={
+                "irmandade_id": "member-robson",
+                "data_inicio": "2026-08-01T10:30:00-03:00",
+                "status": "Realizada",
+                "setor": "Vila Aurora",
+                "equipe_responsavel": "Equipe 1",
+            },
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("já possui uma visita", json.loads(response.content)["error"])
+        post.assert_not_called()
+
 
 class BrotherhoodUpdateTests(TestCase):
     @patch("ColorAdminApp.views.requests.get")

@@ -248,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
         doc.setTextColor(23,36,59); doc.setFontSize(14); doc.text(String(item[1]),x+9,57);
       });
       const top = sortRanking(report.rows).slice(0,5), max = Math.max(...top.map(row=>number(row.realizadas)),1);
-      doc.setTextColor(23,36,59); doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.text('TOP 5 — VISITAS REALIZADAS',181,42);
+      doc.setTextColor(23,36,59); doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.text('TOP 5 - VISITAS REALIZADAS',181,42);
       top.forEach((row,index) => {
         const y = 47 + index*3.6, value = number(row.realizadas), label = teamLabel(row,true).slice(0,23);
         doc.setTextColor(75,88,102); doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.text(`${index+1}. ${label}`,181,y);
