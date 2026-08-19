@@ -1575,19 +1575,58 @@
             renderItems(filtered);
         };
 
-        const deleteItem = async (id) => {
-             const { isConfirmed } = await Swal.fire({ 
-                 title: 'Excluir Membro?', 
-                 text: 'Esta ação removerá o registro ministerial permanentemente.', 
-                 icon: 'warning', 
-                 showCancelButton: true,
-                 confirmButtonText: 'Sim, excluir',
-                 cancelButtonText: 'Não'
-             });
-             if (isConfirmed) {
-                 await fetch(`/visitas/api/irmandade/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
-                 loadContent();
-             }
+        window.deleteItem = async (id) => {
+            const member = irmandadeData.find(item => String(item.id) === String(id));
+            const fullName = String(member?.nome || 'este registro').trim();
+            const firstName = fullName.split(/\s+/)[0] || 'O registro';
+            const confirmation = await Swal.fire({
+                title: `Excluir ${fullName}?`,
+                text: 'O cadastro será removido permanentemente e esta ação não poderá ser desfeita.',
+                icon: 'warning',
+                showCancelButton: true,
+                reverseButtons: true,
+                focusCancel: true,
+                confirmButtonText: 'Excluir',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ff5b57',
+                cancelButtonColor: '#6c757d'
+            });
+            if (!confirmation.isConfirmed) return;
+
+            try {
+                Swal.fire({
+                    title: 'Excluindo cadastro...',
+                    text: 'Aguarde enquanto o registro é removido.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => Swal.showLoading()
+                });
+                const response = await fetch(`/visitas/api/irmandade/?id=${encodeURIComponent(id)}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.error || result.details || 'Não foi possível excluir o cadastro.');
+
+                await loadContent();
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'Registro excluído!',
+                    text: `O cadastro de ${firstName} foi excluído com sucesso.`,
+                    timer: 2200,
+                    timerProgressBar: true,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#348fe2'
+                });
+            } catch (error) {
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Não foi possível excluir',
+                    text: error.message,
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#348fe2'
+                });
+            }
         };
 
         const CATEGORY_MAP = {

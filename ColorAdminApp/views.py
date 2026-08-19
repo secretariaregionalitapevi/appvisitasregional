@@ -88,6 +88,41 @@ def apply_actual_visit_times(visit, times):
     return visit
 
 
+def normalized_visit_identity(value):
+    normalized = unicodedata.normalize('NFKD', str(value or ''))
+    normalized = ''.join(char for char in normalized if not unicodedata.combining(char)).casefold()
+    return ' '.join(re.sub(r'[^a-z0-9]+', ' ', normalized).split())
+
+
+def normalized_visit_address(value):
+    without_coordinates = re.sub(r'^\s*\[[^\]]+\]\s*', '', str(value or ''))
+    return normalized_visit_identity(without_coordinates)
+
+
+def unique_member_for_orphan_visit(visit, members):
+    """Localiza com seguranca o recadastro correspondente a uma agenda orfa."""
+    visit_name = normalized_visit_identity(
+        re.sub(r'^\s*visita\s*(?:-|–|—)?\s*', '', str(visit.get('titulo') or ''), flags=re.IGNORECASE)
+    )
+    visit_address = normalized_visit_address(visit.get('endereco_visitado'))
+    if not visit_name:
+        return None
+    name_matches = [
+        member for member in members
+        if normalized_visit_identity(member.get('nome')) == visit_name
+    ]
+    if visit_address:
+        address_matches = [
+            member for member in name_matches
+            if normalized_visit_address(member.get('endereco')) == visit_address
+        ]
+        if len(address_matches) == 1:
+            return address_matches[0]
+    # Enderecos podem mudar entre a visita historica e o recadastro. O nome
+    # completo ainda e seguro quando existe uma unica pessoa assim na comum.
+    return name_matches[0] if len(name_matches) == 1 else None
+
+
 def merge_visit_period_metadata(notes, period):
     visible, _ = split_visit_period_metadata(notes)
     return f'{visible}{" " if visible else ""}[[periodo_planejado:{period}]]' if period else visible
@@ -1602,6 +1637,7 @@ def apiVisitasAgenda(request):
                 for item in visible_catalog
             }
             member_locations = {}
+            scoped_members = []
             offset = 0
             page_size = 1000
             while True:
@@ -1609,7 +1645,7 @@ def apiVisitasAgenda(request):
                 members_response = requests.get(
                     members_url,
                     headers=page_headers,
-                    params=[("select", "id,comum")],
+                    params=[("select", "id,comum,nome,endereco")],
                     timeout=15,
                 )
                 members_response.raise_for_status()
@@ -1618,14 +1654,36 @@ def apiVisitasAgenda(request):
                     member_common = str(item.get('comum') or '').strip()
                     if item.get('id') and member_common in target_commons:
                         member_locations[str(item['id'])] = member_common
+                        scoped_members.append(item)
                 if len(member_page) < page_size:
                     break
                 offset += page_size
 
             hydrated_rows = []
+            repaired_links = []
             for row in rows:
+                row_member_id = str(row.get('irmandade_id') or '')
+                if row_member_id not in member_locations:
+                    orphan_member_id = row_member_id
+                    matched_member = unique_member_for_orphan_visit(row, scoped_members)
+                    if matched_member:
+                        repair_response = requests.patch(
+                            url,
+                            headers=headers,
+                            params=[('id', f"eq.{row.get('id')}")],
+                            json={'irmandade_id': matched_member['id']},
+                            timeout=10,
+                        )
+                        if repair_response.status_code in {200, 201, 204}:
+                            row['irmandade_id'] = matched_member['id']
+                            row_member_id = str(matched_member['id'])
+                            repaired_links.append({
+                                'agenda_id': row.get('id'),
+                                'irmandade_id_anterior': orphan_member_id,
+                                'irmandade_id_novo': matched_member['id'],
+                            })
                 row_common = member_locations.get(
-                    str(row.get('irmandade_id') or ''),
+                    row_member_id,
                     str(row.get('comum') or '').strip(),
                 )
                 if row_common not in target_commons:
@@ -1634,6 +1692,12 @@ def apiVisitasAgenda(request):
                 row['municipio'] = common_cities.get(row_common, '')
                 hydrated_rows.append(row)
             rows = filter_rows(scope, hydrated_rows)
+
+            if repaired_links:
+                log_audit(request, 'RECONCILE', 'VISITAS_AGENDA', {
+                    'scope': scope_details(scope),
+                    'vinculos_reparados': repaired_links,
+                })
 
             return JsonResponse(rows, safe=False)
         except Exception as e:

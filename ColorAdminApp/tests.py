@@ -8,7 +8,7 @@ from django.test import RequestFactory, TestCase
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -52,6 +52,39 @@ class HeaderBrotherhoodSearchTests(TestCase):
         self.assertIn('method="GET"', html)
         self.assertIn('name="q"', html)
         self.assertNotIn('method="POST" name="search"', html)
+
+
+class OrphanVisitReconciliationTests(TestCase):
+    def test_matches_unique_recreated_member_by_exact_name_and_address(self):
+        visit = {'titulo': 'Joaninha de Jesus', 'endereco_visitado': 'Estrada Velha da Olaria, 125'}
+        members = [
+            {'id': 'new-id', 'nome': 'Joaninha de Jesus', 'endereco': 'Estrada Velha da Olaria, 125'},
+            {'id': 'other-id', 'nome': 'Outra Pessoa', 'endereco': 'Estrada Velha da Olaria, 125'},
+        ]
+
+        matched = unique_member_for_orphan_visit(visit, members)
+
+        self.assertEqual(matched['id'], 'new-id')
+
+    def test_does_not_guess_when_name_and_address_are_duplicated(self):
+        visit = {'titulo': 'Maria', 'endereco_visitado': 'Rua A, 10'}
+        members = [
+            {'id': 'maria-1', 'nome': 'Maria', 'endereco': 'Rua A, 10'},
+            {'id': 'maria-2', 'nome': 'Maria', 'endereco': 'Rua A, 10'},
+        ]
+
+        self.assertIsNone(unique_member_for_orphan_visit(visit, members))
+
+    def test_matches_unique_full_name_when_address_changed(self):
+        visit = {'titulo': 'Joaninha de Jesus', 'endereco_visitado': 'Estrada Velha da Olaria, 125'}
+        members = [
+            {'id': 'new-id', 'nome': 'Joaninha de Jesus', 'endereco': 'Estrada Velha da Olaria, 154'},
+            {'id': 'other-id', 'nome': 'Outra Pessoa', 'endereco': 'Estrada Velha da Olaria, 125'},
+        ]
+
+        matched = unique_member_for_orphan_visit(visit, members)
+
+        self.assertEqual(matched['id'], 'new-id')
 
 
 class VisitNavigationChooserTests(TestCase):
