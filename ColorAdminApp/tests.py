@@ -891,6 +891,26 @@ class VisitTeamsTests(TestCase):
 
 class BrotherhoodUpdateTests(TestCase):
     @patch("ColorAdminApp.views.requests.get")
+    def test_members_are_ordered_ignoring_whitespace_and_accents(self, get):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [
+            {"id": "4", "nome": " Wellington", "comum": "COMUM A"},
+            {"id": "3", "nome": "Áurelia", "comum": "COMUM A"},
+            {"id": "2", "nome": "  Acacio", "comum": "COMUM A"},
+            {"id": "1", "nome": "Abner", "comum": "COMUM A"},
+        ]
+        request = RequestFactory().get("/visitas/api/irmandade/")
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [row["nome"].strip() for row in json.loads(response.content)],
+            ["Abner", "Acacio", "Áurelia", "Wellington"],
+        )
+
+    @patch("ColorAdminApp.views.requests.get")
     def test_restricted_notes_are_removed_from_instructor_response(self, get):
         get.return_value = Mock(status_code=200)
         get.return_value.json.return_value = [{

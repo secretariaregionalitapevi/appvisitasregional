@@ -78,6 +78,10 @@
         .badge-apoio { background: linear-gradient(135deg, #6c757d 0%, #343a40 100%); color: #fff; }
         .badge-porteiro { background: #2c3e50 !important; color: white !important; border: 1px solid #1a252f; }
         .badge-auxiliar { background: #3498db !important; color: white !important; border: 1px solid #2980b9; }
+        .badge-escrita { background: linear-gradient(135deg, #00a88f 0%, #087f6d 100%); color: #fff; border: 1px solid #087f6d; }
+        .badge-cozinha { background: linear-gradient(135deg, #ff8a34 0%, #d85b08 100%); color: #fff; border: 1px solid #d85b08; }
+        .badge-limpeza { background: linear-gradient(135deg, #00bcd4 0%, #087f8c 100%); color: #fff; border: 1px solid #087f8c; }
+        .badge-servico { background: linear-gradient(135deg, #9c4dcc 0%, #67308f 100%); color: #fff; border: 1px solid #67308f; }
         .badge-estacionamento { background: #4b148c !important; color: white !important; border: 1px solid #311b92; }
         .badge-irmandade { background: #ecf0f1 !important; color: #7f8c8d !important; border: 1px solid #bdc3c7; }
         .badge-ebi { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: #fff; border: 1px solid #0072ff; }
@@ -522,13 +526,20 @@
         const CADASTRO_COMMONS = JSON.parse(document.getElementById('cadastro-commons-data')?.textContent || '[]');
         let cadastroSelectedCity = CADASTRO_DEFAULT_CITY;
         let cadastroSelectedCommon = CADASTRO_DEFAULT_COMMON;
+        let searchAcrossCommons = false;
         const INITIAL_IRMANDADE_SEARCH = new URLSearchParams(window.location.search).get('q') || '';
         const escapeHtml = value => $('<div>').text(String(value ?? '')).html();
+        const compareMembersByName = (left, right) => String(left?.nome || '')
+            .trim().replace(/\s+/g, ' ')
+            .localeCompare(String(right?.nome || '').trim().replace(/\s+/g, ' '), 'pt-BR', {
+                sensitivity: 'base',
+                numeric: true
+            });
 
         // Inicialização Profissional
-        const loadContent = async () => {
+        const loadContent = async ({ allCommons = searchAcrossCommons } = {}) => {
             moment.locale('pt-br');
-            if (!cadastroSelectedCommon) {
+            if (!cadastroSelectedCommon && !allCommons) {
                 irmandadeData = [];
                 agendaData = [];
                 updateWidgets([]);
@@ -538,13 +549,26 @@
                 return;
             }
             try {
+                const commonQuery = allCommons ? 'all' : encodeURIComponent(cadastroSelectedCommon);
                 const [resIrm, resAge] = await Promise.all([
-                    fetch(`/visitas/api/irmandade/?comum=${encodeURIComponent(cadastroSelectedCommon)}`),
+                    fetch(`/visitas/api/irmandade/?comum=${commonQuery}`),
+                    // A pesquisa global precisa ampliar somente os membros.
+                    // A agenda permanece no escopo da comum selecionada para
+                    // evitar uma carga desnecessária e preservar servidores
+                    // que ainda não aceitam o marcador "all" nessa API.
                     fetch(`/visitas/api/agenda/?comum=${encodeURIComponent(cadastroSelectedCommon)}`)
                 ]);
                 
-                irmandadeData = await resIrm.json();
-                agendaData = await resAge.json();
+                const irmandadePayload = await resIrm.json();
+                const agendaPayload = await resAge.json();
+                if (!resIrm.ok || !Array.isArray(irmandadePayload)) {
+                    throw new Error(irmandadePayload.error || 'Não foi possível carregar os membros.');
+                }
+                if (!resAge.ok || !Array.isArray(agendaPayload)) {
+                    throw new Error(agendaPayload.error || 'Não foi possível carregar a agenda.');
+                }
+                irmandadeData = [...irmandadePayload].sort(compareMembersByName);
+                agendaData = agendaPayload;
                 
                 updateWidgets(irmandadeData);
                 updateSelects();
@@ -965,9 +989,13 @@
             $('#exec-text').html(`<b>Relatório Consolidado:</b> Foram analisados <b>${data.length}</b> membros. Identificado que <b>${famAtendidas}</b> núcleos familiares receberam assistência recente.${attemptSummary}`);
         };
 
-        const updateSelects = () => {
+        const updateSelects = (selectedValueOverride) => {
             const $select = $('#irm-chefe-select');
-            const selectedValue = String($select.val() || '');
+            // Nunca reutilize o valor que ficou no DOM de outro cadastro.
+            // O valor só é preservado quando a edição o informa explicitamente.
+            const selectedValue = selectedValueOverride === undefined
+                ? ''
+                : String(selectedValueOverride || '');
             const currentId = String($('#irm-id').val() || '');
             const candidates = irmandadeData.filter(i => String(i.id) !== currentId);
             const useNativeSelect = window.matchMedia('(max-width: 767.98px), (pointer: coarse)').matches;
@@ -1038,6 +1066,9 @@
             if (match('enfermo')) return { class: 'badge-enfermo', icon: 'fa-heartbeat' };
             if (match('porteiro')) return { class: 'badge-porteiro', icon: 'fa-door-open' };
             if (match('auxiliar da porta')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('auxiliar de escrita')) return { class: 'badge-escrita', icon: 'fa-pen' };
+            if (match('cozinha')) return { class: 'badge-cozinha', icon: 'fa-utensils' };
+            if (match('limpeza')) return { class: 'badge-limpeza', icon: 'fa-broom' };
             if (match('estacionamento')) return { class: 'badge-estacionamento', icon: 'fa-car' };
             if (match('ebi')) return { class: 'badge-ebi', icon: 'fa-child' };
             if (match('emi')) return { class: 'badge-emi', icon: 'fa-music' };
@@ -1045,8 +1076,9 @@
             if (match('manutencao') || match('manutenção')) return { class: 'badge-manutencao', icon: 'fa-tools' };
             if (match('reuniao') || match('reunião')) return { class: 'badge-reuniao', icon: 'fa-home' };
             if (match('grupo de visitas')) return { class: 'badge-grupo-visitas', icon: 'fa-people-group' };
-            
-            return { class: 'badge-irmandade', icon: 'fa-user' };
+            if (match('irmandade')) return { class: 'badge-irmandade', icon: 'fa-user' };
+
+            return { class: 'badge-servico', icon: 'fa-hands-helping' };
         };
 
         const renderItems = (items) => {
@@ -1137,6 +1169,7 @@
                 const photoHtml = item.url_foto 
                     ? `<img src="${item.url_foto}" class="rounded-circle shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">`
                     : `<div class="bg-light rounded-circle d-flex align-items-center justify-content-center text-primary fw-bold" style="width: 40px; height: 40px;">${item.nome.charAt(0)}</div>`;
+                const addressDisplay = String(item.endereco || '').replace(/^\[[^\]]+\]\s*/, '').trim();
 
                 tbody.append(`
                     <tr>
@@ -1147,12 +1180,13 @@
                                 </div>
                                 <div>
                                     <a href="javascript:;" onclick="handleAction('${item.id}', 'edit')" class="fw-bold text-dark text-decoration-none d-block fs-14px">${item.nome}</a>
+                                    ${addressDisplay ? `<small class="text-muted d-block text-truncate" style="max-width: 360px;" title="${escapeHtml(addressDisplay)}"><i class="fa fa-home text-secondary me-1"></i>${escapeHtml(addressDisplay)}</small>` : ''}
                                     <small class="text-muted d-flex align-items-center gap-1">
                                         <i class="fa fa-map-marker-alt text-danger"></i> ${item.comum || 'Comum não informada'}
                                     </small>
                                     ${item.id_chefe_familia ? (() => {
                                         const chefe = irmandadeData.find(i => i.id == item.id_chefe_familia);
-                                        return `<div class="mt-1"><span class="badge bg-blue-100 text-blue-700 border border-blue-200" style="font-size: 9px;"><i class="fa fa-users me-1"></i> ${item.vinculo_tipo || 'Membro'} de ${chefe ? chefe.nome : 'Chefe'}</span></div>`;
+                                        return `<div class="mt-1"><span class="badge bg-blue-100 text-blue-700 border border-blue-200" style="font-size: 9px;"><i class="fa fa-users me-1"></i> ${item.vinculo_tipo || 'Familiar'} de ${chefe ? chefe.nome : 'Chefe'}</span></div>`;
                                     })() : ''}
                                     ${preferenciasHtml}
                                     ${apontamentosRestritosHtml}
@@ -1187,6 +1221,7 @@
             $('#irm-cidade').val(cadastroSelectedCity || CADASTRO_DEFAULT_CITY);
             $('#irm-url-foto').val('');
             $('#photo-preview').html('<i class="fa fa-user-circle fa-7x text-muted opacity-2"></i>');
+            updateSelects('');
             $('#irm-chefe-select').val('').trigger('change');
             $('input[name="cargo"]').prop('checked', false);
             $('#modal-cadastro').modal('show');
@@ -1280,11 +1315,6 @@
                 }
             });
 
-            // FIX: Robust SELECT2 Focus Conflict with Bootstrap Modals
-            $('#modal-cadastro').on('shown.bs.modal', function () {
-                updateSelects(); // Reinicia com os dados mais recentes ao abrir
-            });
-            
             // Máscara para CEP
             $('#irm-cep').on('input', function() {
                 let v = $(this).val().replace(/\D/g, '');
@@ -1376,8 +1406,12 @@
 			$('#irm-preferencia-periodo-visita').val(item.preferencia_periodo_visita || '');
 			$('#irm-classificacao-adicional').val(item.classificacao_adicional || '');
 			if (CAN_VIEW_RESTRICTED_NOTES) $('#irm-apontamentos-restritos').val(item.apontamentos_restritos || '');
-			$('#irm-celular').val(item.celular || '').trigger('input');
-			$('#irm-complemento').val(item.complemento || '');
+            $('#irm-celular').val(item.celular || '').trigger('input');
+            $('#irm-complemento').val(item.complemento || '');
+            // O select é reconstruído quando o modal abre. Recrie as opções
+            // antes de aplicar o valor para que o vínculo não seja descartado
+            // quando o cadastro é editado pela primeira vez.
+            updateSelects(item.id_chefe_familia || '');
 			$('#irm-chefe-select').val(item.id_chefe_familia || '').trigger('change');
             $('#irm-vinculo-tipo').val(item.vinculo_tipo || '');
             
@@ -1504,12 +1538,20 @@
             };
 
             const url = id ? `/visitas/api/irmandade/?id=${id}` : '/visitas/api/irmandade/';
+            const nomeCadastro = String(payload.nome || '').trim() || 'este membro';
             try {
                 const requestOptions = {
                     method: id ? 'PATCH' : 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                     body: JSON.stringify(payload)
                 };
+                Swal.fire({
+                    title: id ? 'Atualizando cadastro...' : 'Salvando cadastro...',
+                    text: `Aguarde enquanto salvamos o cadastro de ${nomeCadastro}.`,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => Swal.showLoading()
+                });
                 let res;
                 try {
                     res = await fetch(url, requestOptions);
@@ -1520,9 +1562,15 @@
                 }
 
                 if (res.ok) {
-                    Swal.fire({ icon: 'success', title: 'Registro Atualizado', timer: 1500, showConfirmButton: false });
                     $('#modal-cadastro').modal('hide');
                     loadContent();
+                    Swal.fire({
+                        icon: 'success',
+                        title: id ? 'Cadastro atualizado!' : 'Cadastro realizado!',
+                        text: `${nomeCadastro} foi salvo com sucesso.`,
+                        timer: 1800,
+                        showConfirmButton: false
+                    });
                 } else {
                     const errData = await res.json();
                     let msg = "Desculpe, ocorreu um erro ao salvar os dados.";
@@ -1544,13 +1592,30 @@
             }
         };
 
-        const handleSearch = (val) => {
+        const handleSearch = async (val) => {
+            const rawValue = String(val || '').trim();
+            // A busca só amplia o escopo quando não há uma comum específica
+            // selecionada (município inteiro ou Regional inteira). Com uma
+            // comum escolhida, o texto permanece restrito a ela.
+            const canSearchAcrossCommons = CADASTRO_ACCESS_LEVEL !== 'local' && !cadastroSelectedCommon;
+            if (rawValue && canSearchAcrossCommons && !searchAcrossCommons) {
+                // A pesquisa deve abranger todas as comuns visíveis ao usuário,
+                // mesmo quando o filtro territorial está apontado para uma comum.
+                searchAcrossCommons = true;
+                await loadContent({ allCommons: true });
+                return;
+            }
+            if (!rawValue && searchAcrossCommons) {
+                searchAcrossCommons = false;
+                await loadContent();
+                return;
+            }
             const normalizeSearch = value => String(value || '')
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '')
                 .toLowerCase()
                 .trim();
-            const terms = String(val || '')
+            const terms = rawValue
                 .split(',')
                 .map(normalizeSearch)
                 .filter(Boolean);
@@ -1757,6 +1822,8 @@
                 citySelect.addEventListener('change', async () => {
                     cadastroSelectedCity = citySelect.value;
                     cadastroSelectedCommon = '';
+                    searchAcrossCommons = false;
+                    $('#irmandade-search').val('');
                     fillCadastroCommonSelect();
                     await loadContent();
                 });
@@ -1765,6 +1832,8 @@
             if (commonSelect) {
                 jQuery(commonSelect).off('change.cadastroScope').on('change.cadastroScope', async () => {
                     cadastroSelectedCommon = commonSelect.value || '';
+                    searchAcrossCommons = false;
+                    $('#irmandade-search').val('');
                     await loadContent();
                 });
             }

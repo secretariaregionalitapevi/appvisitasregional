@@ -13,6 +13,39 @@ document.addEventListener('DOMContentLoaded', () => {
   state.commons = Array.from(byId('member-common').options).slice(1).map(option => ({ common: option.value, city: option.dataset.city }));
 
   function alertMessage(message, type='danger') { byId('teams-alert').innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`; }
+  let assignmentToastTimer=null;
+  function closeAssignmentToast() {
+    clearTimeout(assignmentToastTimer);
+    assignmentToastTimer=null;
+    document.querySelector('.assignment-toast')?.remove();
+  }
+  function showAssignmentToast({type='info',title,message,duration=3000}) {
+    closeAssignmentToast();
+    let region=byId('assignment-toast-region');
+    if(!region){region=document.createElement('div');region.id='assignment-toast-region';region.setAttribute('aria-live','polite');region.setAttribute('aria-atomic','true');document.body.appendChild(region);}
+    const toast=document.createElement('div');
+    toast.className=`assignment-toast is-${type}`;
+    toast.setAttribute('role',type==='error'?'alert':'status');
+    const icon=document.createElement('span');
+    icon.className='assignment-toast-icon';
+    icon.innerHTML=type==='loading'?'<span class="assignment-spinner" aria-hidden="true"></span>':`<i class="fa ${type==='success'?'fa-check':type==='error'?'fa-xmark':'fa-info'}" aria-hidden="true"></i>`;
+    const copy=document.createElement('div');
+    copy.className='assignment-toast-copy';
+    const heading=document.createElement('strong');heading.textContent=title;
+    const detail=document.createElement('p');detail.textContent=message;
+    copy.append(heading,detail);
+    toast.append(icon,copy);
+    if(type!=='loading'){
+      const close=document.createElement('button');
+      close.type='button';close.className='assignment-toast-close';close.setAttribute('aria-label','Fechar aviso');close.innerHTML='<i class="fa fa-xmark" aria-hidden="true"></i>';
+      close.onclick=closeAssignmentToast;
+      const progress=document.createElement('span');progress.className='assignment-toast-progress';progress.style.setProperty('--toast-duration',`${duration}ms`);progress.setAttribute('aria-hidden','true');
+      toast.append(close,progress);
+      assignmentToastTimer=setTimeout(closeAssignmentToast,duration);
+    }
+    region.appendChild(toast);
+    return toast;
+  }
   async function jsonFetch(url, options={}) {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
     let response;
@@ -20,7 +53,12 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (error) { if (error.name === 'AbortError') throw new Error('A consulta demorou mais de 15 segundos. Tente atualizar a página.'); throw error; }
     finally { clearTimeout(timeout); }
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir a operação.');
+    if (!response.ok) {
+      const error = new Error(payload.error || 'Não foi possível concluir a operação.');
+      error.code = payload.code || '';
+      error.payload = payload;
+      throw error;
+    }
     return payload;
   }
   function rebuildCommons(select, city, keep='') {
@@ -97,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function loadTeamChoices() {
     const select=byId('member-team'), teams=availableTeams(byId('member-city').value,byId('member-common').value);
-    select.replaceChildren(new Option('Selecione...', '')); teams.forEach(team=>{const option=new Option(`${team.nome} - ${team.tipo==='LOCAL'?'Local':'Regional'}`,team.id);option.dataset.name=team.nome;select.add(option);}); select.disabled=!teams.length;
+    select.replaceChildren(new Option('Selecione...', '')); teams.forEach(team=>{const option=new Option(team.nome + ' - ' + (team.tipo==='LOCAL'?'Local':'Regional'),team.id);option.dataset.name=team.nome;select.add(option);}); select.disabled=!teams.length;
   }
   async function openMemberModal(member=null, selectedTeamId='') {
     byId('member-form').reset(); const city=member?.municipio||'', common=member?.comum||'';
@@ -136,7 +174,46 @@ document.addEventListener('DOMContentLoaded', () => {
   byId('member-city').onchange=()=>{rebuildCommons(byId('member-common'),byId('member-city').value);loadTeamChoices();};
   byId('member-common').onchange=()=>{loadPeople(byId('member-common').value);loadTeamChoices();};
   byId('team-form').onsubmit=async event=>{event.preventDefault();try{await jsonFetch('/visitas/api/equipes/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({acao:'cadastrar_equipe',tipo:byId('team-type').value,municipio:byId('team-city').value,comum:byId('team-common').value,nome:byId('team-name').value})});teamModal.hide();alertMessage('Equipe criada. Agora você já pode atribuir os participantes.','success');await load();}catch(error){alertMessage(error.message);}};
-  byId('member-form').onsubmit=async event=>{event.preventDefault();const option=byId('member-team').selectedOptions[0];try{await jsonFetch('/visitas/api/equipes/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({membro_id:byId('member-person').value,equipe_id:byId('member-team').value,equipe:option?.dataset.name||''})});memberModal.hide();alertMessage('Participante atribuído com sucesso.','success');await load();}catch(error){alertMessage(error.message);}};
+  async function submitMemberAssignment(confirmTransfer=false) {
+    const option=byId('member-team').selectedOptions[0];
+    const participant=byId('member-person').selectedOptions[0]?.text?.trim()||'participante';
+    const team=option?.dataset.name||'equipe selecionada';
+    const submitButton=byId('member-form').querySelector('button:not([type="button"])');
+    try{
+      submitButton.disabled=true;
+      showAssignmentToast({type:'loading',title:'Atribuindo participante',message:`${participant} → ${team}`});
+      await jsonFetch('/visitas/api/equipes/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({membro_id:byId('member-person').value,equipe_id:byId('member-team').value,equipe:option?.dataset.name||'',confirmar_transferencia:confirmTransfer})});
+      memberModal.hide();
+      await load();
+      showAssignmentToast({type:'success',title:'Participante atribuído',message:`${participant} agora faz parte de ${team}.`});
+    }catch(error){
+      closeAssignmentToast();
+      if(error.code==='MEMBER_ALREADY_ASSIGNED'){
+        showAssignmentToast({type:'info',title:'Participante já atribuído',message:error.message});
+        return;
+      }
+      if(error.code==='CONFIRM_TEAM_TRANSFER'){
+        const current=error.payload?.equipe_atual||'a equipe atual';
+        const next=error.payload?.equipe_nova||team;
+        const confirmed=await swal({
+          title:'Transferir participante?',
+          text:`${participant} sairá de ${current} e passará para ${next}. Deseja continuar?`,
+          icon:'warning', dangerMode:true,
+          className:'assignment-confirm-dialog',
+          buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Transferir',visible:true,value:true,className:'assignment-confirm-button'}}
+        });
+        if(confirmed) await submitMemberAssignment(true);
+        return;
+      }
+      showAssignmentToast({type:'error',title:'Não foi possível atribuir',message:error.message});
+    }finally{
+      submitButton.disabled=false;
+    }
+  }
+  byId('member-form').onsubmit=async event=>{
+    event.preventDefault();
+    await submitMemberAssignment();
+  };
   function rebuildFilterCommons(keep=''){
     const select=byId('filter-common'),$select=jQuery(select),initialized=$select.hasClass('select2-hidden-accessible');
     select.replaceChildren(new Option('Todas',''));

@@ -154,7 +154,13 @@
         font-weight: bold;
         font-size: 11px;
         opacity: 0.8;
+        border: 0;
+        width: 100%;
+        cursor: pointer;
+        transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
     }
+    .team-box:hover, .team-box.active { opacity: 1; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,.22); }
+    .team-box.active { outline: 3px solid rgba(52,143,226,.28); }
     .bg-team-1 { background-color: #348fe2; }
     .bg-team-2 { background-color: #727cb6; }
     .bg-team-3 { background-color: #00acac; }
@@ -217,6 +223,7 @@
         const municipalityFilter = $('#agenda-municipio-filter');
         const commonFilter = $('#agenda-comum-filter');
         const selectedAgendaIds = new Set();
+        let activeTeamFilter = '';
         let addressCoordinates = '';
         let editingVisitDurationMinutes = 60;
 
@@ -276,13 +283,26 @@
             });
         }
 
+        $(document).on('click', '.team-box[data-team]', function () {
+            const team = String($(this).data('team') || '');
+            activeTeamFilter = activeTeamFilter === team ? '' : team;
+            $('.team-box[data-team]').removeClass('active').attr('aria-pressed', 'false');
+            if (activeTeamFilter) $(this).addClass('active').attr('aria-pressed', 'true');
+            if (calendar) calendar.refetchEvents();
+        });
+
         const loadIrmandadeList = async () => {
             const params = new URLSearchParams({ status: 'Ativo' });
             const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
             if (selectedCommon) params.set('comum', selectedCommon);
             const res = await fetch(`/visitas/api/irmandade/?${params.toString()}`);
             irmandadeData = await res.json();
-            const options = irmandadeData.map(item => ({ id: item.id, text: item.nome }));
+            const options = irmandadeData.map(item => ({
+                id: item.id,
+                text: item.nome,
+                address: String(item.endereco || '').replace(/^\[[^\]]+\]\s*/, '').trim(),
+                sector: item.setor || ''
+            }));
             if ($('#event-member-select').hasClass('select2-hidden-accessible')) {
                 $('#event-member-select').select2('destroy').empty();
             }
@@ -291,7 +311,15 @@
                 placeholder: 'Buscar família para visita (ou digite um novo nome)',
                 allowClear: true,
                 tags: true,
-                dropdownParent: $('#modal-event')
+                dropdownParent: $('#modal-event'),
+                templateResult: function (item) {
+                    if (!item.id) return item.text;
+                    const detail = item.address || item.sector || '';
+                    return $('<div>').append(
+                        $('<div>').addClass('fw-bold').text(item.text),
+                        detail ? $('<div>').addClass('small text-muted').text(detail) : ''
+                    );
+                }
             });
         };
 
@@ -325,7 +353,9 @@
             const member = irmandadeData.find(item => String(item.id) === String($('#event-member-select').val() || ''));
             const common = member?.comum || $('#event-comum').val() || agendaDefaultCommon;
             const city = agendaCommons.find(item => item.comum === common)?.cidade || agendaDefaultCity;
-            const eligible = visitTeams.filter(team => team.ativo !== false && team.municipio === city && (team.tipo === 'REGIONAL' || team.comum === common));
+            const eligible = visitTeams.filter(team => team.ativo !== false && team.municipio === city && (
+                team.tipo === 'REGIONAL' || team.comum === common || ['Grupo RF', 'Grupo RE'].includes(team.nome)
+            ));
             const select = $('#event-equipe').empty().append(new Option('Selecione a equipe...', ''));
             eligible.forEach(team => {
                 const option = new Option(`${team.nome} - ${team.tipo === 'LOCAL' ? 'Local' : 'Regional'}`, team.nome);
@@ -333,7 +363,7 @@
                 select.append(option);
             });
             if (selectedName && !eligible.some(team => team.nome === selectedName)) {
-                const legacy = new Option(`${selectedName} - histórico`, selectedName);
+                const legacy = new Option(selectedName, selectedName);
                 legacy.dataset.id = selectedId || ''; legacy.dataset.type = /^Grupo\s+[A-Z]$/i.test(selectedName) ? 'REGIONAL' : 'LOCAL';
                 select.append(legacy);
             }
@@ -366,6 +396,14 @@
         const updateEventStartLabel = () => {
             const completed = $('#event-status').val() === 'Realizada';
             $('#event-start-label').text(completed ? 'DATA E HORA DE INÍCIO REAL' : 'DATA E HORA PROPOSTA');
+        };
+
+        const updateAttendantRequirement = () => {
+            const requiresAttendant = ['RF', 'RE'].includes($('#event-categoria-modal').val());
+            $('#event-responsavel-atendimento').prop('required', requiresAttendant);
+            $('#event-responsavel-label').html(
+                `RESPONSÁVEL PELO ATENDIMENTO${requiresAttendant ? ' <span class="text-danger">*</span>' : ''}`
+            );
         };
 
         $('#event-member-select').on('change', function () {
@@ -448,6 +486,7 @@
                 }
                 const params = new URLSearchParams({ start_date: info.startStr, end_date: info.endStr });
                 if (selectedCommon) params.set('comum', selectedCommon);
+                if (activeTeamFilter) params.set('equipe', activeTeamFilter);
                 fetch(`/visitas/api/agenda/?${params.toString()}`, { cache: 'no-store' }).then(res => {
                     if (!res.ok) throw new Error('Nao foi possivel carregar a agenda.');
                     return res.json();
@@ -510,10 +549,12 @@
                     : (eventDuration > 0 ? eventDuration : 60);
                 refreshTeamOptions(e.equipe_responsavel || '', e.equipe_id || '');
                 $('#event-categoria-modal').val(e.categoria || 'GVI');
+                updateAttendantRequirement();
                 $('#event-status').val(e.status).trigger('change');
                 $('#event-setor').val(e.setor || '');
                 showAddressWithoutCoordinates(e.endereco_visitado || '');
                 $('#event-cancel-reason').val(e.motivo_cancelamento || '');
+                $('#event-responsavel-atendimento').val(e.responsavel_atendimento || '');
                 $('#event-obs').val(e.observacoes || '');
 
                 $('#btn-delete-event').show();
@@ -624,6 +665,7 @@
             $('#modal-title').text('Novo Agendamento');
             $('#event-start').val(startDate || moment().format('YYYY-MM-DDTHH:mm'));
             $('#event-categoria-modal').val(category || 'GVI');
+            updateAttendantRequirement();
             $('#modal-event').modal('show');
         }
 
@@ -682,6 +724,7 @@
                 setor: $('#event-setor').val(),
                 endereco_visitado: addressForStorage(),
                 motivo_cancelamento: $('#event-cancel-reason').val(),
+                responsavel_atendimento: $('#event-responsavel-atendimento').val(),
                 observacoes: $('#event-obs').val()
             };
 
@@ -779,6 +822,7 @@
             else $('#cancel-reason-container').hide();
             updateEventStartLabel();
         });
+        $('#event-categoria-modal').on('change', updateAttendantRequirement);
     });
 </script>
 {% endblock %}
@@ -838,11 +882,12 @@
             
             <hr class="my-3" />
             <h5 class="mb-3">Equipes</h5>
-            <div class="team-box bg-team-1">EQUIPE 01</div>
-            <div class="team-box bg-team-2">EQUIPE 02</div>
-            <div class="team-box bg-team-3">EQUIPE 03</div>
-            <div class="team-box bg-team-4">EQUIPE 04</div>
-            <div class="team-box" style="background-color: #727cb6;">GRUPO RF</div>
+            <button type="button" class="team-box bg-team-1" data-team="Equipe 1" aria-pressed="false">EQUIPE 01</button>
+            <button type="button" class="team-box bg-team-2" data-team="Equipe 2" aria-pressed="false">EQUIPE 02</button>
+            <button type="button" class="team-box bg-team-3" data-team="Equipe 3" aria-pressed="false">EQUIPE 03</button>
+            <button type="button" class="team-box bg-team-4" data-team="Equipe 4" aria-pressed="false">EQUIPE 04</button>
+            <button type="button" class="team-box" style="background-color: #727cb6;" data-team="Grupo RF" aria-pressed="false">GRUPO RF</button>
+            <button type="button" class="team-box" style="background-color: #ff5b57;" data-team="Grupo RE" aria-pressed="false">GRUPO RE</button>
         </div>
     </div>
     <div class="col-lg-9 col-xl-10">
@@ -918,7 +963,12 @@
                             <input type="text" class="form-control border-danger" id="event-cancel-reason">
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-bold small text-muted">OBSERVAÇÕES DA EQUIPE</label>
+                            <label class="form-label fw-bold small text-muted" id="event-responsavel-label">RESPONSÁVEL PELO ATENDIMENTO</label>
+                            <input type="text" class="form-control" id="event-responsavel-atendimento" placeholder="Nome do irmão escalado" required>
+                            <div class="form-text">Se houver substituição, mantenha o responsável original aqui e informe o substituto nas observações.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold small text-muted">OBSERVAÇÕES / SUBSTITUTO NO ATENDIMENTO</label>
                             <textarea class="form-control" id="event-obs" rows="3"></textarea>
                         </div>
                     </div>

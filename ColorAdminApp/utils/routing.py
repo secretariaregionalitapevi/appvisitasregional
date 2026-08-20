@@ -490,7 +490,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     # Nunca carregue apontamentos_restritos neste fluxo compartilhado. A rota
     # operacional pode ser usada por Instrutores e não deve transportar dados sensíveis.
     safe_member_fields = (
-        "id,nome,comum,setor,endereco,status,categoria,equipe_visita,ultima_visita,"
+        "id,nome,comum,setor,endereco,status,categoria,equipe_id,equipe_visita,ultima_visita,"
         "preferencia_periodo_visita,observacoes"
     )
     resp_irm = requests.get(url_irmandade, headers=headers, params=[("select", safe_member_fields)], timeout=10)
@@ -510,6 +510,12 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     todos_irmaos = [
         item for item in todos_irmaos
         if 'INATIV' not in normalize_text(item.get('status'))
+    ]
+    # Integrantes de equipes de visita não são destinos de atendimento. Muitos
+    # usam o endereço da própria comum no cadastro e distorceriam o roteiro.
+    todos_irmaos = [
+        item for item in todos_irmaos
+        if not str(item.get('equipe_id') or item.get('equipe_visita') or '').strip()
     ]
     member_ids_da_comum = {str(item.get('id')) for item in todos_irmaos if item.get('id')}
     

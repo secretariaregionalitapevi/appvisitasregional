@@ -209,6 +209,10 @@
         .badge-enfermo { background: linear-gradient(135deg, #dc3545 0%, #721c24 100%); color: #fff; }
         .badge-porteiro { background: #2c3e50 !important; color: white !important; border: 1px solid #1a252f; }
         .badge-auxiliar { background: #3498db !important; color: white !important; border: 1px solid #2980b9; }
+        .badge-escrita { background: #00a88f !important; color: #fff !important; border: 1px solid #087f6d; }
+        .badge-cozinha { background: #ff7a1a !important; color: #fff !important; border: 1px solid #d85b08; }
+        .badge-limpeza { background: #00a9bd !important; color: #fff !important; border: 1px solid #087f8c; }
+        .badge-servico { background: #8442ad !important; color: #fff !important; border: 1px solid #67308f; }
         .badge-estacionamento { background: #4b148c !important; color: white !important; border: 1px solid #311b92; }
         .badge-irmandade { background: #ecf0f1 !important; color: #7f8c8d !important; border: 1px solid #bdc3c7; }
         .badge-ebi { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: #fff; border: 1px solid #0072ff; }
@@ -694,7 +698,7 @@
                                     ${relatives.map(r => `
                                         <div class="fw-bold text-dark" style="font-size: 11px;">
                                             <div><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</div>
-                                            <span class="badge bg-white text-muted fw-normal border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Membro') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Membro'))}</span>
+                                            <span class="badge bg-white text-muted fw-normal border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Familiar') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Familiar'))}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -790,7 +794,7 @@
                     $('#dossie-familia-list').append(`
                         <div class="p-2 bg-white rounded border border-light">
                             <div class="fw-bold small text-dark"><i class="fa fa-user-friends me-1 text-muted"></i> ${r.nome}</div>
-                            <span class="badge bg-light text-muted border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Membro') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Membro'))}</span>
+                            <span class="badge bg-light text-muted border mt-1 ms-3 d-inline-block" style="font-size: 8px;">${r.id_chefe_familia === member.id ? (r.vinculo_tipo || 'Familiar') : (r.id === member.id_chefe_familia ? 'Chefe' : (r.vinculo_tipo || 'Familiar'))}</span>
                         </div>
                     `);
                 });
@@ -811,10 +815,15 @@
             cargosArr = [...new Set(cargosArr)];
 
             const getColor = (f) => {
-                const low = f.toLowerCase();
+                const low = f.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 if (low.includes('encarregados') || low.includes('organista')) return 'bg-gve';
                 if (low.includes('mocidade')) return 'bg-gvm';
-                return 'bg-gvi';
+                if (low.includes('auxiliar de escrita')) return 'badge-escrita';
+                if (low.includes('auxiliar da porta')) return 'badge-auxiliar';
+                if (low.includes('cozinha')) return 'badge-cozinha';
+                if (low.includes('limpeza')) return 'badge-limpeza';
+                if (low.includes('irmandade')) return 'badge-irmandade';
+                return 'badge-servico';
             };
 
             let badges = cargosArr.length > 0 ? cargosArr.map(c => `<span class="badge shadow-sm ${getColor(c)} me-1">${c}</span>`).join('') : '<span class="badge bg-gvi shadow-sm">Irmandade</span>';
@@ -850,6 +859,9 @@
             if (match('enfermo')) return { class: 'badge-enfermo', icon: 'fa-heartbeat' };
             if (match('porteiro')) return { class: 'badge-porteiro', icon: 'fa-door-open' };
             if (match('auxiliar da porta')) return { class: 'badge-auxiliar', icon: 'fa-user-check' };
+            if (match('auxiliar de escrita')) return { class: 'badge-escrita', icon: 'fa-pen' };
+            if (match('cozinha')) return { class: 'badge-cozinha', icon: 'fa-utensils' };
+            if (match('limpeza')) return { class: 'badge-limpeza', icon: 'fa-broom' };
             if (match('estacionamento')) return { class: 'badge-estacionamento', icon: 'fa-car' };
             if (match('ebi')) return { class: 'badge-ebi', icon: 'fa-child' };
             if (match('emi')) return { class: 'badge-emi', icon: 'fa-music' };
@@ -857,7 +869,8 @@
             if (match('manutencao') || match('manutenção')) return { class: 'badge-manutencao', icon: 'fa-tools' };
             if (match('reuniao') || match('reunião')) return { class: 'badge-reuniao', icon: 'fa-home' };
             
-            return { class: 'badge-irmandade', icon: 'fa-user' };
+            if (match('irmandade')) return { class: 'badge-irmandade', icon: 'fa-user' };
+            return { class: 'badge-servico', icon: 'fa-hands-helping' };
         };
 
         window.viewHistory = async (id) => {
