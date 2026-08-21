@@ -209,6 +209,8 @@
         return /^Grupo\s+[A-Z]$/i.test(teamName) ? 'REGIONAL' : 'LOCAL';
     };
     const normalizedStatus = item => String(item.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const saoPauloDayStart = date => `${date}T00:00:00-03:00`;
+    const saoPauloNextDayStart = date => `${moment(date, 'YYYY-MM-DD', true).add(1, 'day').format('YYYY-MM-DD')}T00:00:00-03:00`;
     const sourceBadgeClass = status => {
         if (status === 'Agenda') return 'source-agenda';
         if (status === 'Mensal') return 'source-monthly';
@@ -533,22 +535,24 @@
 
             currentData = Array.isArray(data) ? data : [];
 
-            let agendaUrl = `/visitas/api/agenda/`;
-            if (dataDe) agendaUrl += `?start_date=${dataDe}T00:00:00`;
-            else agendaUrl += `?limit=1000`; // Para formatar o resto com &
+            const agendaParams = new URLSearchParams();
+            if (dataDe) agendaParams.set('start_date', saoPauloDayStart(dataDe));
+            if (dataAte) agendaParams.set('end_date', saoPauloNextDayStart(dataAte));
 
-            if (dataAte) agendaUrl += `&end_date=${dataAte}T23:59:59`;
-            
             if (!dataDe && !dataAte) {
                 if (mes !== 'all') {
                     const startOfMonth = moment(`${ano}-${mes}-01`, 'YYYY-M-DD').startOf('month').format('YYYY-MM-DD');
-                    const endOfMonth = moment(`${ano}-${mes}-01`, 'YYYY-M-DD').endOf('month').format('YYYY-MM-DD');
-                    agendaUrl = `/visitas/api/agenda/?start_date=${startOfMonth}T00:00:00&end_date=${endOfMonth}T23:59:59`;
+                    const startOfNextMonth = moment(`${ano}-${mes}-01`, 'YYYY-M-DD').add(1, 'month').startOf('month').format('YYYY-MM-DD');
+                    agendaParams.set('start_date', saoPauloDayStart(startOfMonth));
+                    agendaParams.set('end_date', saoPauloDayStart(startOfNextMonth));
                 } else {
-                    agendaUrl = `/visitas/api/agenda/?start_date=${ano}-01-01T00:00:00&end_date=${ano}-12-31T23:59:59`;
+                    agendaParams.set('start_date', saoPauloDayStart(`${ano}-01-01`));
+                    agendaParams.set('end_date', saoPauloDayStart(`${Number(ano) + 1}-01-01`));
                 }
             }
-            agendaUrl += `${agendaUrl.includes('?') ? '&' : '?'}${new URLSearchParams({ ...(municipio ? { municipio } : {}), ...(comum ? { comum } : {}) }).toString()}`;
+            if (municipio) agendaParams.set('municipio', municipio);
+            if (comum) agendaParams.set('comum', comum);
+            const agendaUrl = `/visitas/api/agenda/?${agendaParams.toString()}`;
             
             const resAgenda = await fetch(agendaUrl);
             const dataAgenda = await resAgenda.json();

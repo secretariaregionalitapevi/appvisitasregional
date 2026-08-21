@@ -603,6 +603,24 @@ class MapScopeFilterTests(TestCase):
 
 
 class VisitTeamsTests(TestCase):
+    def test_dashboard_date_filters_use_sao_paulo_exclusive_boundaries(self):
+        request = RequestFactory().get('/visitas/dashboard/')
+        request.session = {'user_profile': {
+            'role_id': 1, 'role': 'ADMIN', 'cidade': '', 'municipio': '',
+            'comum': '', 'nome': 'Administrador', 'email': 'admin@example.com',
+        }}
+        html = render_to_string('pages/visitas-dashboard.html', {
+            'dashboard_access_level': 'global',
+            'dashboard_comum_padrao': '',
+            'dashboard_municipio_padrao': '',
+            'dashboard_comuns': [],
+            'dashboard_municipios': [],
+        }, request=request)
+
+        self.assertIn("const saoPauloDayStart = date => `${date}T00:00:00-03:00`;", html)
+        self.assertIn("agendaParams.set('end_date', saoPauloNextDayStart(dataAte));", html)
+        self.assertNotIn("`${dataAte}T23:59:59`", html)
+
     def test_legacy_team_names_are_normalized(self):
         self.assertEqual(normalize_visit_team("Equipe 01"), "Equipe 1")
         self.assertEqual(normalize_visit_team("Equipe de Visitas 02"), "Equipe 2")
