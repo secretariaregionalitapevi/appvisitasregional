@@ -102,12 +102,44 @@
 
     /* Cancelada é diferente de não realizada: não houve tentativa de visita. */
     .fc-event.agenda-event-cancelled {
-        border: 1px solid #ef9a9a !important;
+        border: 1px solid #D00000 !important;
     }
 
     .fc-event.agenda-event-cancelled .fc-event-title,
     .fc-event.agenda-event-cancelled .fc-event-main {
         color: #8b1e1e !important;
+    }
+
+    .fc-event.agenda-event-not-realized {
+        border: 1px solid #C2185B !important;
+    }
+
+    .fc-event.agenda-event-not-realized .fc-event-title,
+    .fc-event.agenda-event-not-realized .fc-event-main {
+        color: #86153E !important;
+    }
+
+    /* Na lista o FullCalendar representa o evento por um ponto; use tons claros
+       para que os status não sejam confundidos com as cores das categorias. */
+    .fc-list-event.agenda-event-cancelled {
+        border-color: #f3bcbc !important;
+    }
+
+    .fc-list-event.agenda-event-cancelled .fc-list-event-dot {
+        width: 10px;
+        height: 10px;
+        box-sizing: border-box;
+        border: 2px solid #D00000 !important;
+        border-radius: 50%;
+        background: #ffffff;
+    }
+
+    .fc-list-event.agenda-event-not-realized {
+        border-color: #f2bfd1 !important;
+    }
+
+    .fc-list-event.agenda-event-not-realized .fc-list-event-dot {
+        border-color: #C2185B !important;
     }
 
     .modal-header-calendar {
@@ -141,9 +173,9 @@
     /* Cores das Categorias */
     .color-gvi { background-color: #348fe2; }
     .color-gvm { background-color: #00acac; }
-    .color-gve { background-color: #f59c1a; }
-    .color-rf { background-color: #727cb6; }
-    .color-re { background-color: #ff5b57; }
+    .color-gve { background-color: #EE5622; }
+    .color-rf { background-color: #5D2A42; }
+    .color-re { background-color: #B80C09; }
 
     .team-box {
         padding: 10px;
@@ -215,9 +247,9 @@
         const categoryColors = {
             'GVI': '#348fe2',
             'GVM': '#00acac',
-            'GVE': '#f59c1a',
-            'RF': '#727cb6',
-            'RE': '#ff5b57'
+            'GVE': '#EE5622',
+            'RF': '#5D2A42',
+            'RE': '#B80C09'
         };
 
         const municipalityFilter = $('#agenda-municipio-filter');
@@ -492,7 +524,8 @@
                     return res.json();
                 }).then(data => {
                     const events = data.map(item => {
-                        const baseColor = categoryColors[item.categoria] || '#1e4b7a';
+                        const category = String(item.categoria || '').trim().toUpperCase();
+                        const baseColor = categoryColors[category === 'GVMU' ? 'GVE' : category] || '#1e4b7a';
                         const spTime = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
                         let displayTitle = `${spTime} ${item.titulo}`;
                         
@@ -506,10 +539,12 @@
                             title: displayTitle,
                             start: item.data_inicio,
                             end: item.data_fim,
-                            classNames: item.status === 'Cancelada' ? ['agenda-event-cancelled'] : [],
-                            backgroundColor: item.status === 'Cancelada' ? '#fde8e8' : (item.status === 'Não realizada' ? '#fd7e14' : baseColor),
-                            borderColor: item.status === 'Cancelada' ? '#ff5b57' : (item.status === 'Não realizada' ? '#fd7e14' : (item.status === 'Realizada' ? '#28a745' : baseColor)),
-                            textColor: item.status === 'Cancelada' ? '#8b1e1e' : '#ffffff',
+                            classNames: item.status === 'Cancelada'
+                                ? ['agenda-event-cancelled']
+                                : (item.status === 'Não realizada' ? ['agenda-event-not-realized'] : []),
+                            backgroundColor: item.status === 'Cancelada' ? '#FDE8E8' : (item.status === 'Não realizada' ? '#FCE7EF' : baseColor),
+                            borderColor: item.status === 'Cancelada' ? '#D00000' : (item.status === 'Não realizada' ? '#C2185B' : baseColor),
+                            textColor: item.status === 'Cancelada' ? '#8B1E1E' : (item.status === 'Não realizada' ? '#86153E' : '#ffffff'),
                             extendedProps: { ...item }
                         };
                     });
@@ -886,8 +921,8 @@
             <button type="button" class="team-box bg-team-2" data-team="Equipe 2" aria-pressed="false">EQUIPE 02</button>
             <button type="button" class="team-box bg-team-3" data-team="Equipe 3" aria-pressed="false">EQUIPE 03</button>
             <button type="button" class="team-box bg-team-4" data-team="Equipe 4" aria-pressed="false">EQUIPE 04</button>
-            <button type="button" class="team-box" style="background-color: #727cb6;" data-team="Grupo RF" aria-pressed="false">GRUPO RF</button>
-            <button type="button" class="team-box" style="background-color: #ff5b57;" data-team="Grupo RE" aria-pressed="false">GRUPO RE</button>
+            <button type="button" class="team-box" style="background-color: #5D2A42;" data-team="Grupo RF" aria-pressed="false">GRUPO RF</button>
+            <button type="button" class="team-box" style="background-color: #B80C09;" data-team="Grupo RE" aria-pressed="false">GRUPO RE</button>
         </div>
     </div>
     <div class="col-lg-9 col-xl-10">

@@ -39,7 +39,7 @@
     .filter-period .form-control { min-width: 135px; }
     .period-field{display:flex;flex:1;min-width:0}.period-field .form-control{width:100%}.period-mobile-label{display:none}
     .dashboard-common-filter .select2-container{width:100%!important}.dashboard-common-filter .select2-selection--single{height:34px!important;border-color:#d5dbe0!important}.dashboard-common-filter .select2-selection__rendered{line-height:32px!important;padding-left:12px!important}.dashboard-common-filter .select2-selection__arrow{height:32px!important}.dashboard-common-filter .select2-results__options{max-height:280px!important}
-    .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#f59c1a}.category-rf{background:#727cb6}.category-re{background:#ff5b57}.category-other{background:#6c757d}
+    .category-badge{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:5px 9px;border-radius:14px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.category-gvi{background:#348fe2}.category-gvm{background:#00acac}.category-gve{background:#EE5622}.category-rf{background:#5D2A42}.category-re{background:#B80C09}.category-other{background:#6c757d}
     .visit-when{display:flex;flex-direction:column;gap:4px;min-width:128px}.visit-date{color:#2d353c;font-weight:700;line-height:1.15;white-space:nowrap}.visit-time-line,.visit-duration-line{display:flex;align-items:center;gap:6px;color:#6c757d;font-size:11px;line-height:1;white-space:nowrap}.visit-time-line .fa{color:#348fe2}.visit-duration-line{color:#495057;font-weight:600}.visit-duration-line .fa{color:#727cb6}.visit-note-empty{color:#adb5bd;font-size:12px;font-style:italic}
     .context-switch{display:inline-flex;padding:4px;background:#eef1f5;border-radius:9px;gap:3px}.context-switch .btn{border:0;border-radius:7px!important;color:#66707a;font-weight:600;padding:7px 13px;box-shadow:none}.context-switch .btn.active{background:#fff;color:#348fe2;box-shadow:0 2px 7px rgba(45,53,60,.12)}.context-description{color:#7c858d;font-size:12px}.ops-card{border:1px solid #e8ebef!important;border-radius:8px;box-shadow:0 3px 12px rgba(45,53,60,.05)}.ops-card .ops-icon{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:#eef5fc;color:#348fe2}.ops-value{font-size:20px;font-weight:700;color:#2d353c;line-height:1}.ops-label{font-size:10px;font-weight:700;color:#8a929a;text-transform:uppercase;letter-spacing:.04em}
     .ops-value.duration-alert{color:#ff5b57!important}
@@ -396,7 +396,7 @@
         trendChart = new ApexCharts(document.querySelector("#chart-evolution"), {
             series: [...categorySeries, { name: 'Total', type: 'line', data: totals }],
             chart: { type: chartType, height: 320, stacked: true, stackOnlyBar: true, toolbar: { show: true, tools: { download: true, selection: false, zoom: false, zoomin: false, zoomout: false, pan: false, reset: false } } },
-            colors: ['#348fe2', '#00acac', '#f5b041', '#727cb6', '#ff5b57', '#2d353c'],
+            colors: ['#348fe2', '#00acac', '#EE5622', '#5D2A42', '#B80C09', '#2d353c'],
             stroke: { curve: 'smooth', width: [0, 0, 0, 0, 0, 3] },
             markers: { size: [0, 0, 0, 0, 0, 4] },
             plotOptions: { bar: { columnWidth: '58%', borderRadius: 3 } },
@@ -417,7 +417,7 @@
             series: [totals.gvi, totals.gvm, totals.gve, totals.rf, totals.re],
             chart: { type: 'donut', height: 300 },
             labels: ['Irmandade (GVI)', 'Mocidade (GVM)', 'Músicos (GVE)', 'Família (RF)', 'Evangelização (RE)'],
-            colors: ['#348fe2', '#00acac', '#f5b041', '#2d353c', '#ff5b57'],
+            colors: ['#348fe2', '#00acac', '#EE5622', '#5D2A42', '#B80C09'],
             legend: { position: 'bottom' },
             plotOptions: { pie: { donut: { size: '68%', labels: { show: true, name: { show: true }, value: { show: true, formatter: value => formatNum(value) }, total: { show: true, label: 'Total', formatter: () => formatNum(totals.visitas) } } } } },
             dataLabels: { enabled: true, formatter: value => `${Math.round(value)}%` },

@@ -601,6 +601,25 @@ class MapScopeFilterTests(TestCase):
         self.assertNotContains(response, 'id="agenda-municipio-filter"')
         self.assertNotContains(response, 'id="agenda-comum-filter"')
 
+    @patch("ColorAdminApp.views.visible_commons", return_value=[commons[0]])
+    def test_calendar_event_colors_preserve_category_and_distinguish_statuses(self, _commons):
+        response = visitasAgenda(self.map_request(4))
+
+        self.assertContains(response, "category === 'GVMU' ? 'GVE' : category")
+        self.assertContains(response, "'GVI': '#348fe2'")
+        self.assertContains(response, "'GVE': '#EE5622'")
+        self.assertContains(response, "'RF': '#5D2A42'")
+        self.assertContains(response, "'RE': '#B80C09'")
+        self.assertContains(response, "item.status === 'Cancelada' ? '#FDE8E8'")
+        self.assertContains(response, "item.status === 'Não realizada' ? '#FCE7EF' : baseColor")
+        self.assertContains(response, "['agenda-event-not-realized']")
+        self.assertContains(response, ".fc-list-event.agenda-event-cancelled .fc-list-event-dot")
+        self.assertContains(response, ".fc-list-event.agenda-event-not-realized .fc-list-event-dot")
+        self.assertContains(response, "border: 2px solid #D00000 !important")
+        self.assertContains(response, "border-color: #C2185B !important")
+        self.assertNotContains(response, "item.status === 'Realizada' ? '#28a745'")
+        self.assertNotContains(response, "item.status === 'Não realizada' ? '#fd7e14'")
+
 
 class VisitTeamsTests(TestCase):
     def test_dashboard_date_filters_use_sao_paulo_exclusive_boundaries(self):
