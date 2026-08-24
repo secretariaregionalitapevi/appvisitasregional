@@ -11,7 +11,6 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
 import os
-import ast
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -26,13 +25,28 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or 'unsafe-development-key-change-me'
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in {'1', 'true', 'yes'}
+IS_PRODUCTION = (
+    os.getenv('VERCEL_ENV', '').lower() == 'production'
+    or os.getenv('DJANGO_ENV', '').lower() == 'production'
+)
 
-ALLOWED_HOSTS = ['*']
+# Never let a production deployment silently use a public, predictable key.
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError('DJANGO_SECRET_KEY must be configured in production.')
+    SECRET_KEY = 'unsafe-development-key-change-me'
+
+ALLOWED_HOSTS = [
+    host.strip() for host in os.getenv(
+        'DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver,appvisitasregional.vercel.app'
+    ).split(',') if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()
+]
 
 
 # Application definition
@@ -144,10 +158,20 @@ STORAGES = {
     },
 }
 
-# Session settings - Use cookies for Vercel (Stateless/Read-only FS)
-SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
+# Encrypted, authenticated cookies preserve Vercel's stateless deployment model
+# without exposing profile data in readable signed-cookie payloads.
+SESSION_ENGINE = 'ColorAdmin.session_backend'
 SESSION_COOKIE_HTTPONLY = True
 SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_SECURE = IS_PRODUCTION
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = IS_PRODUCTION
+SECURE_SSL_REDIRECT = IS_PRODUCTION
+SECURE_HSTS_SECONDS = 31536000 if IS_PRODUCTION else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = IS_PRODUCTION
+SECURE_HSTS_PRELOAD = IS_PRODUCTION
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -157,41 +181,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Supabase Configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
-legacy_values = {}
-
-# Compatibilidade local: instalações anteriores guardavam as credenciais no
-# settings-VANESSA.py (arquivo ignorado pelo Git). Use-o apenas quando as
-# variáveis locais/da hospedagem estiverem vazias.
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    legacy_settings_paths = [
-        BASE_DIR.parent / 'DASHBOARD_REGIT' / 'ColorAdmin' / 'settings.py',
-        BASE_DIR / 'ColorAdmin' / 'settings-VANESSA.py',
-    ]
-    for legacy_settings_path in legacy_settings_paths:
-        if not legacy_settings_path.exists():
-            continue
-        legacy_tree = ast.parse(legacy_settings_path.read_text(encoding='utf-8-sig'))
-        for node in legacy_tree.body:
-            if (
-                isinstance(node, ast.Assign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id in {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_MAPS_API_KEY'}
-                and isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)
-            ):
-                legacy_values.setdefault(node.targets[0].id, node.value.value)
-        SUPABASE_URL = SUPABASE_URL or legacy_values.get('SUPABASE_URL', '')
-        SUPABASE_SERVICE_ROLE_KEY = (
-            SUPABASE_SERVICE_ROLE_KEY
-            or legacy_values.get('SUPABASE_SERVICE_ROLE_KEY', '')
-        )
+SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY', '')
 SUPABASE_TABLE_VISITAS = 'visitas_lancamentos'
 SUPABASE_TABLE_VISITAS_IRMANDADE = 'visitas_irmandade'
 SUPABASE_TABLE_VISITAS_AGENDA = 'visitas_agenda'
 SUPABASE_TABLE_VISITAS_EQUIPES = 'visitas_equipes'
 
 # External API Keys
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY') or legacy_values.get('GOOGLE_MAPS_API_KEY', '')
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 
 WHITENOISE_MANIFEST_STRICT = False

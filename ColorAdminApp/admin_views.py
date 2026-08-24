@@ -1,4 +1,5 @@
 import json
+import logging
 from functools import wraps
 
 import requests
@@ -8,7 +9,10 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
 from .access_control import common_catalog
+from .module_access import VALID_MODULES, invalidate_module_access
 from .views import log_audit
+
+logger = logging.getLogger(__name__)
 
 
 ROLE_NAMES = {1: "Master", 2: "Admin", 3: "Coordenador", 4: "Instrutor"}
@@ -73,9 +77,14 @@ def administration_data(request):
         logs = _get_table("audit_logs", {"select": "*", "order": "created_at.desc", "limit": "500"})
         sessions = _get_table("audit_access_sessions", {"select": "*", "order": "started_at.desc", "limit": "500"})
         levels = _get_table("access_levels", {"select": "*", "order": "level_order.asc"})
-        return JsonResponse({"profiles": profiles, "logs": logs, "sessions": sessions, "access_levels": levels})
+        try:
+            module_access = _get_table("user_module_access", {"select": "user_id,module,active,granted_by,granted_at,revoked_at"})
+        except requests.RequestException:
+            module_access = []
+        return JsonResponse({"profiles": profiles, "logs": logs, "sessions": sessions, "access_levels": levels, "module_access": module_access})
     except requests.RequestException as exc:
-        return JsonResponse({"error": "Falha ao consultar os dados administrativos.", "details": str(exc)}, status=502)
+        logger.exception("Falha ao consultar dados administrativos: %s", exc)
+        return JsonResponse({"error": "Falha ao consultar os dados administrativos."}, status=502)
 
 
 @global_only
@@ -99,35 +108,30 @@ def administration_user(request, user_id):
                 json={"status": "rejected"}, timeout=15,
             )
             if revoke_response.status_code not in {200, 204}:
-                return JsonResponse({
-                    "error": "Não foi possível revogar o acesso antes da exclusão.",
-                    "details": revoke_response.text,
-                }, status=502)
+                logger.error("Profile revoke failed with HTTP %s", revoke_response.status_code)
+                return JsonResponse({"error": "Não foi possível revogar o acesso antes da exclusão."}, status=502)
             auth_response = requests.delete(
                 f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
                 headers=_headers(), timeout=15,
             )
             if auth_response.status_code not in {200, 204}:
-                return JsonResponse({
-                    "error": "Não foi possível excluir a conta de autenticação.",
-                    "details": auth_response.text,
-                }, status=502)
+                logger.error("Auth user deletion failed with HTTP %s", auth_response.status_code)
+                return JsonResponse({"error": "Não foi possível excluir a conta de autenticação."}, status=502)
             # Mantém compatibilidade com bancos onde o perfil não usa CASCADE.
             profile_response = requests.delete(
                 f"{settings.SUPABASE_URL}/rest/v1/profiles",
                 headers=_headers(), params={"user_id": f"eq.{user_id}"}, timeout=15,
             )
             if profile_response.status_code not in {200, 204}:
-                return JsonResponse({
-                    "error": "A conta foi removida, mas o perfil residual não pôde ser apagado.",
-                    "details": profile_response.text,
-                }, status=502)
+                logger.error("Residual profile deletion failed with HTTP %s", profile_response.status_code)
+                return JsonResponse({"error": "A conta foi removida, mas o perfil residual não pôde ser apagado."}, status=502)
             log_audit(request, "DELETE_USER", "ADMIN", {
                 "target_user_id": str(user_id), "deleted_profile": before[0],
             })
             return JsonResponse({"status": "deleted", "message": "Usuário excluído com sucesso."})
         except requests.RequestException as exc:
-            return JsonResponse({"error": "Falha ao excluir o usuário.", "details": str(exc)}, status=502)
+            logger.exception("Falha ao excluir usuário %s: %s", user_id, exc)
+            return JsonResponse({"error": "Falha ao excluir o usuário."}, status=502)
 
     try:
         body = json.loads(request.body or "{}")
@@ -144,7 +148,8 @@ def administration_user(request, user_id):
         if changes["role_id"] not in ROLE_NAMES:
             return JsonResponse({"error": "Nível de acesso fora do padrão deste projeto."}, status=400)
         changes["role"] = ROLE_NAMES[changes["role_id"]]
-        changes["sector"] = "Global" if changes["role_id"] == 1 else "Visitas"
+        if changes["role_id"] == 1:
+            changes["sector"] = "Global"
     if "status" in changes and changes["status"] not in {"pending", "approved", "rejected"}:
         return JsonResponse({"error": "Status inválido."}, status=400)
     try:
@@ -176,4 +181,5 @@ def administration_user(request, user_id):
         })
         return JsonResponse(updated)
     except requests.RequestException as exc:
-        return JsonResponse({"error": "Falha ao atualizar o usuário.", "details": str(exc)}, status=502)
+        logger.exception("Falha ao atualizar usuário %s: %s", user_id, exc)
+        return JsonResponse({"error": "Falha ao atualizar o usuário."}, status=502)

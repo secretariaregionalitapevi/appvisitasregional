@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  let data = { profiles: [], logs: [], sessions: [], access_levels: [] };
+  let data = { profiles: [], logs: [], sessions: [], access_levels: [], module_access: [] };
   const esc = value => $('<div>').text(String(value == null ? '' : value)).html();
   const fmt = value => Number(value || 0).toLocaleString('pt-BR');
   const norm = value => String(value || '').trim().toLocaleLowerCase('pt-BR');
@@ -57,13 +57,14 @@
 
   function openUser(id, approve) {
     const profile=data.profiles.find(item=>item.user_id===id); if(!profile) return;
-    $('#edit-user-id').val(id); $('#edit-name').val(profile.full_name||''); $('#edit-role').val(String(profile.role_id||4)); $('#edit-status').val(approve?'approved':profile.status||'pending'); $('#edit-comum').val(profile.comum||''); $('#edit-municipio').val(profile.municipio||profile.cidade||''); $('#edit-cargo').val(profile.cargo||''); $('#edit-origin').text(origin(profile)); bootstrap.Modal.getOrCreateInstance(document.querySelector('#user-modal')).show();
+    const sector=profile.sector||profile.setor||'Visitas', primary=norm(sector).includes('musical')?'musicalizacao':norm(sector)==='global'?'global':'visitas', grants=new Set((data.module_access||[]).filter(row=>row.user_id===id&&row.active).map(row=>row.module)); if(primary!=='global')grants.add(primary); else ['visitas','musicalizacao'].forEach(item=>grants.add(item));
+    $('#edit-user-id').val(id); $('#edit-name').val(profile.full_name||''); $('#edit-role').val(String(profile.role_id||4)); $('#edit-status').val(approve?'approved':profile.status||'pending'); $('#edit-sector').val(sector); $('#edit-comum').val(profile.comum||''); $('#edit-municipio').val(profile.municipio||profile.cidade||''); $('#edit-cargo').val(profile.cargo||''); $('.module-check').each(function(){this.checked=grants.has(this.value)}); $('#edit-origin').text(origin(profile)); bootstrap.Modal.getOrCreateInstance(document.querySelector('#user-modal')).show();
   }
 
   async function saveUser() {
-    const id=$('#edit-user-id').val(), body={full_name:$('#edit-name').val().trim(),role_id:Number($('#edit-role').val()),status:$('#edit-status').val(),comum:$('#edit-comum').val().trim(),municipio:$('#edit-municipio').val().trim(),cidade:$('#edit-municipio').val().trim(),cargo:$('#edit-cargo').val().trim()};
+    const id=$('#edit-user-id').val(), body={full_name:$('#edit-name').val().trim(),role_id:Number($('#edit-role').val()),status:$('#edit-status').val(),sector:$('#edit-sector').val(),comum:$('#edit-comum').val().trim(),municipio:$('#edit-municipio').val().trim(),cidade:$('#edit-municipio').val().trim(),cargo:$('#edit-cargo').val().trim()}, modules=$('.module-check:checked').map((_,item)=>item.value).get();
     $('#save-user').prop('disabled',true);
-    try { const response=await fetch(`/administracao/api/usuarios/${id}/`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)}); const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Falha ao salvar'); bootstrap.Modal.getInstance(document.querySelector('#user-modal')).hide(); alertMessage('Autorização atualizada com sucesso.','success'); await load(); }
+    try { const response=await fetch(`/administracao/api/usuarios/${id}/`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)}); const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Falha ao salvar'); const moduleResponse=await fetch(`/administracao/api/usuarios/${id}/modulos/`,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({modules})}); const modulePayload=await moduleResponse.json(); if(!moduleResponse.ok)throw new Error(modulePayload.error||'Falha ao salvar as pastas autorizadas'); bootstrap.Modal.getInstance(document.querySelector('#user-modal')).hide(); alertMessage('Autorização atualizada com sucesso.','success'); await load(); }
     catch(error){alertMessage(error.message)} finally{$('#save-user').prop('disabled',false)}
   }
 

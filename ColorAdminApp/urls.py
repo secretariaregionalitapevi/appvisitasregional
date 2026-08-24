@@ -2,6 +2,8 @@ from django.urls import path
 
 from . import views
 from . import admin_views
+from . import admin_module_views
+from . import musicalizacao
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
@@ -14,6 +16,7 @@ urlpatterns = [
     path('administracao/', admin_views.administration, name='administration'),
     path('administracao/api/dados/', admin_views.administration_data, name='administrationData'),
     path('administracao/api/usuarios/<uuid:user_id>/', admin_views.administration_user, name='administrationUser'),
+    path('administracao/api/usuarios/<uuid:user_id>/modulos/', admin_module_views.administration_user_modules, name='administrationUserModules'),
     path('visitas/dashboard/', views.visitasDashboard, name='visitasDashboard'),
     path('visitas/api/dashboard/', views.apiVisitas, name='apiVisitas'),
     path('visitas/analytics/', views.visitasAnalytics, name='visitasAnalytics'),
@@ -32,7 +35,13 @@ urlpatterns = [
     path('visitas/api/comuns/', views.apiVisitasComuns, name='apiVisitasComuns'),
     path('visitas/api/agenda/', views.apiVisitasAgenda, name='apiVisitasAgenda'),
     path('visitas/api/upload/', views.apiStorageUpload, name='apiStorageUpload'),
+    path('visitas/api/foto/<str:file_name>/', views.apiStoragePhoto, name='apiStoragePhoto'),
     path('visitas/api/geocode/', views.apiGeocode, name='apiGeocode'),
+    path('musicalizacao/', musicalizacao.page, name='musicalizacaoDashboard'),
+    path('musicalizacao/api/resumo/', musicalizacao.api_summary, name='musicalizacaoSummary'),
+    path('musicalizacao/api/<str:resource>/', musicalizacao.api_resource, name='musicalizacaoResource'),
+    path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
+    path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
     path('ai/chat/', views.aiChat, name='aiChat'),
     path('ai/image-generator/', views.aiImageGenerator, name='aiImageGenerator'),
     path('email/inbox/', views.emailInbox, name='emailInbox'),
@@ -91,7 +100,6 @@ urlpatterns = [
     path('chart/apex/', views.chartApex, name='chartApex'),
     path('landing/', views.landing, name='landing'),
     path('calendar/', views.calendar, name='calendar'),
-    path('api/calendar/events/', views.api_calendar_events, name='api_calendar_events'),
     path('map/vector/', views.mapVector, name='mapVector'),
     path('map/google/', views.mapGoogle, name='mapGoogle'),
     path('gallery/v1', views.galleryV1, name='galleryV1'),

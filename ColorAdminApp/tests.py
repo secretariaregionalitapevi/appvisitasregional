@@ -3,12 +3,14 @@ from unittest.mock import Mock, patch
 
 from django.http import HttpResponse
 from django.template.loader import render_to_string
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import Resolver404, resolve
 
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiStorageUpload, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -16,6 +18,39 @@ CATALOG = [
     {"comum": "BR-02 - JARDIM JANDIRA", "cidade": "JANDIRA"},
     {"comum": "BR-03 - ALTO ITAPEVI", "cidade": "ITAPEVI"},
 ]
+
+
+class SecurityHardeningTests(TestCase):
+    def test_legacy_unscoped_calendar_api_is_not_routable(self):
+        with self.assertRaises(Resolver404):
+            resolve('/api/calendar/events/')
+
+    def test_encrypted_session_cookie_does_not_expose_profile(self):
+        from ColorAdmin.session_backend import SessionStore
+        store = SessionStore()
+        store['user_profile'] = {'email': 'sensitive@example.com', 'role_id': 1}
+        encoded = store.encode(dict(store))
+
+        self.assertNotIn('sensitive@example.com', encoded)
+        self.assertEqual(store.decode(encoded)['user_profile']['role_id'], 1)
+
+    def test_upload_rejects_fake_image_before_network_access(self):
+        fake = SimpleUploadedFile('photo.jpg', b'<script>alert(1)</script>', content_type='image/jpeg')
+        request = RequestFactory().post('/visitas/api/upload/', {'file': fake})
+
+        response = apiStorageUpload(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('conteúdo', json.loads(response.content)['error'])
+
+    def test_upload_rejects_files_larger_than_five_megabytes(self):
+        oversized = SimpleUploadedFile('photo.png', b'\x89PNG\r\n\x1a\n' + b'x' * (5 * 1024 * 1024), content_type='image/png')
+        request = RequestFactory().post('/visitas/api/upload/', {'file': oversized})
+
+        response = apiStorageUpload(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('5 MB', json.loads(response.content)['error'])
 
 
 class ActualVisitTimeTests(TestCase):
@@ -275,7 +310,7 @@ class RevokedSessionTests(TestCase):
         get.return_value = Mock(status_code=200)
         get.return_value.json.return_value = []
         request = RequestFactory().get("/visitas/dashboard/")
-        request.session = self.Session(supabase_token="token", user_id="deleted-user")
+        request.session = self.Session(authenticated=True, user_id="deleted-user")
         response = SupabaseAuthMiddleware(lambda _request: HttpResponse("protected"))(request)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "/user/login-v1?reason=account_removed")
@@ -286,7 +321,7 @@ class RevokedSessionTests(TestCase):
         get.return_value = Mock(status_code=200)
         get.return_value.json.return_value = []
         request = RequestFactory().get("/visitas/api/irmandade/")
-        request.session = self.Session(supabase_token="token", user_id="deleted-user")
+        request.session = self.Session(authenticated=True, user_id="deleted-user")
         response = SupabaseAuthMiddleware(lambda _request: HttpResponse("protected"))(request)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(json.loads(response.content)["code"], "account_removed")
@@ -400,6 +435,7 @@ class GlobalAdministrationTests(TestCase):
         self.assertIn("própria conta", json.loads(response.content)["error"])
 
 
+@override_settings(SUPABASE_URL="https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY="test-service-key")
 class LocalRegistrationFlowTests(TestCase):
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.common_catalog", return_value=CATALOG)
@@ -639,6 +675,7 @@ class VisitTeamsTests(TestCase):
         self.assertIn("const saoPauloDayStart = date => `${date}T00:00:00-03:00`;", html)
         self.assertIn("agendaParams.set('end_date', saoPauloNextDayStart(dataAte));", html)
         self.assertNotIn("`${dataAte}T23:59:59`", html)
+        self.assertIn("rawText.match(/^grupo\\s+(rf|re|[a-z])$/i)", html)
 
     def test_legacy_team_names_are_normalized(self):
         self.assertEqual(normalize_visit_team("Equipe 01"), "Equipe 1")

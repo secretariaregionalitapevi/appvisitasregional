@@ -64,12 +64,14 @@
     <div class="col-md-6"><label class="form-label">Nome</label><input class="form-control" id="edit-name"></div>
     <div class="col-md-3"><label class="form-label">Nível de acesso</label><select class="form-select" id="edit-role"><option value="4">Local</option><option value="3">Municipal</option><option value="2">Regional</option><option value="1">Global</option></select></div>
     <div class="col-md-3"><label class="form-label">Status</label><select class="form-select" id="edit-status"><option value="pending">Pendente</option><option value="approved">Aprovado</option><option value="rejected">Rejeitado</option></select></div>
-    <div class="col-md-6"><label class="form-label">Comum congregação</label><input class="form-control" id="edit-comum"></div>
+    <div class="col-md-3"><label class="form-label">Pasta principal</label><select class="form-select" id="edit-sector"><option value="Visitas">Visitas</option><option value="Musicalização">Musicalização</option><option value="Global">Global</option></select></div>
+    <div class="col-md-3"><label class="form-label">Comum congregação</label><input class="form-control" id="edit-comum"></div>
     <div class="col-md-3"><label class="form-label">Município</label><input class="form-control" id="edit-municipio"></div>
     <div class="col-md-3"><label class="form-label">Cargo/Função</label><input class="form-control" id="edit-cargo"></div>
+    <div class="col-12"><label class="form-label fw-bold">Pastas autorizadas</label><div class="d-flex gap-4 p-3 border rounded bg-light"><div class="form-check"><input class="form-check-input module-check" type="checkbox" value="visitas" id="module-visitas"><label class="form-check-label" for="module-visitas">Visitas</label></div><div class="form-check"><input class="form-check-input module-check" type="checkbox" value="musicalizacao" id="module-musicalizacao"><label class="form-check-label" for="module-musicalizacao">Musicalização</label></div></div><div class="form-text">O setor define a pasta principal. Qualquer segunda pasta exige autorização explícita de um usuário global.</div></div>
     <div class="col-12"><div class="alert alert-info mb-0"><strong>Origem:</strong> <span id="edit-origin"></span></div></div>
   </div>
 </div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/administracao.js' %}?v=20260806-3"></script>{% endblock %}
+{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/administracao.js' %}?v=20260824-1"></script>{% endblock %}

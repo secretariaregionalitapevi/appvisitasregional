@@ -5,11 +5,56 @@ from django.views import generic
 from django.http import HttpResponse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+import hashlib
 import json
+import logging
 import re
 import unicodedata
 from urllib.parse import urlencode
 from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_IMAGE_TYPES = {
+    '.jpg': ('image/jpeg', (b'\xff\xd8\xff',)),
+    '.jpeg': ('image/jpeg', (b'\xff\xd8\xff',)),
+    '.png': ('image/png', (b'\x89PNG\r\n\x1a\n',)),
+    '.webp': ('image/webp', (b'RIFF',)),
+}
+
+
+def _login_rate_key(request, email):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    remote_ip = forwarded.split(',')[0].strip() if forwarded else request.META.get('REMOTE_ADDR', '')
+    identity = f'{remote_ip}:{str(email or "").strip().casefold()}'
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _production_login_rate_allowed(rate_hash):
+    response = requests.post(
+        f"{settings.SUPABASE_URL}/rest/v1/rpc/check_login_rate_limit",
+        headers={
+            'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': f'Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}',
+            'Content-Type': 'application/json',
+        }, json={'p_key': rate_hash}, timeout=5,
+    )
+    response.raise_for_status()
+    return response.json() is True
+
+
+def _reset_production_login_rate(rate_hash):
+    try:
+        requests.post(
+            f"{settings.SUPABASE_URL}/rest/v1/rpc/reset_login_rate_limit",
+            headers={
+                'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': f'Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}',
+                'Content-Type': 'application/json',
+            }, json={'p_key': rate_hash}, timeout=5,
+        ).raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("Could not reset login rate limit: %s", type(exc).__name__)
 
 
 def normalize_visit_team(value):
@@ -233,7 +278,7 @@ def log_audit(request, action, module='GLOBAL', details=None):
     try:
         requests.post(url, headers=headers, json=payload, timeout=5)
     except Exception as e:
-        print(f"Failed to log audit: {e}")
+        logger.warning("Failed to write audit log: %s", type(e).__name__)
 
 
 def update_profile_activity(profile, event):
@@ -263,7 +308,7 @@ def update_profile_activity(profile, event):
         if response.ok and response.json():
             return response.json()[0]
     except Exception as exc:
-        print(f"Failed to update profile activity: {exc}")
+        logger.warning("Failed to update profile activity: %s", type(exc).__name__)
     return {**(profile or {}), **updated}
 
 
@@ -292,7 +337,7 @@ def start_access_session(request, profile):
         if response.ok and response.json():
             request.session["audit_access_session_id"] = response.json()[0].get("id")
     except Exception as exc:
-        print(f"Failed to start audit access session: {exc}")
+        logger.warning("Failed to start access audit session: %s", type(exc).__name__)
 
 
 def close_access_session(request, reason="user_logout"):
@@ -311,7 +356,7 @@ def close_access_session(request, reason="user_logout"):
             json={"status": "logged_out", "ended_at": now, "last_activity_at": now, "logout_reason": reason}, timeout=10,
         )
     except Exception as exc:
-        print(f"Failed to close audit access session: {exc}")
+        logger.warning("Failed to close access audit session: %s", type(exc).__name__)
 
 @csrf_exempt
 def apiAuth(request):
@@ -322,17 +367,38 @@ def apiAuth(request):
         data = json.loads(request.body) if request.body else {}
         
         if action == 'login':
-            if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+            from django.core.cache import cache
+            if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
                 return JsonResponse({
                     "error": "Serviço de autenticação não configurado. Contate o administrador."
                 }, status=503)
+            rate_hash = _login_rate_key(request, data.get("email"))
+            rate_key = f'login-attempts:{rate_hash}'
+            attempts = int(cache.get(rate_key, 0) or 0)
+            try:
+                rate_allowed = (
+                    _production_login_rate_allowed(rate_hash)
+                    if settings.IS_PRODUCTION else attempts < 5
+                )
+            except requests.RequestException as exc:
+                logger.exception("Supabase login rate-limit check failed: %s", type(exc).__name__)
+                return JsonResponse({
+                    "error": "A proteção de acesso está temporariamente indisponível. Tente novamente."
+                }, status=503)
+            if not rate_allowed:
+                return JsonResponse({
+                    "error": "Muitas tentativas de acesso. Aguarde 15 minutos e tente novamente."
+                }, status=429)
             try:
                 url = f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password"
-                headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
+                headers = {"apikey": settings.SUPABASE_ANON_KEY, "Content-Type": "application/json"}
                 payload = {"email": data.get('email'), "password": data.get('password')}
                 
                 response = requests.post(url, headers=headers, json=payload, timeout=10)
                 if response.status_code == 200:
+                    cache.delete(rate_key)
+                    if settings.IS_PRODUCTION:
+                        _reset_production_login_rate(rate_hash)
                     res_data = response.json()
                     token = res_data.get('access_token')
                     user_data = res_data.get('user', {})
@@ -401,7 +467,7 @@ def apiAuth(request):
                         return JsonResponse({"error": "Sua conta está aguardando aprovação."}, status=403)
                     
                     # Save to session
-                    request.session['supabase_token'] = token
+                    request.session['authenticated'] = True
                     request.session['user_id'] = user_id
                     profile = update_profile_activity(profile, 'login')
                     profile['email'] = data.get('email')
@@ -423,20 +489,23 @@ def apiAuth(request):
                 log_audit(request, 'LOGIN_FAILED', 'AUTH', {
                     "email": data.get('email'), "reason": err_msg
                 })
+                cache.set(rate_key, attempts + 1, timeout=15 * 60)
                 return JsonResponse({"error": err_msg}, status=response.status_code)
                 
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                logger.exception("Supabase authentication flow failed: %s", type(exc).__name__)
                 return JsonResponse({
                     "error": "Não foi possível conectar ao serviço de autenticação. Tente novamente."
                 }, status=502)
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.exception("Invalid Supabase login response: %s", type(exc).__name__)
                 return JsonResponse({
                     "error": "O serviço de autenticação retornou uma resposta inválida."
                 }, status=502)
 
         elif action == 'register':
             if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
-                print("Registration failed: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured")
+                logger.error("Registration service is not configured")
                 return JsonResponse({
                     "error": "Serviço de cadastro não configurado. Contate o administrador."
                 }, status=503)
@@ -473,7 +542,7 @@ def apiAuth(request):
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=15)
             except requests.RequestException as exc:
-                print(f"Registration Auth request failed: {type(exc).__name__}: {exc}")
+                logger.warning("Registration Auth request failed: %s", type(exc).__name__)
                 return JsonResponse({
                     "error": "Não foi possível conectar ao serviço de cadastro. Tente novamente."
                 }, status=502)
@@ -482,7 +551,7 @@ def apiAuth(request):
                 try:
                     res_data = response.json()
                 except ValueError as exc:
-                    print(f"Registration Auth returned invalid JSON: {exc}")
+                    logger.warning("Registration Auth returned invalid JSON: %s", type(exc).__name__)
                     return JsonResponse({
                         "error": "O serviço de cadastro retornou uma resposta inválida. Tente novamente."
                     }, status=502)
@@ -516,14 +585,11 @@ def apiAuth(request):
                         )
                     except requests.RequestException as exc:
                         profile_response = None
-                        print(f"Registration profile request failed for user {user_id}: {type(exc).__name__}: {exc}")
+                        logger.warning("Registration profile request failed for user %s: %s", user_id, type(exc).__name__)
 
                     if profile_response is None or not profile_response.ok:
                         if profile_response is not None:
-                            print(
-                                f"Registration profile save failed for user {user_id}: "
-                                f"HTTP {profile_response.status_code} - {profile_response.text[:1000]}"
-                            )
+                            logger.error("Registration profile save failed for user %s with HTTP %s", user_id, profile_response.status_code)
                         # Compensa a criação no Auth para não deixar uma conta
                         # sem perfil, que bloquearia uma nova tentativa com o e-mail.
                         rollback_succeeded = False
@@ -536,14 +602,11 @@ def apiAuth(request):
                                 }, timeout=10,
                             )
                             if not rollback_response.ok:
-                                print(
-                                    f"Registration rollback failed for user {user_id}: "
-                                    f"HTTP {rollback_response.status_code} - {rollback_response.text[:1000]}"
-                                )
+                                logger.error("Registration rollback failed for user %s with HTTP %s", user_id, rollback_response.status_code)
                             else:
                                 rollback_succeeded = True
                         except requests.RequestException as exc:
-                            print(f"Registration rollback request failed for user {user_id}: {type(exc).__name__}: {exc}")
+                            logger.warning("Registration rollback request failed for user %s: %s", user_id, type(exc).__name__)
                         if not rollback_succeeded:
                             return JsonResponse({
                                 "error": "O cadastro ficou incompleto e exige revisão do administrador. Não tente novamente com o mesmo e-mail."
@@ -573,7 +636,7 @@ def apiAuth(request):
                 )
             except (ValueError, AttributeError):
                 error_message = None
-            print(f"Registration Auth rejected request: HTTP {response.status_code} - {response.text[:1000]}")
+            logger.info("Registration Auth rejected request with HTTP %s", response.status_code)
             return JsonResponse({
                 "error": error_message or "O serviço de cadastro recusou a solicitação."
             }, status=response.status_code)
@@ -627,7 +690,8 @@ def apiVisitas(request):
         try:
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
-                return JsonResponse({"error": "Supabase Error", "status": response.status_code, "details": response.text}, status=response.status_code)
+                logger.error("Dashboard query failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível consultar o painel."}, status=502)
             rows = filter_rows(scope, response.json())
             # Monthly reports store musicians as `gvmu`; `gve` is the dashboard alias.
             for row in rows:
@@ -649,7 +713,8 @@ def apiVisitas(request):
                 rows = [row for row in rows if str(row.get('comum') or '').strip() == comum]
             return JsonResponse(rows, safe=False)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected dashboard API failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     elif request.method == 'POST':
         import json
@@ -680,9 +745,11 @@ def apiVisitas(request):
                 })
                 return JsonResponse(response.json(), safe=False)
             else:
-                return JsonResponse({"error": "Supabase Save Error", "status": response.status_code, "details": response.text}, status=response.status_code)
+                logger.error("Dashboard save failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível salvar o lançamento."}, status=502)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected member API failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
             
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -744,7 +811,8 @@ def apiVisitasIrmandade(request):
                     page_headers = {**headers, "Range": f"{start}-{start + page_size - 1}"}
                     response = requests.get(url, headers=page_headers, params=params, timeout=30)
                     if response.status_code not in {200, 206}:
-                        return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
+                        logger.error("Member query failed with HTTP %s", response.status_code)
+                        return JsonResponse({"error": "Não foi possível consultar o cadastro."}, status=502)
                     page = response.json()
                     rows.extend(page)
                     if len(page) < page_size:
@@ -754,11 +822,13 @@ def apiVisitasIrmandade(request):
 
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
-                return JsonResponse({"error": "Supabase Error", "details": response.text}, status=response.status_code)
+                logger.error("Member query failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível consultar o cadastro."}, status=502)
             rows = protect_restricted_notes(filter_rows(scope, response.json()))
             return JsonResponse(order_members(rows), safe=False)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected member list failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     elif request.method == 'POST':
         import json
@@ -804,7 +874,8 @@ def apiVisitasIrmandade(request):
                         timeout=30,
                     )
                     if lookup.status_code not in {200, 206}:
-                        return JsonResponse({"error": "Não foi possível comparar os cadastros existentes.", "details": lookup.text}, status=lookup.status_code)
+                        logger.error("Member comparison failed with HTTP %s", lookup.status_code)
+                        return JsonResponse({"error": "Não foi possível comparar os cadastros existentes."}, status=502)
                     existing_by_key.update({
                         (identity(row.get('comum')), identity(row.get('nome'))): row
                         for row in lookup.json()
@@ -830,7 +901,8 @@ def apiVisitasIrmandade(request):
                                 timeout=10,
                             )
                             if update_response.status_code not in {200, 201, 204}:
-                                return JsonResponse({"error": "Não foi possível atualizar as preferências existentes.", "details": update_response.text}, status=update_response.status_code)
+                                logger.error("Preference update failed with HTTP %s", update_response.status_code)
+                                return JsonResponse({"error": "Não foi possível atualizar as preferências existentes."}, status=502)
                             updated += 1
                             existing.update(enrichment)
                         else:
@@ -870,9 +942,11 @@ def apiVisitasIrmandade(request):
                     return JsonResponse({"created": len(records), "updated": updated, "skipped": skipped, "smart_import": True})
                 return JsonResponse(response.json(), safe=False)
             else:
-                return JsonResponse({"error": "Save Error", "details": response.text}, status=response.status_code)
+                logger.error("Member save failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível salvar o cadastro."}, status=502)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected member save failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     elif request.method == 'PATCH':
         import json
@@ -922,12 +996,12 @@ def apiVisitasIrmandade(request):
                 })
                 return JsonResponse(response.json() if response.text else {"status": "ok"}, safe=False)
             else:
-                print(f"ERRO SUPABASE: {response.status_code} - {response.text}")
-                return JsonResponse({"error": "Update Error", "details": response.text}, status=response.status_code)
+                logger.error("Member update failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível atualizar o cadastro."}, status=502)
         except Exception as e:
             import traceback
-            print(f"ERRO INTERNO: {str(e)}\n{traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected member update failure: %s", e)
+            return JsonResponse({"error": "Não foi possível atualizar o cadastro."}, status=500)
 
 
     elif request.method == 'DELETE':
@@ -948,9 +1022,11 @@ def apiVisitasIrmandade(request):
                 })
                 return JsonResponse({"status": "deleted"})
             else:
-                return JsonResponse({"error": "Delete Error", "details": response.text}, status=response.status_code)
+                logger.error("Member deletion failed with HTTP %s", response.status_code)
+                return JsonResponse({"error": "Não foi possível excluir o cadastro."}, status=502)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected member deletion failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -959,7 +1035,8 @@ def apiVisitasComuns(request):
         try:
             return JsonResponse(visible_commons(user_scope(request)), safe=False)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected common catalog failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 def visitasDashboard(request):
@@ -1131,7 +1208,8 @@ def apiVisitasRelatoriosEquipes(request):
         trends = sorted(trend_grouped.values(), key=lambda item: (item['tipo'], item['mes']))
         return JsonResponse({'rows': rows, 'local': [r for r in rows if r['tipo'] == 'LOCAL'], 'regional': [r for r in rows if r['tipo'] == 'REGIONAL'], 'trends': trends})
     except requests.RequestException as exc:
-        return JsonResponse({'error': 'Não foi possível gerar os relatórios.', 'details': str(exc)}, status=502)
+        logger.exception("Team report generation failed: %s", exc)
+        return JsonResponse({'error': 'Não foi possível gerar os relatórios.'}, status=502)
 
 
 def apiVisitasEquipes(request):
@@ -1174,7 +1252,6 @@ def apiVisitasEquipes(request):
                     return JsonResponse({
                         'error': 'A estrutura de equipes ainda não foi criada no banco.',
                         'migration': 'scripts/migrations/002_visitas_equipes_estruturadas.sql',
-                        'details': response.text,
                     }, status=503)
                 teams = filter_rows(scope, response.json())
                 municipio = (request.GET.get('municipio') or '').strip()
@@ -1388,7 +1465,8 @@ def apiVisitasEquipes(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Dados inválidos.'}, status=400)
     except requests.RequestException as exc:
-        return JsonResponse({'error': 'Falha ao acessar as equipes.', 'details': str(exc)}, status=502)
+        logger.exception("Team API failed: %s", exc)
+        return JsonResponse({'error': 'Falha ao acessar as equipes.'}, status=502)
 
 def visitasMapa(request):
     scope = user_scope(request)
@@ -1467,7 +1545,8 @@ def apiRoteiroBairros(request):
         )
         return JsonResponse({"bairros": bairros, "comum": comum, "cidade": comum_row.get("cidade") or ""})
     except Exception as exc:
-        return JsonResponse({"error": "Não foi possível mapear os bairros.", "details": str(exc)}, status=502)
+        logger.exception("Neighborhood mapping failed: %s", exc)
+        return JsonResponse({"error": "Não foi possível mapear os bairros."}, status=502)
 
 def visitasRoteiro(request):
     scope = user_scope(request)
@@ -1663,8 +1742,8 @@ def visitasRoteiro(request):
         }
         return render(request, 'pages/visitas-roteiro-impresso.html', context)
     except Exception as e:
-        print(f"Erro ao gerar roteiro: {e}")
-        return render(request, 'pages/visitas-roteiro-impresso.html', {'error': str(e)})
+        logger.exception("Printed route generation failed: %s", e)
+        return render(request, 'pages/visitas-roteiro-impresso.html', {'error': 'Não foi possível gerar o roteiro.'})
 
 def apiVisitasAgenda(request):
     scope = user_scope(request)
@@ -1804,7 +1883,8 @@ def apiVisitasAgenda(request):
 
             return JsonResponse(rows, safe=False)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected agenda API failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     elif request.method == 'POST' or request.method == 'PATCH':
         import json
@@ -1937,7 +2017,8 @@ def apiVisitasAgenda(request):
             except:
                 return JsonResponse({"error": response.text}, status=response.status_code)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected route API failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     elif request.method == 'DELETE':
         id = request.GET.get('id')
@@ -1969,7 +2050,8 @@ def apiVisitasAgenda(request):
             })
             return JsonResponse({"status": "deleted", "deleted": len(current)}, safe=False)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception("Unexpected agenda deletion failure: %s", e)
+            return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1996,7 +2078,8 @@ def apiGeocode(request):
                 })
             return JsonResponse({'error': 'Não foi possível localizar o endereço.'}, status=404)
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+            logger.exception("Unexpected route generation failure: %s", e)
+            return JsonResponse({'error': 'Ocorreu um erro interno ao processar a solicitação.'}, status=500)
 
     return JsonResponse({'error': 'Invalid request method'}, status=405)
 def apiStorageUpload(request):
@@ -2008,10 +2091,21 @@ def apiStorageUpload(request):
     
     file = request.FILES['file']
     file_name = request.POST.get('name', file.name)
-    # Ensure a safe filename or use UUID
     import uuid
     import os
-    ext = os.path.splitext(file_name)[1]
+    ext = os.path.splitext(file_name)[1].lower()
+    expected = ALLOWED_IMAGE_TYPES.get(ext)
+    if not expected or file.content_type != expected[0]:
+        return JsonResponse({"error": "Envie apenas imagens JPG, PNG ou WEBP."}, status=400)
+    if file.size > 5 * 1024 * 1024:
+        return JsonResponse({"error": "A imagem deve ter no máximo 5 MB."}, status=400)
+    header = file.read(16)
+    file.seek(0)
+    valid_signature = any(header.startswith(signature) for signature in expected[1])
+    if ext == '.webp':
+        valid_signature = header.startswith(b'RIFF') and header[8:12] == b'WEBP'
+    if not valid_signature:
+        return JsonResponse({"error": "O conteúdo do arquivo não corresponde a uma imagem válida."}, status=400)
     safe_name = f"{uuid.uuid4()}{ext}"
     
     bucket = "irmandade_fotos"
@@ -2027,15 +2121,11 @@ def apiStorageUpload(request):
         return requests.post(current_url, headers=current_headers, data=content, timeout=30)
 
     try:
-        # Step 1: Upload the file
-        print(f"--- INICIO DEBUG UPLOAD ---")
         file_content = file.read()
         response = upload_to_supabase(file_content, url, headers)
         
         # Se falhar porque o bucket não existe (404 ou 400 com mensagem específica)
         if response.status_code in [400, 404] and ("not found" in response.text.lower() or "not_found" in response.text.lower()):
-            print(f"DEBUG: Bucket '{bucket}' não encontrado. Tentando criar automaticamente...")
-            
             create_bucket_url = f"{settings.SUPABASE_URL}/storage/v1/bucket"
             create_headers = {
                 "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
@@ -2045,40 +2135,45 @@ def apiStorageUpload(request):
             create_data = {
                 "id": bucket,
                 "name": bucket,
-                "public": True
+                "public": False,
+                "file_size_limit": 5 * 1024 * 1024,
+                "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
             }
             
             create_res = requests.post(create_bucket_url, headers=create_headers, json=create_data, timeout=10)
-            print(f"DEBUG: Tentativa de criação do bucket: {create_res.status_code} - {create_res.text}")
-            
             if create_res.status_code in [200, 201]:
-                print(f"DEBUG: Bucket criado com sucesso! Repetindo upload...")
                 response = upload_to_supabase(file_content, url, headers)
-
-        print(f"--- FIM DEBUG UPLOAD --- Status: {response.status_code} | Resposta: {response.text}")
         
         if response.status_code in [200, 201]:
-            # Step 2: Get public URL
-            public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket}/{safe_name}"
-            return JsonResponse({"url": public_url, "name": safe_name}, status=200)
+            return JsonResponse({"url": f"/visitas/api/foto/{safe_name}/", "name": safe_name}, status=200)
         else:
-            # Tentar identificar o erro amigável
-            try:
-                err_json = response.json()
-                msg = err_json.get('message') or err_json.get('error') or response.text
-                if "Bucket not found" in msg:
-                    msg = f"O bucket '{bucket}' não foi localizado no Storage. Por favor, crie um bucket chamado 'irmandade_fotos' manualmente no menu Storage do Supabase e marque como 'Public'."
-            except:
-                msg = response.text
-                
-            return JsonResponse({
-                "error": "Falha no Supabase Storage", 
-                "status": response.status_code, 
-                "details": msg or "Erro interno do Supabase"
-            }, status=400)
+            logger.error("Storage upload failed with HTTP %s", response.status_code)
+            return JsonResponse({"error": "Não foi possível armazenar a imagem."}, status=502)
             
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+    except (requests.RequestException, ValueError) as exc:
+        logger.exception("Storage upload failed: %s", exc)
+        return JsonResponse({"error": "Não foi possível armazenar a imagem."}, status=502)
+
+
+def apiStoragePhoto(request, file_name):
+    if request.method != 'GET':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if not re.fullmatch(r'[0-9a-f-]{36}\.(?:jpg|jpeg|png|webp)', file_name, flags=re.IGNORECASE):
+        return JsonResponse({"error": "Imagem inválida."}, status=400)
+    response = requests.get(
+        f"{settings.SUPABASE_URL}/storage/v1/object/authenticated/irmandade_fotos/{file_name}",
+        headers={
+            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        }, timeout=15,
+    )
+    if response.status_code != 200:
+        return JsonResponse({"error": "Imagem não encontrada."}, status=404)
+    ext = '.' + file_name.rsplit('.', 1)[1].lower()
+    result = HttpResponse(response.content, content_type=ALLOWED_IMAGE_TYPES[ext][0])
+    result['Cache-Control'] = 'private, max-age=300'
+    result['X-Content-Type-Options'] = 'nosniff'
+    return result
 
 def aiChat(request):
 	context = {
@@ -2307,81 +2402,6 @@ def landing(request):
 
 def calendar(request):
 	return render(request, "pages/calendar.html")
-
-@csrf_exempt
-def api_calendar_events(request):
-    headers = {
-        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    }
-
-    if request.method == "GET":
-        start = request.GET.get('start')
-        end = request.GET.get('end')
-        
-        url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda?select=*"
-        if start and end:
-            url += f"&and=(data_inicio.gte.{start},data_inicio.lt.{end})"
-        
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            events = []
-            for item in response.json():
-                color = '#3b82f6'
-                if item.get('categoria') == 'GVI': color = '#10b981'
-                elif item.get('categoria') == 'GVM': color = '#f59e0b'
-                elif item.get('categoria') == 'RF': color = '#8b5cf6'
-                elif item.get('categoria') == 'RE': color = '#ec4899'
-                elif item.get('categoria') == 'Músicos': color = '#14b8a6'
-                
-                events.append({
-                    "id": item.get('id'),
-                    "title": item.get('titulo') or "Visita",
-                    "start": item.get('data_inicio'),
-                    "end": item.get('data_fim') or item.get('data_inicio'),
-                    "color": color,
-                    "extendedProps": {
-                        "categoria": item.get('categoria'),
-                        "status": item.get('status'),
-                        "observacoes": item.get('observacoes')
-                    }
-                })
-            return JsonResponse(events, safe=False)
-        return JsonResponse({"error": "Falha ao buscar visitas"}, status=500)
-
-    elif request.method == "POST":
-        data = json.loads(request.body)
-        event_id = data.get('id')
-        categoria = data.get('categoria')
-        titulo = data.get('title') or f"Visita {categoria}"
-        start = data.get('start')
-        end = data.get('end') or start
-        observacoes = data.get('observacoes')
-        
-        payload = {
-            "titulo": titulo,
-            "categoria": categoria,
-            "data_inicio": start,
-            "data_fim": end,
-            "observacoes": observacoes
-        }
-        
-        if event_id:
-            url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda?id=eq.{event_id}"
-            res = requests.patch(url, headers=headers, json=payload)
-            action = 'UPDATE_VISITA'
-        else:
-            url = f"{settings.SUPABASE_URL}/rest/v1/visitas_agenda"
-            res = requests.post(url, headers=headers, json=payload)
-            action = 'CREATE_VISITA'
-            
-        if res.status_code in [200, 201]:
-            log_audit(request, action, module='CALENDAR', details=f"Visita: {titulo}")
-            return JsonResponse({"success": True})
-            
-        return JsonResponse({"error": "Erro ao salvar visita"}, status=400)
 
 def mapVector(request):
 	context = {

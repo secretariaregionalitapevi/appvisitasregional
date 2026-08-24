@@ -1,11 +1,22 @@
+import unicodedata
+
 from django.urls import Resolver404, resolve
 
-def mark_active_link(menu, current_path_name):
+
+def _norm(value):
+	value = unicodedata.normalize('NFKD', str(value or ''))
+	return ''.join(char for char in value if not unicodedata.combining(char)).strip().upper()
+
+def mark_active_link(menu, current_path_name, current_path=''):
     for item in menu:
-        item['is_active'] = item.get('name', '') == current_path_name
+        item_url = str(item.get('url') or '').split('#', 1)[0]
+        exact_path = item_url.startswith('/') and item_url.rstrip('/') == current_path.rstrip('/')
+        item['is_active'] = exact_path or (
+            not item_url.startswith('/') and item.get('name', '') == current_path_name
+        )
 
         if 'children' in item:
-            item['children'] = mark_active_link(item['children'], current_path_name)
+            item['children'] = mark_active_link(item['children'], current_path_name, current_path)
 
             if any(child.get('is_active', False) for child in item['children']):
                 item['is_active'] = True
@@ -30,6 +41,16 @@ def sidebar_menu(request):
 			{ 'url': '/visitas/relatorios-equipes/', 'title': 'Relatórios de Equipes', 'name': 'visitasRelatoriosEquipes' },
 			{ 'url': '/visitas/roteiro-inteligente/', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true' },
 			{ 'url': '/visitas/mapa/', 'title': 'Mapa', 'name': 'visitasMapa' }
+		]
+	},
+	{ 'url': '/musicalizacao/', 'icon': 'fa fa-music', 'title': 'Musicalização', 'name': 'musicalizacaoDashboard',
+		'children': [
+			{ 'url': '/musicalizacao/', 'title': 'Dashboard', 'name': 'musicalizacaoDashboard' },
+			{ 'url': '/musicalizacao/criancas/', 'title': 'Crianças', 'name': 'musicalizacaoSection' },
+			{ 'url': '/musicalizacao/polos/', 'title': 'Polos', 'name': 'musicalizacaoSection' },
+			{ 'url': '/musicalizacao/instrutores/', 'title': 'Instrutores', 'name': 'musicalizacaoSection' },
+			{ 'url': '/musicalizacao/aulas/', 'title': 'Atividades', 'name': 'musicalizacaoSection' },
+			{ 'url': '/musicalizacao/historico/', 'title': 'Histórico de Atividades', 'name': 'musicalizacaoSection' }
 		]
 	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-shield-halved', 'title': 'Administração', 'name': 'administration',
@@ -217,14 +238,18 @@ def sidebar_menu(request):
 		# Nesse estágio o CommonMiddleware ainda pode normalizar a URL.
 		current_path_name = ''
 	
-	# O nivel global mantem o menu administrativo completo.
+	# O menu usa a mesma autorizacao aplicada pelo servidor nas URLs e APIs.
+	from ..module_access import MODULE_MUSICALIZACAO, MODULE_VISITAS, allowed_modules, is_global
 	user_profile = request.session.get('user_profile', {})
-	role_id = int(user_profile.get('role_id') or 99)
-	role = str(user_profile.get('role') or '').strip().upper()
-	is_global = role_id == 1 or role in {'MASTER', 'GLOBAL'}
-	if not is_global:
-		sidebar_menu = sidebar_menu[:3]
+	if not is_global(user_profile):
+		modules = allowed_modules(request)
+		allowed_titles = set()
+		if MODULE_VISITAS in modules:
+			allowed_titles.add('Visitas')
+		if MODULE_MUSICALIZACAO in modules:
+			allowed_titles.add('Musicalização')
+		sidebar_menu = [item for item in sidebar_menu if item.get('is_header') or item.get('title') == 'Dashboard' or item.get('title') in allowed_titles]
 
-	sidebar_menu = mark_active_link(sidebar_menu, current_path_name)
+	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)
 
 	return {'sidebar_menu': sidebar_menu}
