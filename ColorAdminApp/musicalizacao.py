@@ -232,6 +232,94 @@ def _visible(scope, config, rows):
     return filter_rows(scope, enriched)
 
 
+def _consecutive_absences(children, classes, attendances):
+    """Retorna faltas consecutivas por criança, da chamada mais recente para trás.
+
+    Presença ou falta justificada encerra a sequência. Registros sem uma situação
+    explícita de falta não são tratados como ausência.
+    """
+    class_dates = {
+        str(row.get("id")): str(row.get("data_aula") or "")[:10]
+        for row in classes if row.get("id")
+    }
+    by_child = {}
+    for attendance in attendances:
+        class_id = str(attendance.get("aula_id") or "")
+        class_date = class_dates.get(class_id)
+        child_id = str(attendance.get("aluno_id") or "")
+        if not class_date or not child_id:
+            continue
+        by_child.setdefault(child_id, []).append((class_date, class_id, attendance))
+
+    result = {}
+    for child in children:
+        child_id = str(child.get("id") or "")
+        sequence = 0
+        seen_classes = set()
+        entries = sorted(by_child.get(child_id, []), key=lambda item: (item[0], item[1]), reverse=True)
+        for _, class_id, attendance in entries:
+            if class_id in seen_classes:
+                continue
+            seen_classes.add(class_id)
+            status = _norm(attendance.get("status"))
+            present = attendance.get("presente") is True or status == "PRESENTE"
+            justified = "JUSTIFIC" in status
+            absent = attendance.get("presente") is False or status in {"FALTA", "AUSENTE"}
+            if present or justified:
+                break
+            if not absent:
+                continue
+            sequence += 1
+        result[child_id] = sequence
+    return result
+
+
+def _apply_child_attendance_rules(children, classes, attendances, persist=False):
+    """Anexa a contagem e inativa a criança quando chega à sexta falta seguida."""
+    sequences = _consecutive_absences(children, classes, attendances)
+    changed_ids = []
+    for child in children:
+        sequence = sequences.get(str(child.get("id") or ""), 0)
+        child["faltas_consecutivas"] = sequence
+        if sequence > 5 and _norm(child.get("status")) != "INATIVO":
+            child["status"] = "Inativo"
+            if child.get("id"):
+                changed_ids.append(str(child["id"]))
+
+    if persist and changed_ids:
+        for child_id in changed_ids:
+            response = requests.patch(
+                _url(RESOURCES["criancas"]),
+                headers=service_headers("return=minimal"),
+                params={"id": f"eq.{child_id}"},
+                json={"status": "Inativo"},
+                timeout=15,
+            )
+            response.raise_for_status()
+        cache.delete("musicalizacao:dashboard:v6")
+        cache.delete("musicalizacao:source:v6:criancas")
+    return children
+
+
+def _attendance_history():
+    """Carrega chamadas e presenças necessárias à regra de retenção."""
+    def fetch(url, params):
+        response = requests.get(url, headers=service_headers(), params=params, timeout=15)
+        response.raise_for_status()
+        return response.json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        classes_future = executor.submit(
+            fetch, _url(RESOURCES["aulas"]),
+            {"select": "id,data_aula", "order": "data_aula.desc"},
+        )
+        attendances_future = executor.submit(
+            fetch, f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_presenca",
+            {"select": "aula_id,aluno_id,status,presente"},
+        )
+        return classes_future.result(), attendances_future.result()
+
+
 def page(request, section="dashboard"):
     if not can_open_module(request):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta Musicalização."}, status=403)
@@ -293,6 +381,9 @@ def api_summary(request):
             rows = _visible(scope, config, raw.get(name, []))
             result[name] = rows
             result[f"total_{name}"] = len(rows)
+        _apply_child_attendance_rules(
+            result["criancas"], result["aulas"], raw.get("presencas", []), persist=True,
+        )
         allowed_aulas = {str(row.get("id")) for row in result["aulas"] if row.get("id")}
         allowed_children = {str(row.get("id")) for row in result["criancas"] if row.get("id")}
         result["presencas"] = [row for row in raw.get("presencas", []) if (
@@ -314,7 +405,11 @@ def api_resource(request, resource, record_id=None):
         if request.method == "GET" and not record_id:
             response = requests.get(_url(config), headers=service_headers(), params={"select": "*", "order": config["order"]}, timeout=15)
             response.raise_for_status()
-            items = _visible(scope, config, response.json())
+            source_items = response.json()
+            items = _visible(scope, config, source_items)
+            if resource == "criancas":
+                classes, attendances = _attendance_history()
+                _apply_child_attendance_rules(items, classes, attendances, persist=True)
             if resource == "criancas":
                 for item in items:
                     if item.get("data_nascimento"):
