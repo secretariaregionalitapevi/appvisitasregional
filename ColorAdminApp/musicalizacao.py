@@ -2,6 +2,7 @@
 import json
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 
 import requests
 from django.conf import settings
@@ -31,7 +32,10 @@ RESOURCES = {
                    "instrutor_atualmente", "instrutor_em_qual_igreja", "formacao_musica", "formacao_qual", "formacao_data",
                    "pedagogo", "pedagogo_desde", "atua_na_area", "afinidade_criancas", "cursos_conhecimentos",
                    "de_acordo_voluntario", "autoriza_tratamento_dados", "status", "role"},
-        "location": lambda row: {"comum": row.get("comum_congregacao")},
+        "location": lambda row: {
+            "comum": row.get("polo_auxilio") or row.get("comum_congregacao"),
+            "cidade": _polo_city(row.get("polo_auxilio") or row.get("comum_congregacao"), row.get("cidade")),
+        },
     },
     "polos": {
         "table": "musicalizacao_polos", "order": "nome_polo.asc",
@@ -65,14 +69,62 @@ def _norm(value):
     return "".join(c for c in value if not unicodedata.combining(c)).strip().upper()
 
 
+def _child_age(value, today=None):
+    """Calcula idade completa aceitando as datas ISO e dd/mm/aaaa do cadastro."""
+    text = str(value or "").strip()
+    birth_date = None
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            birth_date = datetime.strptime(text[:10], date_format).date()
+            break
+        except ValueError:
+            continue
+    if birth_date is None:
+        return None
+    today = today or date.today()
+    return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+
+def _child_age_error(value):
+    age = _child_age(value)
+    if age is None:
+        return "Informe uma data de nascimento válida."
+    if age < 4:
+        return "A Musicalização Infantil atende crianças a partir de 4 anos."
+    if age >= 10:
+        return "A criança já concluiu a faixa de 7 a 9 anos e deve ser encaminhada ao GEM."
+    return None
+
+
 def _child_polo_city(row):
     """Município gerencial vem do polo; cidade da residência não define o projeto."""
     polo = row.get("polo_participacao") or row.get("comum_congregacao")
+    return _polo_city(polo, row.get("cidade"))
+
+
+def _polo_city(polo, fallback=None):
+    """Resolve o município pelo catálogo oficial da comum/polo."""
     try:
         match = next((item for item in common_catalog() if _norm(item.get("comum")) == _norm(polo)), None)
     except requests.RequestException:
         match = None
-    return (match or {}).get("cidade") or row.get("cidade")
+    return (match or {}).get("cidade") or fallback
+
+
+def _polo_catalog():
+    cached = cache.get("musicalizacao:polos:v1")
+    if cached is not None:
+        return cached
+    response = requests.get(
+        _url(RESOURCES["polos"]),
+        headers=service_headers(),
+        params={"select": "id,nome_polo,localidade", "order": "nome_polo.asc"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    rows = response.json()
+    cache.set("musicalizacao:polos:v1", rows, 300)
+    return rows
 
 
 def can_open_module(request):
@@ -87,20 +139,60 @@ def _url(config):
     return f"{settings.SUPABASE_URL}/rest/v1/{config['table']}"
 
 
-def _coordinators_by_polo():
+def _coordinator_rows():
     response = requests.get(
         f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_monitores",
         headers=service_headers(),
-        params={"select": "nome_completo,polo_auxilio,role,status", "role": "ilike.Coordenadora", "status": "ilike.Ativo"},
+        params={"select": "id,nome_completo,comum_congregacao,polo_auxilio,role,status", "status": "ilike.Ativo"},
         timeout=10,
     )
     response.raise_for_status()
+    return response.json()
+
+
+def _coordinators_by_polo(rows=None):
+    rows = rows if rows is not None else _coordinator_rows()
     result = {}
-    for row in response.json():
+    for row in rows:
+        if _norm(row.get("role")) != "COORDENADORA":
+            continue
         polo = _norm(row.get("polo_auxilio"))
         if polo:
-            result.setdefault(polo, []).append(row.get("nome_completo"))
-    return {polo: " / ".join(filter(None, names)) for polo, names in result.items()}
+            result.setdefault(polo, []).append(row)
+    return result
+
+
+def _set_polo_coordinator(scope, polo_name, coordinator_id):
+    """Mantém o vínculo no cadastro de monitores, que é a fonte oficial da função."""
+    rows = _coordinator_rows()
+    selected = next((row for row in rows if str(row.get("id")) == str(coordinator_id)), None) if coordinator_id else None
+    if coordinator_id and not selected:
+        raise ValueError("A coordenadora selecionada não foi encontrada.")
+    if selected and not can_access(scope, RESOURCES["instrutores"]["location"](selected)):
+        raise PermissionError
+    if selected and not (
+            _norm(selected.get("polo_auxilio")) == _norm(polo_name) or
+            _norm(selected.get("comum_congregacao")) == _norm(polo_name)):
+        raise ValueError("A coordenadora deve estar cadastrada no polo selecionado.")
+
+    headers = service_headers("return=minimal")
+    chosen_id = str(selected.get("id")) if selected else None
+    for row in rows:
+        if (_norm(row.get("role")) == "COORDENADORA" and
+                _norm(row.get("polo_auxilio")) == _norm(polo_name) and
+                str(row.get("id")) != chosen_id):
+            response = requests.patch(
+                _url(RESOURCES["instrutores"]), headers=headers,
+                params={"id": f"eq.{row['id']}"}, json={"polo_auxilio": None}, timeout=15,
+            )
+            response.raise_for_status()
+    if selected:
+        response = requests.patch(
+            _url(RESOURCES["instrutores"]), headers=headers,
+            params={"id": f"eq.{selected['id']}"},
+            json={"polo_auxilio": polo_name, "role": "Coordenadora"}, timeout=15,
+        )
+        response.raise_for_status()
 
 
 def _visible(scope, config, rows):
@@ -197,11 +289,24 @@ def api_resource(request, resource, record_id=None):
             response = requests.get(_url(config), headers=service_headers(), params={"select": "*", "order": config["order"]}, timeout=15)
             response.raise_for_status()
             items = _visible(scope, config, response.json())
+            coordinator_candidates = []
             if resource == "polos":
-                coordinators = _coordinators_by_polo()
+                staff_rows = _coordinator_rows()
+                coordinators = _coordinators_by_polo(staff_rows)
                 for item in items:
-                    item["coordenadora"] = coordinators.get(_norm(item.get("nome_polo")))
-            return JsonResponse({"items": items, "scope": scope_details(scope)})
+                    assigned = coordinators.get(_norm(item.get("nome_polo")), [])
+                    item["coordenadora"] = " / ".join(filter(None, (row.get("nome_completo") for row in assigned))) or None
+                    item["coordenadora_id"] = assigned[0].get("id") if len(assigned) == 1 else None
+                visible_staff = _visible(scope, RESOURCES["instrutores"], staff_rows)
+                coordinator_candidates = [
+                    {"id": row.get("id"), "nome_completo": row.get("nome_completo"),
+                     "polo_auxilio": row.get("polo_auxilio"), "comum_congregacao": row.get("comum_congregacao"),
+                     "role": row.get("role")}
+                    for row in visible_staff if row.get("id") and row.get("nome_completo")
+                ]
+            polos = _visible(scope, RESOURCES["polos"], _polo_catalog())
+            return JsonResponse({"items": items, "polos": polos, "coordenadoras": coordinator_candidates,
+                                 "scope": scope_details(scope)})
 
         current = None
         if record_id:
@@ -215,22 +320,39 @@ def api_resource(request, resource, record_id=None):
                 return _denied()
 
         if request.method in {"POST", "PATCH"}:
-            payload = json.loads(request.body or "{}")
+            raw_payload = json.loads(request.body or "{}")
+            coordinator_supplied = resource == "polos" and "coordenadora_id" in raw_payload
+            coordinator_id = raw_payload.get("coordenadora_id")
+            payload = raw_payload
             payload = {key: value for key, value in payload.items() if key in config["fields"]}
             candidate = dict(current or {}, **payload)
             if not payload or not can_access(scope, config["location"](candidate)):
                 return _denied()
+            if resource == "criancas":
+                age_error = _child_age_error(candidate.get("data_nascimento"))
+                if age_error:
+                    return JsonResponse({"error": age_error, "code": "child_age_out_of_range"}, status=400)
             params = {"id": f"eq.{record_id}"} if record_id else None
             method = requests.patch if record_id else requests.post
             response = method(_url(config), headers=service_headers("return=representation"), params=params, json=payload, timeout=15)
             response.raise_for_status()
+            if resource == "polos":
+                saved_item = response.json()[0]
+                if coordinator_supplied:
+                    _set_polo_coordinator(scope, saved_item.get("nome_polo"), coordinator_id)
+                cache.delete("musicalizacao:polos:v1")
+                return JsonResponse({"item": saved_item}, status=200 if record_id else 201)
             return JsonResponse({"item": response.json()[0]}, status=200 if record_id else 201)
 
         if request.method == "DELETE" and record_id:
             response = requests.delete(_url(config), headers=service_headers("return=minimal"), params={"id": f"eq.{record_id}"}, timeout=15)
             response.raise_for_status()
+            if resource == "polos":
+                cache.delete("musicalizacao:polos:v1")
             return JsonResponse({}, status=204)
         return JsonResponse({"error": "Método não permitido."}, status=405)
+    except PermissionError:
+        return _denied()
     except (ValueError, json.JSONDecodeError):
         return JsonResponse({"error": "JSON inválido."}, status=400)
     except requests.RequestException:

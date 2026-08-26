@@ -25,6 +25,8 @@
 	.password-toggle:focus {
 		color: var(--bs-theme);
 	}
+
+	.login-success-popup{padding:0!important;overflow:hidden!important;border-radius:24px!important;box-shadow:0 28px 80px #071b2d52!important}.login-success-popup .swal2-html-container{margin:0!important;padding:0!important}.login-success-hero{position:relative;overflow:hidden;padding:27px 30px 24px;background:linear-gradient(120deg,#15364e,#087f80 62%,#14b89f);color:#fff;text-align:left}.login-success-hero:after{content:'';position:absolute;width:190px;height:190px;right:-55px;top:-115px;border:1px solid #ffffff40;border-radius:50%;box-shadow:0 0 0 30px #ffffff0b,0 0 0 60px #ffffff08}.login-success-brand{position:relative;z-index:1;display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #ffffff3d;border-radius:20px;background:#ffffff14;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}.login-success-check{position:relative;z-index:1;display:grid;place-items:center;width:58px;height:58px;margin-top:19px;border:1px solid #ffffff55;border-radius:18px;background:#ffffff1c;box-shadow:0 8px 25px #002f3840;font-size:26px}.login-success-body{padding:25px 30px 27px;text-align:left;background:#fff}.login-success-body h2{margin:0;color:#1c3042;font-size:25px;font-weight:800;letter-spacing:-.03em}.login-success-body p{margin:7px 0 18px;color:#73818d;font-size:13px}.login-success-profile{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #e5ebef;border-radius:14px;background:#f7fafb}.login-success-avatar{display:grid;place-items:center;width:42px;height:42px;flex:0 0 auto;border-radius:13px;background:linear-gradient(145deg,#dff8f3,#dceeff);color:#087f80;font-weight:850}.login-success-profile strong{display:block;color:#24384a;font-size:13px}.login-success-profile span{display:block;margin-top:2px;color:#7b8995;font-size:11px}.login-success-footer{display:flex;align-items:center;gap:8px;margin-top:18px;color:#71808c;font-size:11px}.login-success-footer i{color:#0aa58f}.login-success-popup .swal2-timer-progress-bar{height:4px;background:linear-gradient(90deg,#0aa58f,#348fe2)}
 </style>
 {% endblock %}
 
@@ -94,6 +96,7 @@
     <script>
         const passwordInput = document.getElementById('password');
         const passwordToggle = document.getElementById('password-toggle');
+        const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
         passwordToggle.addEventListener('click', function() {
             const passwordIsVisible = passwordInput.type === 'text';
@@ -133,13 +136,22 @@
                 const result = await response.json();
 
                 if (response.ok) {
+                    const user = result.user || {};
+                    const fullName = user.full_name || user.username || 'Usuário';
+                    const firstName = fullName.trim().split(/\s+/)[0];
+                    const initials = fullName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+                    const access = user.sector || user.role || 'Sistema Regional';
+                    const location = user.comum || user.municipio || user.cidade || 'Regional Itapevi';
                     Swal.fire({
-                        title: 'Bem-vindo!',
-                        text: 'Login realizado com sucesso.',
-                        icon: 'success',
-                        timer: 2000,
+                        html: `<div class="login-success-hero"><div class="login-success-brand"><i class="fa fa-shield-halved"></i>Acesso seguro confirmado</div><div class="login-success-check"><i class="fa fa-check"></i></div></div><div class="login-success-body"><h2>Bem-vindo, ${escapeHtml(firstName)}!</h2><p>Seu acesso foi validado. Estamos preparando sua área de trabalho.</p><div class="login-success-profile"><div class="login-success-avatar">${escapeHtml(initials)}</div><div><strong>${escapeHtml(fullName)}</strong><span>${escapeHtml(access)} · ${escapeHtml(location)}</span></div></div><div class="login-success-footer"><i class="fa fa-lock"></i><span>Sessão protegida e atividade registrada com segurança</span><i class="fa fa-spinner fa-spin ms-auto"></i></div></div>`,
+                        timer: 2200,
                         timerProgressBar: true,
-                        showConfirmButton: false
+                        showConfirmButton: false,
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        width: 510,
+                        padding: 0,
+                        customClass: { popup: 'login-success-popup' }
                     }).then(() => {
                         window.location.href = '/';
                     });

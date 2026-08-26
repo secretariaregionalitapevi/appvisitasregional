@@ -1,9 +1,10 @@
 import json
+from datetime import date
 from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
-from .musicalizacao import REGIONAL_MUNICIPALITIES, _child_polo_city, api_resource, api_summary, can_open_module
+from .musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module
 
 
 def request_with_profile(path, profile, method="get", data=None):
@@ -18,6 +19,17 @@ def request_with_profile(path, profile, method="get", data=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class MusicalizacaoSecurityTests(SimpleTestCase):
+    def test_child_age_uses_completed_years(self):
+        self.assertEqual(_child_age("20/09/2019", today=date(2026, 8, 26)), 6)
+        self.assertEqual(_child_age("2019-08-20", today=date(2026, 8, 26)), 7)
+
+    def test_child_age_range_routes_ten_year_old_to_gem(self):
+        today = date.today()
+        nine_year_old = date(today.year - 9, today.month, today.day).isoformat()
+        ten_year_old = date(today.year - 10, today.month, today.day).isoformat()
+        self.assertIsNone(_child_age_error(nine_year_old))
+        self.assertIn("GEM", _child_age_error(ten_year_old))
+
     @patch("ColorAdminApp.musicalizacao.common_catalog")
     def test_child_management_city_comes_from_polo_not_home_address(self, catalog):
         catalog.return_value = [{"comum": "BR-22-0673 - VILA DOUTOR CARDOSO", "cidade": "ITAPEVI"}]
@@ -28,11 +40,39 @@ class MusicalizacaoSecurityTests(SimpleTestCase):
         }
         self.assertEqual(_child_polo_city(child), "ITAPEVI")
 
+    @patch("ColorAdminApp.musicalizacao.common_catalog")
+    def test_local_instructor_scope_uses_assigned_polo(self, catalog):
+        catalog.return_value = [
+            {"comum": "POLO CENTRAL", "cidade": "ITAPEVI"},
+            {"comum": "POLO JARDIM", "cidade": "ITAPEVI"},
+        ]
+        scope = {"level": "local", "comum": "POLO CENTRAL", "municipio": "ITAPEVI", "profile": {}}
+        rows = [
+            {"nome_completo": "Ana", "comum_congregacao": "OUTRA COMUM", "polo_auxilio": "POLO CENTRAL"},
+            {"nome_completo": "Bia", "comum_congregacao": "POLO CENTRAL", "polo_auxilio": "POLO JARDIM"},
+        ]
+        self.assertEqual([row["nome_completo"] for row in _visible(scope, RESOURCES["instrutores"], rows)], ["Ana"])
+
     def test_regional_catalog_keeps_all_seven_municipalities(self):
         self.assertEqual(REGIONAL_MUNICIPALITIES, [
             "CAUCAIA DO ALTO", "COTIA", "ITAPEVI", "JANDIRA",
             "PIRAPORA DO BOM JESUS", "SANTANA DE PARNAIBA", "VARGEM GRANDE PAULISTA",
         ])
+
+    @patch("ColorAdminApp.musicalizacao.requests.patch")
+    @patch("ColorAdminApp.musicalizacao._coordinator_rows")
+    def test_assigning_polo_coordinator_updates_single_source_of_truth(self, coordinator_rows, mock_patch):
+        coordinator_rows.return_value = [
+            {"id": "old", "nome_completo": "Coordenadora anterior", "role": "Coordenadora", "polo_auxilio": "POLO CENTRAL"},
+            {"id": "new", "nome_completo": "Nova coordenadora", "role": "Instrutora", "polo_auxilio": "POLO JARDIM", "comum_congregacao": "POLO CENTRAL"},
+        ]
+        mock_patch.return_value.raise_for_status.return_value = None
+
+        _set_polo_coordinator({"level": "global", "municipio": "", "comum": "", "profile": {}}, "POLO CENTRAL", "new")
+
+        self.assertEqual(mock_patch.call_count, 2)
+        self.assertEqual(mock_patch.call_args_list[0].kwargs["json"], {"polo_auxilio": None})
+        self.assertEqual(mock_patch.call_args_list[1].kwargs["json"], {"polo_auxilio": "POLO CENTRAL", "role": "Coordenadora"})
 
     def test_visitas_coordinator_cannot_open_musicalizacao(self):
         request = request_with_profile("/musicalizacao/", {"role_id": 2, "sector": "Visitas"})
