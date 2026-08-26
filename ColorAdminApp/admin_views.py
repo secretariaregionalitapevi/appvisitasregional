@@ -73,7 +73,9 @@ def administration(request):
 @require_http_methods(["GET"])
 def administration_data(request):
     try:
-        profiles = _get_table("profiles", {"select": "*", "order": "created_at.desc"})
+        profile_rows = _get_table("profiles", {"select": "*", "order": "created_at.desc"})
+        # O painel representa contas: uma conta deve aparecer uma única vez.
+        profiles = list({str(row.get("user_id")): row for row in profile_rows if row.get("user_id")}.values())
         logs = _get_table("audit_logs", {"select": "*", "order": "created_at.desc", "limit": "500"})
         sessions = _get_table("audit_access_sessions", {"select": "*", "order": "started_at.desc", "limit": "500"})
         levels = _get_table("access_levels", {"select": "*", "order": "level_order.asc"})

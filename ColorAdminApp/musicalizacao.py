@@ -1,5 +1,6 @@
 """Módulo gerencial de Musicalização com autorização obrigatória no servidor."""
 import json
+import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
@@ -69,13 +70,38 @@ def _norm(value):
     return "".join(c for c in value if not unicodedata.combining(c)).strip().upper()
 
 
-def _child_age(value, today=None):
-    """Calcula idade completa aceitando as datas ISO e dd/mm/aaaa do cadastro."""
-    text = str(value or "").strip()
-    birth_date = None
-    for date_format in ("%Y-%m-%d", "%d/%m/%Y"):
+def _normalize_birth_date(value):
+    """Converte qualquer formato (ISO, dd/mm/aaaa, ddmmaaaa) para YYYY-MM-DD."""
+    if not value:
+        return None
+    text = str(value).strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+        return text
+    match_dmy = re.match(r"^(\d{2})[/-](\d{2})[/-](\d{4})$", text)
+    if match_dmy:
+        d, m, y = match_dmy.groups()
+        return f"{y}-{m}-{d}"
+    if len(text) == 8 and text.isdigit():
+        d, m, y = text[:2], text[2:4], text[4:]
+        return f"{y}-{m}-{d}"
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%d%m%Y"):
         try:
-            birth_date = datetime.strptime(text[:10], date_format).date()
+            dt = datetime.strptime(text[:10], date_format).date()
+            return dt.isoformat()
+        except ValueError:
+            continue
+    return text
+
+
+def _child_age(value, today=None):
+    """Calcula idade completa aceitando as datas ISO, dd/mm/aaaa e ddmmaaaa."""
+    normalized = _normalize_birth_date(value)
+    if not normalized:
+        return None
+    birth_date = None
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%d%m%Y"):
+        try:
+            birth_date = datetime.strptime(normalized[:10], date_format).date()
             break
         except ValueError:
             continue
@@ -289,6 +315,10 @@ def api_resource(request, resource, record_id=None):
             response = requests.get(_url(config), headers=service_headers(), params={"select": "*", "order": config["order"]}, timeout=15)
             response.raise_for_status()
             items = _visible(scope, config, response.json())
+            if resource == "criancas":
+                for item in items:
+                    if item.get("data_nascimento"):
+                        item["data_nascimento"] = _normalize_birth_date(item["data_nascimento"])
             coordinator_candidates = []
             if resource == "polos":
                 staff_rows = _coordinator_rows()
@@ -318,6 +348,8 @@ def api_resource(request, resource, record_id=None):
                 return JsonResponse({"error": "Registro não encontrado."}, status=404)
             if not can_access(scope, config["location"](current)):
                 return _denied()
+            if resource == "criancas" and current.get("data_nascimento"):
+                current["data_nascimento"] = _normalize_birth_date(current["data_nascimento"])
 
         if request.method in {"POST", "PATCH"}:
             raw_payload = json.loads(request.body or "{}")
@@ -329,6 +361,9 @@ def api_resource(request, resource, record_id=None):
             if not payload or not can_access(scope, config["location"](candidate)):
                 return _denied()
             if resource == "criancas":
+                if "data_nascimento" in payload and payload["data_nascimento"]:
+                    payload["data_nascimento"] = _normalize_birth_date(payload["data_nascimento"])
+                    candidate["data_nascimento"] = payload["data_nascimento"]
                 age_error = _child_age_error(candidate.get("data_nascimento"))
                 if age_error:
                     return JsonResponse({"error": age_error, "code": "child_age_out_of_range"}, status=400)
@@ -336,13 +371,14 @@ def api_resource(request, resource, record_id=None):
             method = requests.patch if record_id else requests.post
             response = method(_url(config), headers=service_headers("return=representation"), params=params, json=payload, timeout=15)
             response.raise_for_status()
+            saved_item = response.json()[0]
+            if resource == "criancas" and saved_item.get("data_nascimento"):
+                saved_item["data_nascimento"] = _normalize_birth_date(saved_item["data_nascimento"])
             if resource == "polos":
-                saved_item = response.json()[0]
                 if coordinator_supplied:
                     _set_polo_coordinator(scope, saved_item.get("nome_polo"), coordinator_id)
                 cache.delete("musicalizacao:polos:v1")
-                return JsonResponse({"item": saved_item}, status=200 if record_id else 201)
-            return JsonResponse({"item": response.json()[0]}, status=200 if record_id else 201)
+            return JsonResponse({"item": saved_item}, status=200 if record_id else 201)
 
         if request.method == "DELETE" and record_id:
             response = requests.delete(_url(config), headers=service_headers("return=minimal"), params={"id": f"eq.{record_id}"}, timeout=15)

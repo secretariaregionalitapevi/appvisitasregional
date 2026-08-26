@@ -18,15 +18,19 @@ def is_global(profile):
             return True
     except (TypeError, ValueError):
         pass
-    return _norm(profile.get("role")) in {"master", "global"}
+    role_norm = _norm(profile.get("role"))
+    level_norm = _norm(profile.get("access_level") or profile.get("nivel_acesso"))
+    return role_norm in {"master", "global"} or level_norm == "global"
 
 def primary_module(profile):
     sector = _norm(profile.get("sector") or profile.get("setor") or profile.get("cadastro_origem_setor_sugerido"))
-    if sector == "musicalizacao":
+    if sector in {"musicalizacao", "musical", "musica", "ebi", "escolinha"} or "musical" in sector:
         return MODULE_MUSICALIZACAO
-    if sector == "visitas":
+    if sector in {"visitas", "visita"} or "visita" in sector:
         return MODULE_VISITAS
-    return None
+    if sector in {"global", "administrativo", "administracao", "todos", "todas"}:
+        return None
+    return MODULE_VISITAS
 
 def explicit_modules(user_id):
     if not user_id:
@@ -55,9 +59,13 @@ def allowed_modules(request):
     profile = request.session.get("user_profile") or {}
     if is_global(profile):
         return set(VALID_MODULES)
+    sector = _norm(profile.get("sector") or profile.get("setor"))
+    if sector in {"global", "administrativo", "administracao", "todos", "todas"}:
+        # "Global" ou "Administrativo" na Pasta principal significa acesso às pastas.
+        return set(VALID_MODULES)
     primary = primary_module(profile)
     user_id = request.session.get("user_id") or profile.get("user_id")
-    return ({primary} if primary else set()) | explicit_modules(user_id)
+    return ({primary} if primary else {MODULE_VISITAS}) | explicit_modules(user_id)
 
 def can_access_module(request, module):
     return module in VALID_MODULES and module in allowed_modules(request)

@@ -10,6 +10,15 @@
 .admin-table td { vertical-align:middle; }
 .admin-detail { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .origin-badge { background:rgba(73,182,214,.15); color:#49b6d6; border:1px solid rgba(73,182,214,.25); }
+.swal-modal.admin-feedback-success,.swal-modal.admin-feedback-error { padding:24px 28px 20px!important; overflow:hidden; }
+.swal-modal.admin-feedback-success::after,.swal-modal.admin-feedback-error::after { content:''; position:absolute; left:0; bottom:0; height:5px; width:100%; background:#00acac; transform-origin:left center; animation:admin-feedback-countdown 3s linear forwards; }
+.swal-modal.admin-feedback-error::after { background:#ff5b57; }
+@keyframes admin-feedback-countdown { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+.swal-modal.admin-feedback-success .swal-icon,.swal-modal.admin-feedback-error .swal-icon { margin:0 auto 14px!important; }
+.swal-modal.admin-feedback-success .swal-title,.swal-modal.admin-feedback-error .swal-title { padding:0!important; margin:0 0 8px!important; }
+.swal-modal.admin-feedback-success .swal-text,.swal-modal.admin-feedback-error .swal-text { margin:0 0 14px!important; padding:0!important; text-align:center; }
+.swal-modal.admin-feedback-success .swal-footer,.swal-modal.admin-feedback-error .swal-footer { margin:0!important; padding:0!important; text-align:center; }
+.swal-modal.admin-feedback-success .swal-button-container,.swal-modal.admin-feedback-error .swal-button-container { margin:0!important; }
 </style>
 {% endblock %}
 
@@ -74,4 +83,4 @@
 </div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/administracao.js' %}?v=20260824-1"></script>{% endblock %}
+{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/administracao.js' %}?v=20260826-10"></script>{% endblock %}

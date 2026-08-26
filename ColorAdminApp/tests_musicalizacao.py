@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
-from .musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module
+from .musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _normalize_birth_date, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module
 
 
 def request_with_profile(path, profile, method="get", data=None):
@@ -22,6 +22,13 @@ class MusicalizacaoSecurityTests(SimpleTestCase):
     def test_child_age_uses_completed_years(self):
         self.assertEqual(_child_age("20/09/2019", today=date(2026, 8, 26)), 6)
         self.assertEqual(_child_age("2019-08-20", today=date(2026, 8, 26)), 7)
+        self.assertEqual(_child_age("14122020", today=date(2026, 8, 26)), 5)
+
+    def test_normalize_birth_date_formats(self):
+        self.assertEqual(_normalize_birth_date("14122022"), "2022-12-14")
+        self.assertEqual(_normalize_birth_date("14/12/2022"), "2022-12-14")
+        self.assertEqual(_normalize_birth_date("2022-12-14"), "2022-12-14")
+        self.assertEqual(_normalize_birth_date(""), None)
 
     def test_child_age_range_routes_ten_year_old_to_gem(self):
         today = date.today()

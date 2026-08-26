@@ -31,3 +31,15 @@ class ModuleAccessTests(SimpleTestCase):
     def test_master_keeps_both_folders(self):
         request = request_for({"role_id": 1, "sector": "Global"})
         self.assertEqual(allowed_modules(request), {MODULE_MUSICALIZACAO, MODULE_VISITAS})
+
+    def test_administrativo_sector_keeps_both_folders(self):
+        request = request_for({"role_id": 2, "sector": "Administrativo", "access_level": "regional"})
+        self.assertEqual(allowed_modules(request), {MODULE_MUSICALIZACAO, MODULE_VISITAS})
+
+    def test_ebi_sector_gets_musicalizacao(self):
+        request = request_for({"role_id": 4, "sector": "Ebi", "access_level": "local"})
+        self.assertEqual(allowed_modules(request), {MODULE_MUSICALIZACAO})
+
+    def test_fallback_when_sector_is_unrecognized(self):
+        request = request_for({"role_id": 4, "sector": None, "access_level": "local"})
+        self.assertEqual(allowed_modules(request), {MODULE_VISITAS})
