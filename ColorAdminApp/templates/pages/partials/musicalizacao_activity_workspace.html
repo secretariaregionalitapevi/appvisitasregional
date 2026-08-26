@@ -1,0 +1,47 @@
+<div class="activity-workspace" id="activity-workspace" data-mode="{{ section }}">
+  <div class="activity-toolbar">
+    <div class="row g-3 align-items-end">
+      <div class="col-6 col-lg-2"><label class="activity-filter-label" for="activity-month">Mês</label><select class="form-select" id="activity-month"><option value="">Todos os meses</option></select></div>
+      <div class="col-6 col-lg-2"><label class="activity-filter-label" for="activity-from">De</label><input class="form-control" type="date" id="activity-from"></div>
+      <div class="col-6 col-lg-2"><label class="activity-filter-label" for="activity-to">Até</label><input class="form-control" type="date" id="activity-to"></div>
+      <div class="col-6 col-lg-2"><label class="activity-filter-label" for="activity-city">Município</label><select class="form-select" id="activity-city"><option value="">Todos os municípios</option></select></div>
+      <div class="col-12 col-lg-4"><label class="activity-filter-label" for="activity-polo">Comum / Polo</label><select class="form-select" id="activity-polo"><option value="">Todos os polos</option></select></div>
+      <div class="col-12"><div class="activity-actions">
+        <button class="btn btn-white border-gray-400" type="button" id="activity-refresh"><i class="fa fa-sync-alt text-primary me-1"></i>Atualizar</button>
+        <button class="btn btn-white border-gray-400" type="button" id="activity-excel"><i class="fa fa-file-excel text-success me-1"></i>Excel</button>
+        <button class="btn btn-white border-gray-400" type="button" id="activity-pdf"><i class="fa fa-file-pdf text-danger me-1"></i>PDF</button>
+        <button class="btn btn-white border-gray-400" type="button" id="activity-clear"><i class="fa fa-eraser me-1"></i>Limpar</button>
+        {% if section == 'aulas' %}<button class="btn btn-primary fw-bold" type="button" id="activity-new"><i class="fa fa-plus me-1"></i>Novo lançamento</button>{% endif %}
+      </div></div>
+    </div>
+    <div class="activity-executive"><i class="fa fa-chart-line"></i><div><strong>Leitura executiva:</strong> <span id="activity-executive-text">Carregando indicadores do período…</span></div></div>
+  </div>
+
+  <div class="activity-kpis" id="activity-kpis"></div>
+  <div id="activity-content"><div class="activity-section"><div class="activity-loading"><i class="fa fa-circle-notch fa-spin"></i>Carregando dados operacionais…</div></div></div>
+</div>
+
+<div class="modal fade activity-modal" id="activity-entry-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title fw-bold mb-1" id="activity-entry-title">Novo lançamento</h5><div class="small text-white-50">Diário de aula da Musicalização Infantil</div></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+    <div class="modal-body"><form id="activity-entry-form"><div class="row g-3">
+      <div class="col-md-4"><label class="form-label">Data da aula</label><input class="form-control activity-entry" type="date" data-field="data_aula" required></div>
+      <div class="col-md-4"><label class="form-label">Município</label><select class="form-select activity-entry" data-field="cidade" id="entry-city" required></select></div>
+      <div class="col-md-4"><label class="form-label">Polo</label><select class="form-select activity-entry" data-field="polo" id="entry-polo" required></select></div>
+      <div class="col-md-4"><label class="form-label">Ciclo</label><select class="form-select activity-entry" data-field="ciclo"><option value="Ciclo 1">Ciclo 1</option><option value="Ciclo 2">Ciclo 2</option></select></div>
+      <div class="col-md-4"><label class="form-label">Número da aula</label><input class="form-control activity-entry" type="number" min="1" data-field="numero_aula"></div>
+      <div class="col-md-4"><label class="form-label">Atividade</label><input class="form-control activity-entry" data-field="nome_atividade" placeholder="Nome ou tema da atividade"></div>
+      <div class="col-6 col-md-4"><label class="form-label">Meninos presentes</label><input class="form-control activity-entry" type="number" min="0" value="0" data-field="meninos_presentes"></div>
+      <div class="col-6 col-md-4"><label class="form-label">Meninas presentes</label><input class="form-control activity-entry" type="number" min="0" value="0" data-field="meninas_presentes"></div>
+      <div class="col-6 col-md-4"><label class="form-label">Instrutores</label><input class="form-control activity-entry" type="number" min="0" value="0" data-field="instrutores_presentes"></div>
+      <div class="col-6 col-md-4"><label class="form-label">Colaboradores</label><input class="form-control activity-entry" type="number" min="0" value="0" data-field="colaboradores_presentes"></div>
+      <div class="col-6 col-md-4"><label class="form-label">Coordenação</label><input class="form-control activity-entry" type="number" min="0" value="0" data-field="coordenadores_presentes"></div>
+      <div class="col-12"><label class="form-label">Observações</label><textarea class="form-control activity-entry" rows="3" data-field="observacoes"></textarea></div>
+    </div></form></div>
+    <div class="modal-footer"><button class="btn btn-white" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary fw-bold" type="button" id="activity-save"><i class="fa fa-floppy-disk me-1"></i>Salvar lançamento</button></div>
+  </div></div>
+</div>
+
+<div class="modal fade activity-modal" id="activity-details-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold mb-1">Detalhes da atividade</h5><div class="small text-white-50" id="activity-details-subtitle"></div></div><button class="btn-close" type="button" data-bs-dismiss="modal"></button></div><div class="modal-body" id="activity-details-body"></div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Fechar</button></div></div></div></div>
+
+<div class="modal fade activity-modal" id="activity-attendance-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold mb-1">Frequência da atividade</h5><div class="small text-white-50" id="activity-attendance-subtitle"></div></div><button class="btn-close" type="button" data-bs-dismiss="modal"></button></div><div class="modal-body" id="activity-attendance-body"></div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Fechar</button></div></div></div></div>

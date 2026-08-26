@@ -296,8 +296,8 @@ def _apply_child_attendance_rules(children, classes, attendances, persist=False)
                 timeout=15,
             )
             response.raise_for_status()
-        cache.delete("musicalizacao:dashboard:v6")
-        cache.delete("musicalizacao:source:v6:criancas")
+        cache.delete("musicalizacao:dashboard:v7")
+        cache.delete("musicalizacao:source:v7:criancas")
     return children
 
 
@@ -340,17 +340,17 @@ def api_summary(request):
     result = {"scope": scope_details(scope), "warnings": [], "municipios": municipalities}
     summary_fields = {
         "criancas": "id,nome_crianca,sexo,data_nascimento,comum_congregacao,polo_participacao,cidade,nome_responsavel,celular_responsavel,status",
-        "instrutores": "comum_congregacao,polo_auxilio,role,status",
+        "instrutores": "id,nome_completo,comum_congregacao,polo_auxilio,role,status",
         "polos": "nome_polo,localidade",
         "aulas": "id,data_aula,cidade,polo,ciclo,numero_aula,meninos_presentes,meninas_presentes,instrutores_presentes,colaboradores_presentes,coordenadores_presentes,nome_atividade",
-        "presencas": "aula_id,aluno_id,status,presente",
+        "presencas": "aula_id,aluno_id,colaborador_id,participante_tipo,status,presente,observacoes",
     }
     try:
-        cached = cache.get("musicalizacao:dashboard:v6")
+        cached = cache.get("musicalizacao:dashboard:v7")
 
         def fetch(item):
             name, config = item
-            source_key = f"musicalizacao:source:v6:{name}"
+            source_key = f"musicalizacao:source:v7:{name}"
             source_cached = cache.get(source_key)
             if source_cached is not None:
                 return name, source_cached, None
@@ -372,7 +372,7 @@ def api_summary(request):
             raw = {name: rows for name, rows, warning in datasets}
             warnings = [warning for name, rows, warning in datasets if warning]
             if not warnings:
-                cache.set("musicalizacao:dashboard:v6", raw, 300)
+                cache.set("musicalizacao:dashboard:v7", raw, 300)
         else:
             raw, warnings = cached, []
 
@@ -386,8 +386,12 @@ def api_summary(request):
         )
         allowed_aulas = {str(row.get("id")) for row in result["aulas"] if row.get("id")}
         allowed_children = {str(row.get("id")) for row in result["criancas"] if row.get("id")}
+        allowed_staff = {str(row.get("id")) for row in result["instrutores"] if row.get("id")}
         result["presencas"] = [row for row in raw.get("presencas", []) if (
-            str(row.get("aula_id")) in allowed_aulas and str(row.get("aluno_id")) in allowed_children
+            str(row.get("aula_id")) in allowed_aulas and (
+                str(row.get("aluno_id")) in allowed_children or
+                str(row.get("colaborador_id")) in allowed_staff
+            )
         )]
         return JsonResponse(result)
     except requests.RequestException:
@@ -473,6 +477,8 @@ def api_resource(request, resource, record_id=None):
                 if coordinator_supplied:
                     _set_polo_coordinator(scope, saved_item.get("nome_polo"), coordinator_id)
                 cache.delete("musicalizacao:polos:v1")
+            cache.delete("musicalizacao:dashboard:v7")
+            cache.delete(f"musicalizacao:source:v7:{resource}")
             return JsonResponse({"item": saved_item}, status=200 if record_id else 201)
 
         if request.method == "DELETE" and record_id:
@@ -480,6 +486,8 @@ def api_resource(request, resource, record_id=None):
             response.raise_for_status()
             if resource == "polos":
                 cache.delete("musicalizacao:polos:v1")
+            cache.delete("musicalizacao:dashboard:v7")
+            cache.delete(f"musicalizacao:source:v7:{resource}")
             return JsonResponse({}, status=204)
         return JsonResponse({"error": "Método não permitido."}, status=405)
     except PermissionError:
