@@ -10,7 +10,7 @@ from django.urls import Resolver404, resolve
 from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
-from .views import apiAuth, apiRoteiroBairros, apiStorageUpload, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
+from .views import apiAuth, apiRoteiroBairros, apiStorageUpload, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apiVisitasRelatoriosEquipes, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
 
 CATALOG = [
@@ -674,6 +674,26 @@ class VisitTeamsTests(TestCase):
 
         self.assertIn("const saoPauloDayStart = date => `${date}T00:00:00-03:00`;", html)
         self.assertIn("agendaParams.set('end_date', saoPauloNextDayStart(dataAte));", html)
+        self.assertIn('resetDashboardPeriodToCurrent();', html)
+        self.assertIn("$('#filter-mes').val(currentMonth);", html)
+
+    def test_dashboard_specific_common_forces_local_context(self):
+        request = RequestFactory().get('/visitas/dashboard/')
+        request.session = {'user_profile': {
+            'role_id': 1, 'role': 'ADMIN', 'cidade': '', 'municipio': '',
+            'comum': 'COMUM A', 'nome': 'Administrador', 'email': 'admin@example.com',
+        }}
+        html = render_to_string('pages/visitas-dashboard.html', {
+            'dashboard_access_level': 'global',
+            'dashboard_comum_padrao': 'COMUM A',
+            'dashboard_municipio_padrao': 'ITAPEVI',
+            'dashboard_comuns': [{'comum': 'COMUM A', 'cidade': 'ITAPEVI'}],
+            'dashboard_municipios': ['ITAPEVI'],
+        }, request=request)
+
+        self.assertIn("dashboardGroupContext = 'LOCAL';", html)
+        self.assertIn("nonLocalButtons.prop('disabled', hasSpecificCommon)", html)
+        self.assertIn("agendaTeamType(item) === dashboardGroupContext", html)
         self.assertNotIn("`${dataAte}T23:59:59`", html)
         self.assertIn("rawText.match(/^grupo\\s+(rf|re|[a-z])$/i)", html)
 
@@ -730,6 +750,8 @@ class VisitTeamsTests(TestCase):
         self.assertEqual(format_display_name("IAIR JOÃO"), "Iair João")
         self.assertEqual(format_display_name("ADERBAL, ABNER, REINALDO E HENRIQUE"), "Aderbal, Abner, Reinaldo e Henrique")
         self.assertEqual(format_display_name("GRUPO RF"), "Grupo RF")
+        self.assertEqual(format_display_name("GRUPO A"), "Grupo A")
+        self.assertEqual(format_display_name("Grupo a"), "Grupo A")
 
     @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
     def test_local_team_report_locks_city_and_common(self, _commons):
@@ -750,6 +772,50 @@ class VisitTeamsTests(TestCase):
         response = visitasRelatoriosEquipes(request)
         self.assertContains(response, 'id="report-city" class="form-select" disabled')
         self.assertContains(response, 'id="report-common" class="form-select" >')
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[{"comum": "COMUM A", "cidade": "ITAPEVI"}])
+    @patch("ColorAdminApp.views.requests.get")
+    def test_team_report_month_filter_and_total_match_dashboard_final_statuses(self, get, _commons):
+        members = Mock(status_code=200)
+        members.json.return_value = [{"id": "member-1", "comum": "COMUM A"}]
+        agenda = Mock(status_code=200)
+        agenda.json.return_value = [
+            {"irmandade_id": "member-1", "equipe_id": "team-1", "status": "Realizada", "data_inicio": "2026-08-02T10:00:00-03:00"},
+            {"irmandade_id": "member-1", "equipe_id": "team-1", "status": "Não realizada", "data_inicio": "2026-08-03T10:00:00-03:00"},
+            {"irmandade_id": "member-1", "equipe_id": "team-1", "status": "Cancelada", "data_inicio": "2026-08-04T10:00:00-03:00"},
+            {"irmandade_id": "member-1", "equipe_id": "team-1", "status": "Agendada", "data_inicio": "2026-08-30T10:00:00-03:00"},
+        ]
+        teams = Mock(status_code=200)
+        teams.json.return_value = [{"id": "team-1", "nome": "Equipe 1", "tipo": "LOCAL"}]
+        get.side_effect = [members, agenda, teams]
+        request = RequestFactory().get('/visitas/api/relatorios-equipes/', {"ano": "2026", "mes": "8"})
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasRelatoriosEquipes(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["local"][0]["total"], 3)
+        self.assertEqual(payload["local"][0]["agendadas"], 1)
+        agenda_params = get.call_args_list[1].kwargs["params"]
+        self.assertIn(("data_inicio", "gte.2026-08-01T00:00:00"), agenda_params)
+        self.assertIn(("data_inicio", "lte.2026-08-31T23:59:59"), agenda_params)
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[])
+    @patch("ColorAdminApp.views.requests.get")
+    def test_team_report_all_months_filters_the_selected_year(self, get, _commons):
+        empty_response = Mock(status_code=200)
+        empty_response.json.return_value = []
+        get.return_value = empty_response
+        request = RequestFactory().get('/visitas/api/relatorios-equipes/', {"ano": "2026", "mes": "all"})
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasRelatoriosEquipes(request)
+        agenda_params = get.call_args_list[1].kwargs["params"]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(("data_inicio", "gte.2026-01-01T00:00:00"), agenda_params)
+        self.assertIn(("data_inicio", "lte.2026-12-31T23:59:59"), agenda_params)
 
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.post")

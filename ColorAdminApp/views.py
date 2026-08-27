@@ -220,7 +220,9 @@ def format_display_name(value):
         parts = []
         for part in word.split('-'):
             clean = part.casefold()
-            if clean in acronyms:
+            previous_word = text.split(' ')[index - 1].casefold() if index > 0 else ''
+            is_group_code = previous_word == 'grupo' and (len(clean) == 1 and clean.isalpha())
+            if clean in acronyms or is_group_code:
                 parts.append(clean.upper())
             elif index > 0 and clean in lowercase_words:
                 parts.append(clean)
@@ -1141,6 +1143,18 @@ def apiVisitasRelatoriosEquipes(request):
         agenda_params = [('select', '*'), ('order', 'data_inicio.desc')]
         start = (request.GET.get('inicio') or '').strip()
         end = (request.GET.get('fim') or '').strip()
+        year = (request.GET.get('ano') or '').strip()
+        month = (request.GET.get('mes') or '').strip()
+        # O período digitado tem precedência. Sem ele, ano/mês define o
+        # mesmo recorte mensal utilizado pelo dashboard de visitas.
+        if not start and not end and re.fullmatch(r'\d{4}', year) and re.fullmatch(r'(?:0?[1-9]|1[0-2])', month):
+            month_start = datetime(int(year), int(month), 1)
+            next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+            start = month_start.strftime('%Y-%m-%d')
+            end = (next_month - timedelta(days=1)).strftime('%Y-%m-%d')
+        elif not start and not end and re.fullmatch(r'\d{4}', year) and month == 'all':
+            start = f'{year}-01-01'
+            end = f'{year}-12-31'
         if start:
             agenda_params.append(('data_inicio', f'gte.{start}T00:00:00'))
         if end:
@@ -1182,12 +1196,17 @@ def apiVisitasRelatoriosEquipes(request):
                 'comum': comum if team_type == 'LOCAL' else '', 'equipe': name,
                 'total': 0, 'realizadas': 0, 'agendadas': 0, 'nao_realizadas': 0, 'canceladas': 0,
             })
-            row['total'] += 1
             status = str(visit.get('status') or '').casefold()
-            if status == 'realizada': row['realizadas'] += 1
-            elif status == 'cancelada': row['canceladas'] += 1
-            elif status in {'não realizada', 'nao realizada'}: row['nao_realizadas'] += 1
+            normalized_status = ''.join(
+                char for char in unicodedata.normalize('NFKD', status)
+                if not unicodedata.combining(char)
+            )
+            if normalized_status == 'realizada': row['realizadas'] += 1
+            elif normalized_status == 'cancelada': row['canceladas'] += 1
+            elif normalized_status == 'nao realizada': row['nao_realizadas'] += 1
             else: row['agendadas'] += 1
+            # "Total" segue o dashboard: apenas visitas com desfecho final.
+            row['total'] = row['realizadas'] + row['nao_realizadas'] + row['canceladas']
             month = str(visit.get('data_inicio') or '')[:7]
             if re.fullmatch(r'\d{4}-\d{2}', month):
                 trend_key = (team_type, month)
@@ -1195,11 +1214,11 @@ def apiVisitasRelatoriosEquipes(request):
                     'tipo': team_type, 'mes': month, 'total': 0, 'realizadas': 0,
                     'agendadas': 0, 'nao_realizadas': 0, 'canceladas': 0,
                 })
-                trend['total'] += 1
-                if status == 'realizada': trend['realizadas'] += 1
-                elif status == 'cancelada': trend['canceladas'] += 1
-                elif status in {'não realizada', 'nao realizada'}: trend['nao_realizadas'] += 1
+                if normalized_status == 'realizada': trend['realizadas'] += 1
+                elif normalized_status == 'cancelada': trend['canceladas'] += 1
+                elif normalized_status == 'nao realizada': trend['nao_realizadas'] += 1
                 else: trend['agendadas'] += 1
+                trend['total'] = trend['realizadas'] + trend['nao_realizadas'] + trend['canceladas']
         def report_sort_key(row):
             regional_match = re.fullmatch(r'Grupo\s+([A-Z]|RF|RE)', str(row.get('equipe') or ''), flags=re.IGNORECASE)
             team_order = regional_match.group(1).upper() if regional_match else str(row.get('equipe') or '').casefold()

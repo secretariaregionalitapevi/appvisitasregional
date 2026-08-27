@@ -177,6 +177,16 @@
     const dashboardDefaultCommon = '{{ dashboard_comum_padrao|escapejs }}';
     const dashboardDefaultCity = '{{ dashboard_municipio_padrao|escapejs }}';
     const dashboardCommons = JSON.parse(document.getElementById('dashboard-commons-data').textContent);
+    const resetDashboardPeriodToCurrent = () => {
+        const now = new Date();
+        const currentYear = String(now.getFullYear());
+        const currentMonth = String(now.getMonth() + 1);
+        if (!$(`#filter-ano option[value="${currentYear}"]`).length) {
+            $('#filter-ano').prepend(new Option(currentYear, currentYear));
+        }
+        $('#filter-ano').val(currentYear);
+        $('#filter-mes').val(currentMonth);
+    };
 
     const formatNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -216,6 +226,22 @@
         if (status === 'Mensal') return 'source-monthly';
         if (status === 'Mensal + Agenda') return 'source-combined';
         return 'source-default';
+    };
+    const contextDescriptions = {
+        ALL: 'Relatório mensal local + agenda local + agenda regional.',
+        LOCAL: 'Relatório mensal + visitas pontuais das equipes locais.',
+        REGIONAL: 'Visitas pontuais realizadas pelos grupos regionais.'
+    };
+    const syncGroupContextWithCommon = commonSelection => {
+        const hasSpecificCommon = Boolean(commonSelection && commonSelection !== '__all__');
+        const nonLocalButtons = $('[data-group-context="ALL"], [data-group-context="REGIONAL"]');
+        nonLocalButtons.prop('disabled', hasSpecificCommon).attr('title', hasSpecificCommon ? 'Selecione todas as comuns para consultar o consolidado ou os grupos regionais.' : '');
+        if (hasSpecificCommon) {
+            dashboardGroupContext = 'LOCAL';
+            $('[data-group-context]').removeClass('active').attr('aria-pressed', 'false');
+            $('[data-group-context="LOCAL"]').addClass('active').attr('aria-pressed', 'true');
+        }
+        $('#context-description').text(contextDescriptions[dashboardGroupContext]);
     };
 
     const renderDashboards = (data, agendaData = []) => {
@@ -517,6 +543,7 @@
         let mes = $('#filter-mes').val();
         const commonSelection = $('#filter-comum').val() || '';
         const comum = commonSelection === '__all__' ? '' : commonSelection;
+        syncGroupContextWithCommon(commonSelection);
         const municipio = $('#filter-municipio').val() || '';
         const dataDe = $('#peridodo-de').val();
         const dataAte = $('#peridodo-ate').val();
@@ -565,7 +592,10 @@
                 
                 window.globalAgendaVisitas = filteredAgenda;
                 window.dashboardAgendaData = filteredAgenda;
-                renderRealizedVisits(filteredAgenda.filter(item => String(item.status || '').toLocaleLowerCase('pt-BR') === 'realizada'));
+                const contextualFinalAgenda = dashboardGroupContext === 'ALL'
+                    ? filteredAgenda
+                    : filteredAgenda.filter(item => agendaTeamType(item) === dashboardGroupContext);
+                renderRealizedVisits(contextualFinalAgenda.filter(item => normalizedStatus(item) === 'realizada'));
             }
 
             renderDashboards(currentData, filteredAgenda);
@@ -831,6 +861,9 @@
     };
 
     $(document).ready(function () {
+        // A abertura do painel sempre começa no mês vigente. "Todos" e os
+        // demais meses continuam disponíveis para escolha manual.
+        resetDashboardPeriodToCurrent();
         const rebuildDashboardCommons = (municipio, selected = '') => {
             const select = $('#filter-comum');
             if (select.hasClass('select2-hidden-accessible')) select.select2('destroy');
@@ -856,15 +889,11 @@
         $('#filter-comum').on('change', applyFilters);
 
         $('[data-group-context]').on('click', function () {
+            if ($(this).prop('disabled')) return;
             dashboardGroupContext = $(this).data('group-context');
             $('[data-group-context]').removeClass('active').attr('aria-pressed', 'false');
             $(this).addClass('active').attr('aria-pressed', 'true');
-            const descriptions = {
-                ALL: 'Relatorio mensal local + agenda local + agenda regional.',
-                LOCAL: 'Relatorio mensal + visitas pontuais das equipes locais.',
-                REGIONAL: 'Visitas pontuais realizadas pelos grupos regionais.'
-            };
-            $('#context-description').text(descriptions[dashboardGroupContext]);
+            $('#context-description').text(contextDescriptions[dashboardGroupContext]);
             const agenda = window.dashboardAgendaData || [];
             const contextualAgenda = dashboardGroupContext === 'ALL' ? agenda : agenda.filter(item => agendaTeamType(item) === dashboardGroupContext);
             renderDashboards(currentData, agenda);
@@ -887,8 +916,7 @@
         });
 
         $('#btn-clear').click(() => {
-            $('#filter-mes').val('all');
-            $('#filter-ano').val(new Date().getFullYear());
+            resetDashboardPeriodToCurrent();
             if (dashboardAccessLevel === 'regional' || dashboardAccessLevel === 'global') $('#filter-municipio').val(dashboardDefaultCity);
             rebuildDashboardCommons(
                 $('#filter-municipio').val() || dashboardDefaultCity,
