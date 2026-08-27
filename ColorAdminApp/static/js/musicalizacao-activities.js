@@ -9,6 +9,7 @@
   const number = value => Number(value) || 0;
   const iso = value => String(value || '').slice(0, 10);
   const dateLabel = value => value ? new Date(`${iso(value)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
+  const aggregateAttendance = row => number(row.meninos_presentes) + number(row.meninas_presentes) + number(row.instrutores_presentes) + number(row.colaboradores_presentes) + number(row.coordenadores_presentes);
   const csrf = () => document.cookie.split('; ').find(item => item.startsWith('csrftoken='))?.split('=')[1] || '';
   const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const state = { aulas: [], polos: [], criancas: [], instrutores: [], presencas: [], municipios: [], selected: null };
@@ -241,6 +242,9 @@
 
   function showAttendance(row) {
     const calls = state.presencas.filter(item => String(item.aula_id) === String(row.id));
+    // Um diário zerado e sem qualquer chamada individual registra que a atividade
+    // não aconteceu. Nesse caso, ausência não pode ser inferida pela lista do polo.
+    const activityNotHeld = calls.length === 0 && aggregateAttendance(row) === 0;
     const callByParticipant = new Map();
     calls.forEach(call => {
       const key = call.colaborador_id ? `staff:${call.colaborador_id}` : `child:${call.aluno_id}`;
@@ -271,11 +275,13 @@
 
     const attendance = participants.map(person => {
       const saved = callByParticipant.get(person.key);
-      let status = 'Faltou', tone = 'late', observation = saved?.observacoes || '';
-      if (saved && norm(saved.status).includes('JUSTIFIC')) { status='Justificado'; tone='attention'; }
+      let status = activityNotHeld ? 'Não se aplica' : 'Faltou';
+      let tone = activityNotHeld ? 'empty' : 'late';
+      let observation = activityNotHeld ? 'Atividade não realizada; nenhuma falta atribuída.' : (saved?.observacoes || '');
+      if (!activityNotHeld && saved && norm(saved.status).includes('JUSTIFIC')) { status='Justificado'; tone='attention'; }
       else if (saved && (saved.presente === true || norm(saved.status) === 'PRESENTE')) { status='Presente'; tone='ok'; }
-      else if (!saved && person.role === 'Coordenadora' && coordinatorsToRecover > 0) { status='Presente'; tone='ok'; observation='Presença recuperada do lançamento original.'; coordinatorsToRecover--; }
-      else if (!saved && person.role === 'Monitora' && monitorsToRecover > 0) { status='Presente'; tone='ok'; observation='Presença recuperada do lançamento original.'; monitorsToRecover--; }
+      else if (!activityNotHeld && !saved && person.role === 'Coordenadora' && coordinatorsToRecover > 0) { status='Presente'; tone='ok'; coordinatorsToRecover--; }
+      else if (!activityNotHeld && !saved && person.role === 'Monitora' && monitorsToRecover > 0) { status='Presente'; tone='ok'; monitorsToRecover--; }
       return {...person,status,tone,observation};
     });
 
@@ -295,7 +301,8 @@
       previousGroup=item.group;
       return groupHeader+`<tr class="attendance-participant-row" data-attendance-search="${esc(norm(item.name+' '+item.role+' '+item.status))}"><td>${index+1}</td><td><strong>${esc(item.name||'Participante não identificado')}</strong></td><td><span class="activity-role-badge activity-role-${item.group===0?'child':item.group===2?'coordinator':'monitor'}">${esc(item.role)}</span></td><td><span class="activity-status-badge activity-status-${item.tone}">${esc(item.status)}</span></td><td><div class="activity-observation">${esc(item.observation||'—')}</div></td></tr>`;
     }).join('');
-    $('#activity-attendance-body').innerHTML = `<h6 class="fw-bold text-muted mb-3">Resumo da frequência</h6><div class="activity-modal-summary"><div class="activity-modal-metric activity-metric-present"><strong>${totals.present}</strong><span>Presentes</span></div><div class="activity-modal-metric activity-metric-absent"><strong>${totals.absent}</strong><span>Faltas</span></div><div class="activity-modal-metric activity-metric-justified"><strong>${totals.justified}</strong><span>Justificados</span></div></div><div class="attendance-search"><i class="fa fa-search"></i><input class="form-control" id="attendance-search-input" placeholder="Pesquisar participante do polo…"></div><div class="table-responsive"><table class="table activity-table attendance-table"><thead><tr><th>#</th><th>Participante</th><th>Função</th><th>Status</th><th>Justificativa / Observação</th></tr></thead><tbody>${rowsHtml||'<tr><td colspan="5" class="text-center text-muted py-4">Nenhum participante cadastrado neste polo.</td></tr>'}</tbody></table></div>`;
+    const noActivityNotice = activityNotHeld ? `<div class="attendance-no-activity"><i class="fa fa-calendar-xmark"></i><div><strong>Não houve atividade nesta data.</strong><span>${esc(row.observacoes || 'Motivo não informado.')}</span><span>Nenhuma falta foi gerada.</span></div></div>` : '';
+    $('#activity-attendance-body').innerHTML = `<h6 class="fw-bold text-muted mb-3">Resumo da frequência</h6>${noActivityNotice}<div class="activity-modal-summary"><div class="activity-modal-metric activity-metric-present"><strong>${totals.present}</strong><span>Presentes</span></div><div class="activity-modal-metric activity-metric-absent"><strong>${totals.absent}</strong><span>Faltas</span></div><div class="activity-modal-metric activity-metric-justified"><strong>${totals.justified}</strong><span>Justificados</span></div></div><div class="attendance-search"><i class="fa fa-search"></i><input class="form-control" id="attendance-search-input" placeholder="Pesquisar participante do polo…"></div><div class="table-responsive"><table class="table activity-table attendance-table"><thead><tr><th>#</th><th>Participante</th><th>Função</th><th>Status</th><th>Justificativa / Observação</th></tr></thead><tbody>${rowsHtml||'<tr><td colspan="5" class="text-center text-muted py-4">Nenhum participante cadastrado neste polo.</td></tr>'}</tbody></table></div>`;
     $('#attendance-search-input')?.addEventListener('input', event => {
       const query=norm(event.target.value);
       document.querySelectorAll('.attendance-participant-row').forEach(tableRow=>tableRow.hidden=!!query&&!tableRow.dataset.attendanceSearch.includes(query));

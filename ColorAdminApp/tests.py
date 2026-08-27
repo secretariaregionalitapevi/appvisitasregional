@@ -692,8 +692,11 @@ class VisitTeamsTests(TestCase):
         }, request=request)
 
         self.assertIn("dashboardGroupContext = 'LOCAL';", html)
-        self.assertIn("nonLocalButtons.prop('disabled', hasSpecificCommon)", html)
+        self.assertNotIn("nonLocalButtons.prop('disabled', hasSpecificCommon)", html)
+        self.assertIn("syncGroupContextWithCommon($('#filter-comum').val() || '');", html)
         self.assertIn("agendaTeamType(item) === dashboardGroupContext", html)
+        self.assertIn("Nomes avulsos de responsáveis não são novas equipes", html)
+        self.assertIn("`Equipe ${Number(numberedTeam[1])}`", html)
         self.assertNotIn("`${dataAte}T23:59:59`", html)
         self.assertIn("rawText.match(/^grupo\\s+(rf|re|[a-z])$/i)", html)
 

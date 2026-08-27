@@ -46,6 +46,8 @@
     .source-badge{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:5px 8px;border-radius:12px;color:#fff;font-size:10px;font-weight:700;white-space:nowrap}.source-agenda{background:#348fe2}.source-monthly{background:#727cb6}.source-combined{background:#00acac}.source-default{background:#6c757d}
     .ranking-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.ranking-column{display:flex;flex-direction:column;gap:10px}.ranking-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid #e8ebef;border-radius:8px;background:#fff}.ranking-position{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:#eef5fc;color:#348fe2;font-size:12px;font-weight:700}.ranking-main{min-width:0}.ranking-name{color:#2d353c;font-size:12px;font-weight:600;line-height:1.25;white-space:normal;overflow-wrap:anywhere}.ranking-track{height:4px;margin-top:7px;border-radius:4px;background:#edf0f3;overflow:hidden}.ranking-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#348fe2,#00acac)}.ranking-value{text-align:right;white-space:nowrap}.ranking-count{display:block;color:#2d353c;font-size:15px;font-weight:700}.ranking-share{display:block;color:#8a929a;font-size:10px}.ranking-empty{padding:28px;text-align:center;color:#8a929a;border:1px dashed #d9dee3;border-radius:8px}
 
+    .locality-single{display:grid;grid-template-columns:minmax(280px,1.35fr) minmax(0,3fr);align-items:stretch;gap:14px}.locality-single-main{display:flex;align-items:center;gap:13px;padding:15px 17px;border:1px solid #dfe7ed;border-radius:11px;background:linear-gradient(135deg,#f7fbff,#fff)}.locality-single-main .ranking-position{width:38px;height:38px;flex:0 0 38px}.locality-single-name{min-width:0;flex:1}.locality-single-name strong{display:block;color:#233747;font-size:13px}.locality-single-name span{display:block;margin-top:4px;color:#83909b;font-size:10px}.locality-single-total{text-align:right}.locality-single-total strong{display:block;color:#213547;font-size:24px;line-height:1}.locality-single-total span{display:block;margin-top:5px;color:#83909b;font-size:9px;font-weight:700;text-transform:uppercase}.locality-category-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.locality-category{display:flex;min-height:76px;flex-direction:column;justify-content:center;padding:12px 14px;border:1px solid #e6ebef;border-radius:10px;background:#fff;border-top:3px solid var(--category-color)}.locality-category strong{color:#233747;font-size:20px;line-height:1}.locality-category span{margin-top:7px;color:#7e8b96;font-size:9px;font-weight:700;text-transform:uppercase}
+
     @media (max-width: 1199.98px) {
         .filter-actions {
             justify-content: flex-start;
@@ -67,8 +69,10 @@
         .page-header { font-size: 20px; }
         .kpi-card:hover { transform: none; }
         .context-switch{display:grid;grid-template-columns:1fr;width:100%}.context-switch .btn{text-align:left}.ops-card .card-body{padding:12px!important}.ops-value{font-size:18px}
-        .ranking-grid{grid-template-columns:1fr}.ranking-item{grid-template-columns:30px minmax(0,1fr) auto;padding:10px}
+        .ranking-grid{grid-template-columns:1fr}.ranking-item{grid-template-columns:30px minmax(0,1fr) auto;padding:10px}.locality-single{grid-template-columns:1fr}.locality-category-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
     }
+
+    @media (max-width: 767.98px){.locality-category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
     .executive-summary {
         border-left: 4px solid #2d353c;
@@ -234,8 +238,6 @@
     };
     const syncGroupContextWithCommon = commonSelection => {
         const hasSpecificCommon = Boolean(commonSelection && commonSelection !== '__all__');
-        const nonLocalButtons = $('[data-group-context="ALL"], [data-group-context="REGIONAL"]');
-        nonLocalButtons.prop('disabled', hasSpecificCommon).attr('title', hasSpecificCommon ? 'Selecione todas as comuns para consultar o consolidado ou os grupos regionais.' : '');
         if (hasSpecificCommon) {
             dashboardGroupContext = 'LOCAL';
             $('[data-group-context]').removeClass('active').attr('aria-pressed', 'false');
@@ -365,7 +367,7 @@
 
         renderTrendChart(contextualAgenda, combinedTableData);
         renderMixChart(totals);
-        renderRankingList(combinedTableData);
+        renderRankingList(combinedTableData, contextualAgenda);
         renderTable(combinedTableData);
     };
 
@@ -458,7 +460,7 @@
         mixChart.render();
     };
 
-    const renderRankingList = data => {
+    const renderRankingList = (data, agendaData = []) => {
         const ranking = {};
         data.forEach(item => {
             const common = formatDisplayText(item.comum || 'Localidade nao informada');
@@ -470,6 +472,39 @@
         const container = $('#locality-ranking').empty();
         if (!rows.length) {
             container.html('<div class="ranking-empty"><i class="fa fa-info-circle me-1"></i>Sem localidades para o contexto selecionado.</div>');
+            return;
+        }
+        if (rows.length === 1) {
+            const [name, value] = rows[0];
+            const daily = {};
+            const activeTeams = new Set();
+            agendaData.forEach(item => {
+                const date = String(item.data_inicio || '').slice(0, 10);
+                if (date) daily[date] = (daily[date] || 0) + 1;
+                const rawTeam = String(item.equipe_responsavel || '').trim();
+                const numberedTeam = rawTeam.match(/^Equipe(?:\s+de\s+visitas?)?\s+0*(\d+)$/i);
+                const namedGroup = rawTeam.match(/^Grupo\s+(RF|RE|[A-Z])$/i);
+                const canonicalTeam = numberedTeam
+                    ? `Equipe ${Number(numberedTeam[1])}`
+                    : (namedGroup ? `Grupo ${namedGroup[1].toUpperCase()}` : '');
+                // Nomes avulsos de responsáveis não são novas equipes.
+                // Sem um vínculo explícito, a visita permanece no total,
+                // mas não infla o indicador de equipes atuantes.
+                if (canonicalTeam) activeTeams.add(canonicalTeam);
+            });
+            const activeDays = Object.keys(daily).length;
+            const dailyAverage = activeDays ? agendaData.length / activeDays : 0;
+            const peak = Object.entries(daily).sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+            const peakLabel = peak ? `${peak[0].split('-').reverse().slice(0,2).join('/')} · ${formatNum(peak[1])}` : '—';
+            container.html(`<div class="locality-single">
+                <div class="locality-single-main"><span class="ranking-position">1&ordm;</span><div class="locality-single-name"><strong>${escapeHtml(name)}</strong><span>Resultado da localidade no recorte selecionado</span></div><div class="locality-single-total"><strong>${formatNum(value)}</strong><span>Total de visitas</span></div></div>
+                <div class="locality-category-grid">
+                    <div class="locality-category" style="--category-color:#348fe2"><strong>${formatNum(activeDays)}</strong><span>Dias com visitas</span></div>
+                    <div class="locality-category" style="--category-color:#00acac"><strong>${activeDays ? dailyAverage.toLocaleString('pt-BR',{maximumFractionDigits:1}) : '—'}</strong><span>Média por dia ativo</span></div>
+                    <div class="locality-category" style="--category-color:#f59c1a"><strong>${peakLabel}</strong><span>Pico diário (data · visitas)</span></div>
+                    <div class="locality-category" style="--category-color:#6c5ce7"><strong>${formatNum(activeTeams.size)}</strong><span>Equipes atuantes</span></div>
+                </div>
+            </div>`);
             return;
         }
         const grid = $('<div class="ranking-grid"></div>');
@@ -543,7 +578,6 @@
         let mes = $('#filter-mes').val();
         const commonSelection = $('#filter-comum').val() || '';
         const comum = commonSelection === '__all__' ? '' : commonSelection;
-        syncGroupContextWithCommon(commonSelection);
         const municipio = $('#filter-municipio').val() || '';
         const dataDe = $('#peridodo-de').val();
         const dataAte = $('#peridodo-ate').val();
@@ -882,11 +916,15 @@
         const hasDefaultCity = municipalitySelect.find('option').toArray().some(option => option.value === dashboardDefaultCity);
         if (dashboardDefaultCity && hasDefaultCity) municipalitySelect.val(dashboardDefaultCity);
         rebuildDashboardCommons(municipalitySelect.val() || dashboardDefaultCity, dashboardDefaultCommon);
+        syncGroupContextWithCommon($('#filter-comum').val() || '');
         $('#filter-municipio').on('change', function () {
             rebuildDashboardCommons($(this).val(), '');
             applyFilters();
         });
-        $('#filter-comum').on('change', applyFilters);
+        $('#filter-comum').on('change', function () {
+            syncGroupContextWithCommon($(this).val() || '');
+            applyFilters();
+        });
 
         $('[data-group-context]').on('click', function () {
             if ($(this).prop('disabled')) return;
@@ -922,6 +960,7 @@
                 $('#filter-municipio').val() || dashboardDefaultCity,
                 dashboardDefaultCommon
             );
+            syncGroupContextWithCommon($('#filter-comum').val() || '');
             $('#peridodo-de, #peridodo-ate').val('');
             applyFilters();
         });
