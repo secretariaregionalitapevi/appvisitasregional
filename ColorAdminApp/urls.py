@@ -4,6 +4,7 @@ from . import views
 from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
+from . import gem
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
@@ -42,6 +43,10 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/', musicalizacao.api_resource, name='musicalizacaoResource'),
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
+    path('gem/', gem.page, name='gemDashboard'),
+    path('gem/api/resumo/', gem.api_summary, name='gemSummary'),
+    path('gem/api/alunos/', gem.api_students, name='gemStudents'),
+    path('gem/api/alunos/<uuid:student_id>/linha-do-tempo/', gem.api_student_timeline, name='gemStudentTimeline'),
     path('ai/chat/', views.aiChat, name='aiChat'),
     path('ai/image-generator/', views.aiImageGenerator, name='aiImageGenerator'),
     path('email/inbox/', views.emailInbox, name='emailInbox'),

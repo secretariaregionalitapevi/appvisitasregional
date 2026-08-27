@@ -53,6 +53,11 @@ def sidebar_menu(request):
 			{ 'url': '/musicalizacao/historico/', 'title': 'Histórico de Atividades', 'name': 'musicalizacaoSection' }
 		]
 	},
+	{ 'url': '/gem/', 'icon': 'fa fa-graduation-cap', 'title': 'GEM', 'name': 'gemDashboard',
+		'children': [
+			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' }
+		]
+	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-shield-halved', 'title': 'Administração', 'name': 'administration',
 		'children': [
 			{ 'url': '/administracao#pendentes', 'title': 'Liberar Usuários' },
@@ -248,6 +253,7 @@ def sidebar_menu(request):
 			allowed_titles.add('Visitas')
 		if MODULE_MUSICALIZACAO in modules:
 			allowed_titles.add('Musicalização')
+			allowed_titles.add('GEM')
 		sidebar_menu = [item for item in sidebar_menu if item.get('is_header') or item.get('title') == 'Dashboard' or item.get('title') in allowed_titles]
 
 	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)

@@ -1,0 +1,30 @@
+{
+  "exported_at": "2026-08-27T18:00:00-03:00",
+  "source": "SAM",
+  "students": [
+    {
+      "source_id": "identificador-do-aluno-no-sam",
+      "nome": "NOME COMPLETO DO ALUNO",
+      "comum": "BR-00-0000 - NOME DA COMUM",
+      "instrumento": "VIOLINO",
+      "history": {
+        "msa": [
+          {
+            "data_aula": "2026-08-01",
+            "fase": "Fase 3",
+            "paginas": "20 a 28",
+            "licoes": "1 a 4",
+            "clave": "Sol",
+            "observacoes": "",
+            "autorizado_por": "INSTRUTOR"
+          }
+        ],
+        "metodo": [],
+        "hinario": [],
+        "provas": [],
+        "escalas": [],
+        "atividades": []
+      }
+    }
+  ]
+}
