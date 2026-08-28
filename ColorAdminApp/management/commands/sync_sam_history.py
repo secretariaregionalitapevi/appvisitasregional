@@ -15,14 +15,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("input", type=Path, help="Arquivo JSON exportado do SAM")
+        parser.add_argument("--student-id", help="Vínculo já confirmado pelo ID permanente do estado SAM")
         parser.add_argument("--commit", action="store_true", help="Confirma gravação; sem esta opção nada é alterado")
         parser.add_argument("--report", type=Path, help="Grava relatório detalhado da conciliação")
 
-    def _fetch_all(self, table, select="*"):
+    def _fetch_all(self, table, select="*", filters=None):
         rows, limit = [], 1000
         url = f"{settings.SUPABASE_URL}/rest/v1/{table}"
         for offset in range(0, 100000, limit):
-            response = requests.get(url, headers=service_headers(), params={"select": select, "offset": offset, "limit": limit}, timeout=30)
+            params = {"select": select, "offset": offset, "limit": limit, **(filters or {})}
+            response = requests.get(url, headers=service_headers(), params=params, timeout=30)
             response.raise_for_status()
             batch = response.json()
             rows.extend(batch)
@@ -54,19 +56,32 @@ class Command(BaseCommand):
         if not isinstance(students, list):
             raise CommandError("O arquivo precisa conter uma lista 'students'.")
 
-        try:
-            targets = self._fetch_all("musica_acompanhamento_aluno", "id,nome_aluno,comum_congregacao,municipio,instrumento")
-            existing = {}
-            for source_name, (table, _) in SOURCE_CONFIG.items():
-                existing[source_name] = {event_signature(source_name, row) for row in self._fetch_all(table)}
-        except requests.RequestException as exc:
-            raise CommandError(f"Falha ao consultar o GEM: {exc}") from exc
-
         stats = Counter()
         unresolved = []
         inserts = defaultdict(list)
+        matched_students = []
+        try:
+            targets = []
+            if options.get("student_id"):
+                if len(students) != 1:
+                    raise CommandError("--student-id exige um arquivo com exatamente um aluno.")
+                targets = self._fetch_all(
+                    "musica_acompanhamento_aluno", "id,nome_aluno,comum_congregacao,municipio,instrumento",
+                    {"id": f"eq.{options['student_id']}"},
+                )
+                if len(targets) != 1:
+                    raise CommandError("O aluno vinculado ao ID informado não existe mais na base GEM.")
+            else:
+                names = {str(row.get("nome") or row.get("nome_aluno") or "").strip() for row in students}
+                for name in filter(None, names):
+                    targets.extend(self._fetch_all(
+                        "musica_acompanhamento_aluno", "id,nome_aluno,comum_congregacao,municipio,instrumento",
+                        {"nome_aluno": f"eq.{name}"},
+                    ))
+        except requests.RequestException as exc:
+            raise CommandError(f"Falha ao consultar os alunos do GEM: {exc}") from exc
         for source_student in students:
-            target, status = match_student(source_student, targets)
+            target, status = (targets[0], "linked") if options.get("student_id") else match_student(source_student, targets)
             stats[status] += 1
             if not target:
                 unresolved.append({
@@ -76,6 +91,17 @@ class Command(BaseCommand):
                     "reason": status,
                 })
                 continue
+            matched_students.append((source_student, target))
+        target_ids = [str(target["id"]) for _, target in matched_students]
+        try:
+            existing = {}
+            filters = {"aluno_id": f"in.({','.join(target_ids)})"} if target_ids else {"limit": 0}
+            for source_name, (table, _) in SOURCE_CONFIG.items():
+                existing[source_name] = {event_signature(source_name, row) for row in self._fetch_all(table, filters=filters)}
+        except requests.RequestException as exc:
+            raise CommandError(f"Falha ao consultar os históricos vinculados: {exc}") from exc
+
+        for source_student, target in matched_students:
             history = source_student.get("history") or source_student.get("historico") or {}
             for source_name in SOURCE_CONFIG:
                 for event in history.get(source_name, []):

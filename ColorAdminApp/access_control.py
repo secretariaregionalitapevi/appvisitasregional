@@ -4,10 +4,16 @@ O servidor usa service_role para falar com o Supabase; por isso toda autorizacao
 precisa ocorrer antes de devolver ou alterar qualquer linha.
 """
 import unicodedata
-from functools import lru_cache
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
+
+
+COMMON_CATALOG_CACHE_KEY = "visitas:common_catalog:v1"
+COMMON_CATALOG_STALE_CACHE_KEY = "visitas:common_catalog:stale:v1"
+COMMON_CATALOG_CACHE_SECONDS = 5 * 60
+COMMON_CATALOG_STALE_SECONDS = 24 * 60 * 60
 
 
 def _norm(value):
@@ -26,16 +32,31 @@ def service_headers(prefer=None):
     return headers
 
 
-@lru_cache(maxsize=1)
 def common_catalog():
-    response = requests.get(
-        f"{settings.SUPABASE_URL}/rest/v1/visitas_comuns",
-        headers=service_headers(),
-        params={"select": "comum,cidade", "order": "comum.asc"},
-        timeout=15,
-    )
-    response.raise_for_status()
-    return response.json()
+    """Mantém as telas disponíveis durante lentidões temporárias do Supabase."""
+    cached = cache.get(COMMON_CATALOG_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    try:
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/visitas_comuns",
+            headers=service_headers(),
+            params={"select": "comum,cidade", "order": "comum.asc"},
+            timeout=(3.05, 15),
+        )
+        response.raise_for_status()
+        catalog = response.json()
+        if not isinstance(catalog, list):
+            raise ValueError("Resposta inválida no catálogo de comuns")
+        cache.set(COMMON_CATALOG_CACHE_KEY, catalog, COMMON_CATALOG_CACHE_SECONDS)
+        cache.set(COMMON_CATALOG_STALE_CACHE_KEY, catalog, COMMON_CATALOG_STALE_SECONDS)
+        return catalog
+    except (requests.RequestException, ValueError):
+        stale = cache.get(COMMON_CATALOG_STALE_CACHE_KEY)
+        if stale is not None:
+            return stale
+        raise
 
 
 def user_scope(request):

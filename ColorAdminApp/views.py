@@ -1036,6 +1036,12 @@ def apiVisitasComuns(request):
     if request.method == 'GET':
         try:
             return JsonResponse(visible_commons(user_scope(request)), safe=False)
+        except requests.RequestException as e:
+            logger.warning("Common catalog temporarily unavailable: %s", e)
+            return JsonResponse({
+                "error": "O cadastro de comuns está temporariamente indisponível. Tente novamente em instantes.",
+                "temporary": True,
+            }, status=503)
         except Exception as e:
             logger.exception("Unexpected common catalog failure: %s", e)
             return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)

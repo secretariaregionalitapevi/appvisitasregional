@@ -4,3 +4,4 @@ python-dotenv==1.2.2
 supabase==2.18.1
 whitenoise==6.9.0
 cryptography==45.0.7
+openpyxl==3.1.5

@@ -1,5 +1,7 @@
 """Painel gerencial do Grupo de Estudos Musicais (GEM)."""
+import json
 import math
+import re
 import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +15,7 @@ from django.shortcuts import render
 
 from .access_control import can_access, filter_rows, scope_details, service_headers, user_scope
 from .module_access import MODULE_MUSICALIZACAO, can_access_module
+from .sam_history_sync import SOURCE_CONFIG
 
 
 TABLE = "musica_acompanhamento_aluno"
@@ -45,8 +48,33 @@ def _percent(value):
         return 0
 
 
+def _program_progress(student, msa_rows):
+    """Mede cobertura documental por faixa; revisões agregadas nunca provam conclusão."""
+    expected_ranges = (
+        (1.1, 1.4), (2.1, 2.6), (3.1, 3.4), (4.1, 4.5),
+        (4.6, 5.2), (5.3, 6.1), (6.2, 6.6), (6.7, 7.3),
+        (7.4, 8.1), (8.2, 11.2), (11.3, 12.2), (12.3, 13.2),
+        (13.3, 14.2), (14.3, 15.2), (15.3, 15.6), (15.7, 16.3),
+    )
+    covered = set()
+    for row in msa_rows or []:
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", str(row.get("fase") or ""))
+        values = [float(number.replace(",", ".")) for number in numbers]
+        if not values:
+            continue
+        start, end = min(values), max(values)
+        # Uma linha que declara praticamente todo o curso é revisão/consolidado,
+        # não evidência de que cada etapa foi estudada e aprovada.
+        if end - start > 3:
+            continue
+        for index, (range_start, range_end) in enumerate(expected_ranges):
+            if start <= range_end and end >= range_start:
+                covered.add(index)
+    return round((len(covered) / len(expected_ranges)) * 100)
+
+
 def _fetch_students():
-    cached = cache.get("gem:students:v4")
+    cached = cache.get("gem:students:v5")
     if cached is not None:
         return cached
 
@@ -76,7 +104,7 @@ def _fetch_students():
     with ThreadPoolExecutor(max_workers=min(10, max(1, len(offsets)))) as executor:
         pages = sorted(executor.map(fetch_page, offsets), key=lambda item: item[0])
     rows = [row for _, page in pages for row in page]
-    cache.set("gem:students:v4", rows, 300)
+    cache.set("gem:students:v5", rows, 300)
     return rows
 
 
@@ -182,6 +210,12 @@ def page(request):
     if not can_open_module(request):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta GEM."}, status=403)
     return render(request, "pages/gem.html", {"scope": scope_details(user_scope(request))})
+
+
+def student_summary_page(request, student_id):
+    if not can_open_module(request):
+        return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta GEM."}, status=403)
+    return render(request, "pages/gem_student_summary.html", {"student_id": student_id})
 
 
 def api_summary(request):
@@ -338,11 +372,120 @@ def api_student_timeline(request, student_id):
 
         with ThreadPoolExecutor(max_workers=6) as executor:
             datasets = dict(executor.map(fetch, sources.items()))
+        student["programa_minimo_percentual"] = _program_progress(student, datasets.get("msa"))
+        student["programa_minimo_informado"] = bool(datasets.get("msa")) or student["programa_minimo_informado"]
         return JsonResponse({
             "student": student,
             "milestones": _milestones(student.get("nivel")),
             "events": _build_timeline(student, datasets),
             "counts": {name: len(rows) for name, rows in datasets.items()},
+            # O resumo por abas precisa dos campos completos de cada registro,
+            # não apenas da versão condensada usada pela antiga linha do tempo.
+            "records": datasets,
         })
     except (requests.RequestException, ValueError):
         return JsonResponse({"error": "Não foi possível carregar a linha do tempo do aluno."}, status=502)
+
+
+def api_student_detail(request, student_id):
+    if not can_open_module(request):
+        return _denied()
+    if request.method != "PATCH":
+        return JsonResponse({"error": "Método não permitido."}, status=405)
+    fields = {"nome_aluno", "status", "registro_msa", "comum_congregacao", "cargo_ministerio", "nivel", "instrumento", "municipio"}
+    try:
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers(),
+            params={"select": "*", "id": f"eq.{student_id}", "limit": 1}, timeout=15,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            return JsonResponse({"error": "Aluno não encontrado."}, status=404)
+        current = rows[0]
+        current_location = dict(current, comum=current.get("comum_congregacao"), cidade=current.get("municipio"))
+        if not can_access(user_scope(request), current_location):
+            return _denied()
+        raw = json.loads(request.body or "{}")
+        payload = {key: raw.get(key) for key in fields if key in raw}
+        candidate = dict(current, **payload, comum=payload.get("comum_congregacao", current.get("comum_congregacao")), cidade=payload.get("municipio", current.get("municipio")))
+        if not payload or not can_access(user_scope(request), candidate):
+            return _denied()
+        saved = requests.patch(
+            f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers("return=representation"),
+            params={"id": f"eq.{student_id}"}, json=payload, timeout=15,
+        )
+        saved.raise_for_status()
+        cache.delete("gem:students:v5")
+        return JsonResponse({"item": saved.json()[0]})
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "JSON inválido."}, status=400)
+    except (requests.RequestException, ValueError, IndexError):
+        return JsonResponse({"error": "Não foi possível atualizar o aluno."}, status=502)
+
+
+def api_student_record(request, source_name, record_id=None):
+    """Consulta e mantém um lançamento pedagógico, sempre validando o aluno e seu território."""
+    if not can_open_module(request):
+        return _denied()
+    if source_name not in SOURCE_CONFIG:
+        return JsonResponse({"error": "Tipo de lançamento inválido."}, status=404)
+    if request.method not in {"GET", "POST", "PATCH", "DELETE"}:
+        return JsonResponse({"error": "Método não permitido."}, status=405)
+    table, editable_fields = SOURCE_CONFIG[source_name]
+    try:
+        raw = json.loads(request.body or "{}") if request.method in {"POST", "PATCH"} else {}
+        record = None
+        if record_id:
+            record_response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers(),
+                params={"select": "*", "id": f"eq.{record_id}", "limit": 1}, timeout=15,
+            )
+            record_response.raise_for_status()
+            rows = record_response.json()
+            if not rows:
+                return JsonResponse({"error": "Lançamento não encontrado."}, status=404)
+            record = rows[0]
+        student_id = (record or {}).get("aluno_id") or raw.get("aluno_id")
+        if not student_id:
+            return JsonResponse({"error": "Aluno não informado."}, status=400)
+        student_response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers(),
+            params={"select": "id,comum_congregacao,municipio", "id": f"eq.{student_id}", "limit": 1}, timeout=15,
+        )
+        student_response.raise_for_status()
+        students = student_response.json()
+        if not students:
+            return JsonResponse({"error": "Aluno vinculado não encontrado."}, status=404)
+        student = dict(students[0], comum=students[0].get("comum_congregacao"), cidade=students[0].get("municipio"))
+        if not can_access(user_scope(request), student):
+            return _denied()
+        if request.method == "GET":
+            return JsonResponse({"item": record})
+        if request.method in {"POST", "PATCH"}:
+            payload = {key: raw.get(key) for key in editable_fields if key in raw}
+            if not payload:
+                return JsonResponse({"error": "Nenhum campo válido foi informado."}, status=400)
+            if request.method == "POST":
+                payload.update({"aluno_id": student_id, "comum_congregacao": student.get("comum_congregacao"), "municipio": student.get("municipio")})
+                response = requests.post(
+                    f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=representation"),
+                    json=payload, timeout=15,
+                )
+            else:
+                response = requests.patch(
+                    f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=representation"),
+                    params={"id": f"eq.{record_id}"}, json=payload, timeout=15,
+                )
+            response.raise_for_status()
+            return JsonResponse({"item": response.json()[0]}, status=201 if request.method == "POST" else 200)
+        response = requests.delete(
+            f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=minimal"),
+            params={"id": f"eq.{record_id}"}, timeout=15,
+        )
+        response.raise_for_status()
+        return JsonResponse({}, status=204)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "JSON inválido."}, status=400)
+    except (requests.RequestException, ValueError, IndexError):
+        return JsonResponse({"error": "Não foi possível atualizar o lançamento."}, status=502)
