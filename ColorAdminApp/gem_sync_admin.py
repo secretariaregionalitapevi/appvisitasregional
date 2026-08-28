@@ -39,6 +39,37 @@ def _admin_allowed(request):
     return can_open_module(request) and user_scope(request)["level"] in {"global", "regional"}
 
 
+def _runtime_control(control):
+    heartbeat = control.get("heartbeat_at")
+    heartbeat_age = None
+    if heartbeat:
+        try:
+            heartbeat_age = max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))).total_seconds()))
+        except ValueError:
+            pass
+    worker_status = control.get("worker_status") or "unknown"
+    online = heartbeat_age is not None and heartbeat_age < 45 and worker_status != "offline"
+    desired = control.get("desired_state") or "paused"
+    current_student = control.get("current_student")
+    if not online:
+        runtime_state = "queued" if desired == "running" else "offline"
+    elif desired == "paused" and current_student:
+        runtime_state = "stopping"
+    elif desired == "paused":
+        runtime_state = "paused"
+    elif worker_status == "error":
+        runtime_state = "error"
+    elif worker_status == "starting":
+        runtime_state = "starting"
+    elif current_student or worker_status == "running":
+        runtime_state = "running"
+    else:
+        runtime_state = "idle"
+    return {**control, "worker_online": online, "heartbeat_age_seconds": heartbeat_age,
+            "runtime_state": runtime_state, "can_start": runtime_state in {"offline", "paused", "error"},
+            "can_pause": runtime_state in {"queued", "starting", "running", "idle"}}
+
+
 def _denied():
     return JsonResponse({"error": "A administração do SAM exige perfil regional ou global."}, status=403)
 
@@ -48,7 +79,7 @@ def page(request):
     if not _admin_allowed(request):
         return render(request, "pages/403.html", {"message": "A administração do SAM exige perfil regional ou global."}, status=403)
     profile = request.session.get("user_profile") or {}
-    report_user = profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
+    report_user = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
     return render(request, "pages/gem_sync_admin.html", {"scope": scope_details(user_scope(request)), "report_user": report_user})
 
 
@@ -61,6 +92,30 @@ def _visible_rows(request):
         if len(batch) < 1000:
             break
         offset += 1000
+    missing_ids = {row.get("sync_state_id") for row in rows if not row.get("municipio")}
+    if missing_ids:
+        source_rows = []
+        source_offset = 0
+        while True:
+            batch = _get("sam_student_sync_state", {
+                "select": "id,source_common,source_instrument,source_level,source_payload",
+                "aluno_id": "is.null", "offset": source_offset,
+            }, 1000)
+            source_rows.extend(batch)
+            if len(batch) < 1000:
+                break
+            source_offset += 1000
+        sources = {source.get("id"): source for source in source_rows if source.get("id") in missing_ids}
+        for row in rows:
+            source = sources.get(row.get("sync_state_id"))
+            if not source:
+                continue
+            payload = source.get("source_payload") or {}
+            row["municipio"] = payload.get("city") or row.get("municipio")
+            row["comum_congregacao"] = source.get("source_common") or payload.get("common_name")
+            row["instrumento"] = source.get("source_instrument") or payload.get("instrument")
+            row["nivel"] = source.get("source_level") or payload.get("level")
+            row["cargo_ministerio"] = payload.get("ministry") or row.get("cargo_ministerio")
     scope = user_scope(request)
     return [row for row in rows if can_access(scope, {"municipio": row.get("municipio"), "comum": row.get("comum_congregacao")})]
 
@@ -81,13 +136,11 @@ def api_dashboard(request):
             cities[city]["total"] += 1
             cities[city][row.get("operational_status") or "SEM HISTORICO"] += 1
         control = controls[0] if controls else {}
-        heartbeat = control.get("heartbeat_at")
-        worker_online = False
-        if heartbeat:
-            try:
-                worker_online = (datetime.now(timezone.utc) - datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))).total_seconds() < 120
-            except ValueError:
-                pass
+        profile = request.session.get("user_profile") or {}
+        profile_name = profile.get("full_name") or profile.get("nome") or profile.get("name")
+        if profile_name and control.get("requested_by") == profile.get("email"):
+            control["requested_by_display"] = profile_name
+        runtime_control = _runtime_control(control)
         total = len(rows)
         synced = syncs["synced"]
         payload = {
@@ -95,7 +148,7 @@ def api_dashboard(request):
                        "unresolved": syncs["unmatched"] + syncs["ambiguous"], "progress": round(synced / total * 100, 1) if total else 0,
                        "active": statuses["ATIVO"], "alerts": statuses["ALERTA"] + statuses["INATIVO"], "exclude": statuses["EXCLUIR"],
                        "no_history": statuses["SEM HISTORICO"]},
-            "control": {**control, "worker_online": worker_online},
+            "control": runtime_control,
             "statuses": dict(statuses), "sync_statuses": dict(syncs),
             "municipalities": [{"municipio": city, **counts} for city, counts in sorted(cities.items())],
             "runs": runs, "changes": changes,
@@ -119,14 +172,16 @@ def api_control(request):
         if action not in {"start", "pause"}:
             return JsonResponse({"error": "Ação inválida."}, status=400)
         profile = (request.session.get("user_profile") or {})
-        actor = profile.get("email") or profile.get("nome") or "usuário regional"
+        actor = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "usuário regional"
         now = datetime.now(timezone.utc).isoformat()
         response = requests.patch(_url("sam_sync_control"), headers=service_headers("return=representation"), params={"id": "eq.1"}, json={
             "desired_state": "running" if action == "start" else "paused", "requested_at": now,
-            "requested_by": actor, "last_message": "Sincronização solicitada" if action == "start" else "Pausa solicitada", "updated_at": now,
+            "requested_by": actor,
+            "last_message": "Início solicitado; aguardando confirmação do worker" if action == "start" else "Pausa solicitada; concluindo o aluno atual com segurança",
+            "updated_at": now,
         }, timeout=20)
         response.raise_for_status()
-        return JsonResponse({"ok": True, "control": (response.json() or [{}])[0]})
+        return JsonResponse({"ok": True, "control": _runtime_control((response.json() or [{}])[0])})
     except requests.RequestException:
         return JsonResponse({"error": "Não foi possível enviar o comando ao worker."}, status=503)
 
@@ -141,7 +196,7 @@ def export_report(request):
     if status:
         rows = [r for r in rows if r.get("operational_status") == status]
     profile = request.session.get("user_profile") or {}
-    actor = profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
+    actor = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
     now = datetime.now()
     workbook = Workbook()
     sheet = workbook.active

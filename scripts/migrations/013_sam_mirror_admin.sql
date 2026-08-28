@@ -15,6 +15,10 @@ create table if not exists public.sam_sync_control (
 
 insert into public.sam_sync_control (id) values (1) on conflict (id) do nothing;
 
+alter table public.sam_sync_control add column if not exists worker_status text not null default 'offline';
+alter table public.sam_sync_control add column if not exists last_error text;
+alter table public.sam_sync_control add column if not exists cycle_started_at timestamptz;
+
 create index if not exists musica_msa_aluno_data_idx on public.musica_acompanhamento_msa(aluno_id, data_aula desc);
 create index if not exists musica_metodo_aluno_data_idx on public.musica_acompanhamento_metodo(aluno_id, data_inicio desc);
 create index if not exists musica_hinario_aluno_data_idx on public.musica_acompanhamento_hinario(aluno_id, data desc);

@@ -16,8 +16,8 @@ if (-not $ScraperDir -or -not (Test-Path -LiteralPath (Join-Path $ScraperDir 'we
 $env:SAM_SCRAPER_DIR = $ScraperDir
 $LogDirectory = Join-Path $ProjectRoot 'relatorios\sam-sync'
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
-$DateStamp = Get-Date -Format 'yyyy-MM-dd'
-$LogPath = Join-Path $LogDirectory "worker-$DateStamp.log"
+$DateStamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
+$LogPath = Join-Path $LogDirectory "worker-$DateStamp-$PID.log"
 
 Set-Location -LiteralPath $ProjectRoot
 $ErrorActionPreference = 'Continue'

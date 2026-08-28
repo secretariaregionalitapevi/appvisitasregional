@@ -29,6 +29,12 @@ class SamLiveSession:
             old_page.close()
 
     def _open_students(self):
+        try:
+            if self.scraper._is_students_page_ready():
+                self.scraper._students_page_ready = True
+                return True
+        except Exception:
+            pass
         if "painel" not in self.scraper.page.url.lower():
             url = self.module.config.SITE_URL.rstrip("/") + "/painel"
             self.scraper.page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -94,13 +100,51 @@ class SamLiveSession:
             return {headers, rows, total: payload.recordsTotal ?? payload.iTotalRecords ?? rows.length};
         }""")
 
-    def history(self, student):
+    def _open_history_by_key(self, student, source_key):
+        if not source_key or not self.scraper._wait_for_students_datatable():
+            return False
+        try:
+            self.scraper.page.evaluate(
+                """key => { const table = jQuery('#table-grp').DataTable(); table.search(String(key)).draw(); }""",
+                str(source_key),
+            )
+            self.scraper._wait_for_table_refresh()
+            row_index = self.scraper.page.evaluate(
+                """key => {
+                    const rows = [...document.querySelectorAll('#table-grp tbody tr')];
+                    return rows.findIndex(row => {
+                        const control = row.querySelector('input[value], button[value], [data-id]');
+                        return (control && (control.value === String(key) || control.dataset.id === String(key)))
+                            || row.innerHTML.includes(String(key));
+                    });
+                }""",
+                str(source_key),
+            )
+            if row_index is None or row_index < 0:
+                return False
+            row = self.scraper.page.locator("#table-grp tbody tr").nth(row_index)
+            return self.scraper._open_history_from_row(row, student)
+        except Exception:
+            return False
+
+    def _return_to_students(self):
+        try:
+            if self.scraper._close_history_view():
+                self.scraper._clear_student_search()
+                return True
+        except Exception:
+            pass
+        return self._open_students()
+
+    def history(self, student, source_key=None):
         for attempt in range(2):
-            if self._open_students() and self.scraper.search_student(student):
+            if self._open_students() and (
+                self._open_history_by_key(student, source_key) or self.scraper.search_student(student)
+            ):
                 try:
                     return self._extract_open_history(student)
                 finally:
-                    self._open_students()
+                    self._return_to_students()
             if attempt == 0:
                 self.recover()
         raise RuntimeError(f"Não foi possível abrir o histórico de {student} no SAM.")

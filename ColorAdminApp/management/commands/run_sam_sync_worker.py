@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import ctypes
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,11 +49,21 @@ class Command(BaseCommand):
 
     def _heartbeat(self, **values):
         now = datetime.now(timezone.utc).isoformat()
+        url = f"{settings.SUPABASE_URL}/rest/v1/sam_sync_control"
+        payload = {"heartbeat_at": now, "worker_id": str(os.getpid()), "updated_at": now, **values}
         response = requests.patch(
-            f"{settings.SUPABASE_URL}/rest/v1/sam_sync_control",
+            url,
             headers=service_headers("return=minimal"), params={"id": "eq.1"},
-            json={"heartbeat_at": now, "worker_id": str(os.getpid()), "updated_at": now, **values}, timeout=20,
+            json=payload, timeout=20,
         )
+        if response.status_code == 400:
+            # Compatibilidade com instalações que ainda não aplicaram a migration 014.
+            for optional in ("worker_status", "last_error", "cycle_started_at"):
+                payload.pop(optional, None)
+            response = requests.patch(
+                url, headers=service_headers("return=minimal"), params={"id": "eq.1"},
+                json=payload, timeout=20,
+            )
         response.raise_for_status()
 
     def _mark(self, state_id, status, error=None):
@@ -66,13 +77,14 @@ class Command(BaseCommand):
         )
         response.raise_for_status()
 
-    def _cycle(self, session, history_limit):
+    def _cycle(self, session, history_limit, refresh_catalog=True):
         with tempfile.TemporaryDirectory(prefix="sam-sync-") as temporary_name:
             temporary = Path(temporary_name)
-            catalog = temporary / "catalog.json"
-            report = temporary / "catalog-report.json"
-            catalog.write_text(json.dumps(session.catalog(), ensure_ascii=False), encoding="utf-8")
-            call_command("sync_sam_catalog", catalog, commit=True, report=report, stdout=self.stdout, stderr=self.stderr)
+            if refresh_catalog:
+                catalog = temporary / "catalog.json"
+                report = temporary / "catalog-report.json"
+                catalog.write_text(json.dumps(session.catalog(), ensure_ascii=False), encoding="utf-8")
+                call_command("sync_sam_catalog", catalog, commit=True, report=report, stdout=self.stdout, stderr=self.stderr)
 
             pending = self._pending(history_limit)
             count_response = requests.get(
@@ -88,22 +100,22 @@ class Command(BaseCommand):
             self.stdout.write(f"Históricos pendentes selecionados neste ciclo: {len(pending)}")
             for index, state in enumerate(pending, 1):
                 if self._control().get("desired_state") != "running":
-                    self._heartbeat(current_student=None, last_message="Sincronização pausada por solicitação administrativa")
+                    self._heartbeat(current_student=None, worker_status="paused", last_message="Sincronização pausada por solicitação administrativa")
                     return index - 1
                 name = state["source_name"]
                 converted = temporary / f"history-{index}-converted.json"
                 try:
-                    self._heartbeat(current_student=name, processed_students=index - 1,
-                                    last_message=f"Processando {index} de {len(pending)} neste lote")
+                    self._heartbeat(current_student=name, processed_students=index - 1, worker_status="running",
+                                    last_message=f"Processando {index} de {len(pending)} neste lote; a fila continuará automaticamente")
                     self.stdout.write(f"[{index}/{len(pending)}] Atualizando histórico de {name}")
-                    document = portal_report_to_export(session.history(name))
+                    document = portal_report_to_export(session.history(name, state.get("source_key")))
                     converted.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
                     call_command(
                         "sync_sam_history", converted, student_id=state["aluno_id"], commit=True,
                         stdout=self.stdout, stderr=self.stderr,
                     )
                     self._mark(state["id"], "synced")
-                    self._heartbeat(current_student=name, processed_students=index,
+                    self._heartbeat(current_student=name, processed_students=index, worker_status="running",
                                     last_message=f"Histórico de {name} sincronizado")
                 except Exception as exc:
                     self._mark(state["id"], "failed", str(exc)[:1000])
@@ -147,6 +159,16 @@ class Command(BaseCommand):
         except FileExistsError as exc:
             raise CommandError("Já existe outro worker SAM em execução.") from exc
         session = None
+        refresh_catalog = True
+        heartbeat_stop = threading.Event()
+        def pulse():
+            while not heartbeat_stop.wait(10):
+                try:
+                    self._heartbeat()
+                except requests.RequestException:
+                    pass
+        heartbeat_thread = threading.Thread(target=pulse, name="sam-heartbeat", daemon=True)
+        heartbeat_thread.start()
         try:
             while True:
                 try:
@@ -154,20 +176,26 @@ class Command(BaseCommand):
                 except requests.RequestException as exc:
                     raise CommandError("Aplique a migração 013 do controle SAM antes de iniciar o worker: " + str(exc)) from exc
                 if control.get("desired_state") != "running":
-                    self._heartbeat(current_student=None, last_message="Worker online, aguardando Start")
+                    self._heartbeat(current_student=None, worker_status="paused", last_error=None,
+                                    last_message="Serviço online e pausado; aguardando comando Start")
                     if options["once"]:
                         break
                     time.sleep(10)
                     continue
                 if session is None:
-                    self._heartbeat(last_message="Iniciando sessão única e invisível no SAM")
+                    self._heartbeat(worker_status="starting", last_error=None,
+                                    cycle_started_at=datetime.now(timezone.utc).isoformat(),
+                                    last_message="Iniciando sessão segura no SAM")
                     session = SamLiveSession(scraper_dir, headless=not options["visible"])
                     session.start()
                 started = time.monotonic()
                 processed = 0
                 try:
-                    processed = self._cycle(session, max(1, options["history_limit"]))
+                    self._heartbeat(worker_status="running", last_error=None, last_message="Sincronização em andamento")
+                    processed = self._cycle(session, max(1, options["history_limit"]), refresh_catalog=refresh_catalog)
                 except Exception as exc:
+                    self._heartbeat(worker_status="error", last_error=str(exc)[:1000], current_student=None,
+                                    last_message="A execução encontrou uma falha e será tentada novamente")
                     self.stderr.write(self.style.ERROR(f"Ciclo SAM falhou: {exc}"))
                     if options["once"]:
                         raise CommandError(str(exc)) from exc
@@ -175,12 +203,15 @@ class Command(BaseCommand):
                     break
                 if processed >= max(1, options["history_limit"]):
                     self.stdout.write("Há mais históricos pendentes; continuando na mesma sessão SAM.")
+                    refresh_catalog = False
                     continue
+                refresh_catalog = True
                 wait = max(1, interval - int(time.monotonic() - started))
                 self.stdout.write(f"Próximo ciclo SAM em {wait} segundos.")
                 remaining = wait
                 while remaining > 0:
-                    self._heartbeat(current_student=None, last_message=f"Próximo ciclo em até {remaining} segundos")
+                    self._heartbeat(current_student=None, worker_status="idle",
+                                    last_message=f"Serviço online; próximo ciclo em até {remaining} segundos")
                     if self._control().get("desired_state") != "running":
                         if session:
                             session.close()
@@ -190,6 +221,12 @@ class Command(BaseCommand):
                     time.sleep(step)
                     remaining -= step
         finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=2)
             if session:
                 session.close()
+            try:
+                self._heartbeat(worker_status="offline", current_student=None, last_message="Serviço encerrado")
+            except requests.RequestException:
+                pass
             lock_path.unlink(missing_ok=True)
