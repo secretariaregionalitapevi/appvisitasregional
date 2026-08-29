@@ -13,6 +13,13 @@ class SamLiveSession:
         module = importlib.import_module("web_scraper")
         module.config.SELENIUM_HEADLESS = headless
         self.module = module
+        self.headless = headless
+        self.scraper = self._new_scraper()
+
+    def _new_scraper(self):
+        """Cria uma sessão limpa; não reutiliza processos Playwright quebrados."""
+        headless = self.headless
+        module = self.module
         self.scraper = module.MusicalScraper(debug_stages=False)
         if headless:
             old_page = self.scraper.page
@@ -27,11 +34,22 @@ class SamLiveSession:
             self.scraper.page.set_default_timeout(60000)
             self.scraper._configure_page_optimizations()
             old_page.close()
+        return self.scraper
 
     def _open_students(self):
         try:
             if self.scraper._is_students_page_ready():
                 self.scraper._students_page_ready = True
+                return True
+        except Exception:
+            pass
+        students_url = self.module.config.SITE_URL.rstrip("/") + "/alunos"
+        try:
+            if "/alunos" not in self.scraper.page.url.lower():
+                self.scraper.page.goto(students_url, wait_until="domcontentloaded", timeout=60000)
+            self.scraper.page.wait_for_selector("#table-grp", state="attached", timeout=15000)
+            self.scraper._students_page_ready = self.scraper._wait_for_students_datatable()
+            if self.scraper._students_page_ready:
                 return True
         except Exception:
             pass
@@ -68,7 +86,14 @@ class SamLiveSession:
             raise RuntimeError("Não foi possível iniciar a sessão autenticada no SAM.")
 
     def recover(self):
-        if not self.scraper.reconnect() or not self._open_students():
+        # O reconnect do scraper externo cria outro Playwright sem encerrar o
+        # anterior. Após centenas de alunos isso esgota os processos do Chromium.
+        try:
+            self.scraper.close()
+        except Exception:
+            pass
+        self.scraper = self._new_scraper()
+        if not self.scraper.login() or not self._open_students():
             raise RuntimeError("Não foi possível recuperar a sessão do SAM.")
 
     def catalog(self):
@@ -159,7 +184,20 @@ class SamLiveSession:
                 continue
             tables = []
             for table in container.locator("table").all():
-                tables.append(table.evaluate("""table => {
+                tables.append(table.evaluate("""async table => {
+                    if (window.jQuery && jQuery.fn.DataTable && jQuery.fn.DataTable.isDataTable(table)) {
+                        const dataTable = jQuery(table).DataTable();
+                        const info = dataTable.page.info();
+                        if (info.recordsDisplay > info.length) {
+                            await new Promise(resolve => {
+                                let finished = false;
+                                const done = () => { if (!finished) { finished = true; resolve(); } };
+                                jQuery(table).one('draw.dt', done);
+                                dataTable.page.len(10000).draw();
+                                setTimeout(done, 10000);
+                            });
+                        }
+                    }
                     const headers = [...table.querySelectorAll('thead th')].map(x => x.innerText.trim());
                     const rows = [...table.querySelectorAll('tbody tr')]
                         .map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim()));

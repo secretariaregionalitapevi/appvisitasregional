@@ -4,10 +4,13 @@ from pathlib import Path
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
 
 from ColorAdminApp.access_control import service_headers
-from ColorAdminApp.sam_history_sync import SOURCE_CONFIG, event_payload, event_signature, match_student
+from ColorAdminApp.sam_history_sync import (
+    SOURCE_CONFIG, event_match_signature, event_payload, event_signature, match_student, program_minimum_progress,
+)
 
 
 class Command(BaseCommand):
@@ -59,7 +62,9 @@ class Command(BaseCommand):
         stats = Counter()
         unresolved = []
         inserts = defaultdict(list)
+        updates = defaultdict(list)
         matched_students = []
+        existing_rows = {}
         try:
             targets = []
             if options.get("student_id"):
@@ -97,7 +102,12 @@ class Command(BaseCommand):
             existing = {}
             filters = {"aluno_id": f"in.({','.join(target_ids)})"} if target_ids else {"limit": 0}
             for source_name, (table, _) in SOURCE_CONFIG.items():
-                existing[source_name] = {event_signature(source_name, row) for row in self._fetch_all(table, filters=filters)}
+                source_rows = self._fetch_all(table, filters=filters)
+                existing_rows[source_name] = source_rows
+                existing[source_name] = {event_signature(source_name, row) for row in source_rows}
+                existing[f"{source_name}:matches"] = {
+                    event_match_signature(source_name, row): row for row in source_rows
+                }
         except requests.RequestException as exc:
             raise CommandError(f"Falha ao consultar os históricos vinculados: {exc}") from exc
 
@@ -110,7 +120,20 @@ class Command(BaseCommand):
                     if signature in existing[source_name]:
                         stats["existing_events"] += 1
                         continue
+                    matched = existing[f"{source_name}:matches"].get(event_match_signature(source_name, payload))
+                    if matched and matched.get("id"):
+                        _, fields = SOURCE_CONFIG[source_name]
+                        changed = {field: payload.get(field) for field in fields if matched.get(field) != payload.get(field)}
+                        if changed:
+                            updates[source_name].append((matched["id"], changed))
+                            matched.update(changed)
+                            stats["updated_events"] += 1
+                        else:
+                            stats["existing_events"] += 1
+                        existing[source_name].add(signature)
+                        continue
                     existing[source_name].add(signature)
+                    existing[f"{source_name}:matches"][event_match_signature(source_name, payload)] = payload
                     inserts[source_name].append(payload)
                     stats["new_events"] += 1
 
@@ -118,6 +141,7 @@ class Command(BaseCommand):
             "mode": "commit" if options["commit"] else "preview",
             "statistics": dict(stats),
             "new_events_by_source": {name: len(rows) for name, rows in inserts.items()},
+            "updated_events_by_source": {name: len(rows) for name, rows in updates.items()},
             "unresolved": unresolved,
         }
         if options.get("report"):
@@ -133,6 +157,24 @@ class Command(BaseCommand):
             for source_name, rows in inserts.items():
                 if rows:
                     self._insert_batches(SOURCE_CONFIG[source_name][0], rows)
+            for source_name, rows in updates.items():
+                table = SOURCE_CONFIG[source_name][0]
+                for record_id, values in rows:
+                    response = requests.patch(
+                        f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=minimal"),
+                        params={"id": f"eq.{record_id}"}, json=values, timeout=30,
+                    )
+                    response.raise_for_status()
+            msa_rows = existing_rows.get("msa", []) + inserts.get("msa", [])
+            for _, target in matched_students:
+                student_msa = [row for row in msa_rows if str(row.get("aluno_id")) == str(target["id"])]
+                response = requests.patch(
+                    f"{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno",
+                    headers=service_headers("return=minimal"), params={"id": f"eq.{target['id']}"},
+                    json={"programa_minimo_percentual": program_minimum_progress(student_msa)}, timeout=30,
+                )
+                response.raise_for_status()
+            cache.delete("gem:students:v5")
         except requests.RequestException as exc:
             raise CommandError(f"A importação foi interrompida: {exc}") from exc
         self.stdout.write(self.style.SUCCESS(f"Sincronização concluída: {stats['new_events']} evento(s) importado(s)."))

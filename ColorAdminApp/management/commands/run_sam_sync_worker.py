@@ -98,6 +98,7 @@ class Command(BaseCommand):
                 total_students = len(pending)
             self._heartbeat(total_students=total_students, last_message="Catálogo conciliado; processando históricos")
             self.stdout.write(f"Históricos pendentes selecionados neste ciclo: {len(pending)}")
+            consecutive_failures = 0
             for index, state in enumerate(pending, 1):
                 if self._control().get("desired_state") != "running":
                     self._heartbeat(current_student=None, worker_status="paused", last_message="Sincronização pausada por solicitação administrativa")
@@ -115,11 +116,18 @@ class Command(BaseCommand):
                         stdout=self.stdout, stderr=self.stderr,
                     )
                     self._mark(state["id"], "synced")
+                    consecutive_failures = 0
                     self._heartbeat(current_student=name, processed_students=index, worker_status="running",
                                     last_message=f"Histórico de {name} sincronizado")
                 except Exception as exc:
                     self._mark(state["id"], "failed", str(exc)[:1000])
                     self.stderr.write(self.style.ERROR(f"Histórico de {name} falhou: {exc}"))
+                    consecutive_failures += 1
+                    if consecutive_failures >= 3:
+                        raise RuntimeError(
+                            "A sessão do SAM falhou em 3 alunos consecutivos; "
+                            "o navegador será reiniciado antes de retomar a fila."
+                        ) from exc
 
             return len(pending)
 
@@ -199,6 +207,15 @@ class Command(BaseCommand):
                     self.stderr.write(self.style.ERROR(f"Ciclo SAM falhou: {exc}"))
                     if options["once"]:
                         raise CommandError(str(exc)) from exc
+                    if session:
+                        try:
+                            session.close()
+                        except Exception:
+                            pass
+                    session = None
+                    refresh_catalog = False
+                    time.sleep(10)
+                    continue
                 if options["once"]:
                     break
                 if processed >= max(1, options["history_limit"]):

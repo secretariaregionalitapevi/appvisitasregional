@@ -1,0 +1,19 @@
+{
+  "remote.autoForwardPorts": false,
+  "remote.portsAttributes": {
+    "8000": {
+      "label": "Django (abrir somente no navegador externo)",
+      "onAutoForward": "ignore"
+    }
+  },
+  "workbench.externalUriOpeners": {
+    "http://localhost:8000": "default",
+    "https://localhost:8000": "default",
+    "http://127.0.0.1:8000": "default",
+    "https://127.0.0.1:8000": "default",
+    "http://localhost:*": "default",
+    "https://localhost:*": "default",
+    "http://127.0.0.1:*": "default",
+    "https://127.0.0.1:*": "default"
+  }
+}

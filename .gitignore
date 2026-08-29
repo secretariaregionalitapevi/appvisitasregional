@@ -31,7 +31,9 @@ env/
 .venv/
 
 # IDEs
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
 .idea/
 
 # node_modules

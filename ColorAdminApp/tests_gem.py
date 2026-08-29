@@ -1,11 +1,12 @@
 import json
+from datetime import date
 from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from .gem import (
-    _build_timeline, _milestones, _program_progress, academic_status, api_student_record,
-    api_students, api_summary, is_graduated,
+    _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
+    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days,
 )
 
 
@@ -33,6 +34,13 @@ class GemTests(SimpleTestCase):
     def test_milestones_distinguish_achieved_current_and_future(self):
         milestones = _milestones("RJM / ENSAIO")
         self.assertEqual([item["status"] for item in milestones], ["achieved", "achieved", "current", "future", "future"])
+        self.assertEqual([item["title"] for item in milestones], [
+            "Início dos estudos", "Ingresso no Ensaio", "Ingresso na RJM", "Culto Oficial", "Oficialização",
+        ])
+
+    def test_ensaio_is_an_explicit_current_milestone(self):
+        milestones = _milestones("ENSAIO")
+        self.assertEqual([item["status"] for item in milestones], ["achieved", "current", "future", "future", "future"])
 
     def test_timeline_combines_sources_in_reverse_date_order(self):
         events = _build_timeline(
@@ -55,6 +63,20 @@ class GemTests(SimpleTestCase):
             "13.3 - 14.2", "14.3 - 15.2", "15.3 - 15.6", "15.7 - 16.3",
         )]
         self.assertEqual(_program_progress({}, documented), 100)
+
+    def test_operational_status_uses_sam_activity_age(self):
+        self.assertEqual(operational_status_from_days(90), "ATIVO")
+        self.assertEqual(operational_status_from_days(91), "ALERTA")
+        self.assertEqual(operational_status_from_days(180), "ALERTA")
+        self.assertEqual(operational_status_from_days(181), "INATIVO")
+        self.assertEqual(operational_status_from_days(None), "SEM HISTORICO")
+        activity = _operational_activity(
+            {"msa": [{"data_aula": "2025-01-01"}], "provas": [{"data_prova": "2025-07-01"}]},
+            today=date(2026, 8, 29),
+        )
+        self.assertEqual(activity["last_activity_at"], "2025-07-01")
+        self.assertEqual(activity["operational_status"], "INATIVO")
+        self.assertTrue(activity["requires_review"])
 
     @patch("ColorAdminApp.gem._fetch_students")
     def test_summary_separates_formation_from_graduates(self, fetch_students):

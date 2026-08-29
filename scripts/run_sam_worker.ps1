@@ -21,5 +21,10 @@ $LogPath = Join-Path $LogDirectory "worker-$DateStamp-$PID.log"
 
 Set-Location -LiteralPath $ProjectRoot
 $ErrorActionPreference = 'Continue'
-& $PythonExe manage.py run_sam_sync_worker 2>&1 | Tee-Object -FilePath $LogPath -Append
-exit $LASTEXITCODE
+while ($true) {
+    & $PythonExe manage.py run_sam_sync_worker 2>&1 | Tee-Object -FilePath $LogPath -Append
+    $WorkerExitCode = $LASTEXITCODE
+    "[$(Get-Date -Format o)] Worker encerrado com código $WorkerExitCode; reiniciando em 15 segundos." |
+        Tee-Object -FilePath $LogPath -Append
+    Start-Sleep -Seconds 15
+}

@@ -1,8 +1,8 @@
 """Painel gerencial do Grupo de Estudos Musicais (GEM)."""
 import json
 import math
-import re
 import unicodedata
+import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -10,12 +10,12 @@ from datetime import datetime
 import requests
 from django.conf import settings
 from django.core.cache import cache
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
 from .access_control import can_access, filter_rows, scope_details, service_headers, user_scope
 from .module_access import MODULE_MUSICALIZACAO, can_access_module
-from .sam_history_sync import SOURCE_CONFIG
+from .sam_history_sync import SOURCE_CONFIG, program_minimum_progress
 
 
 TABLE = "musica_acompanhamento_aluno"
@@ -49,28 +49,7 @@ def _percent(value):
 
 
 def _program_progress(student, msa_rows):
-    """Mede cobertura documental por faixa; revisões agregadas nunca provam conclusão."""
-    expected_ranges = (
-        (1.1, 1.4), (2.1, 2.6), (3.1, 3.4), (4.1, 4.5),
-        (4.6, 5.2), (5.3, 6.1), (6.2, 6.6), (6.7, 7.3),
-        (7.4, 8.1), (8.2, 11.2), (11.3, 12.2), (12.3, 13.2),
-        (13.3, 14.2), (14.3, 15.2), (15.3, 15.6), (15.7, 16.3),
-    )
-    covered = set()
-    for row in msa_rows or []:
-        numbers = re.findall(r"\d+(?:[.,]\d+)?", str(row.get("fase") or ""))
-        values = [float(number.replace(",", ".")) for number in numbers]
-        if not values:
-            continue
-        start, end = min(values), max(values)
-        # Uma linha que declara praticamente todo o curso é revisão/consolidado,
-        # não evidência de que cada etapa foi estudada e aprovada.
-        if end - start > 3:
-            continue
-        for index, (range_start, range_end) in enumerate(expected_ranges):
-            if start <= range_end and end >= range_start:
-                covered.add(index)
-    return round((len(covered) / len(expected_ranges)) * 100)
+    return program_minimum_progress(msa_rows)
 
 
 def _fetch_students():
@@ -130,6 +109,39 @@ def _event_date(value):
         return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
     except ValueError:
         return text[:10]
+
+
+def operational_status_from_days(inactive_days):
+    if inactive_days is None:
+        return "SEM HISTORICO"
+    if inactive_days > 180:
+        return "INATIVO"
+    if inactive_days > 90:
+        return "ALERTA"
+    return "ATIVO"
+
+
+def _operational_activity(datasets, today=None):
+    """Classifica presença pedagógica exclusivamente pelos lançamentos do SAM."""
+    date_fields = {
+        "msa": "data_aula", "metodo": "data_inicio", "hinario": "data",
+        "provas": "data_prova", "escalas": "data", "atividades": "data_atividade",
+    }
+    activity_dates = []
+    for source, field in date_fields.items():
+        for row in datasets.get(source, []) or []:
+            value = _event_date(row.get(field) or row.get("created_at"))
+            try:
+                activity_dates.append(datetime.fromisoformat(value).date())
+            except (TypeError, ValueError):
+                continue
+    if not activity_dates:
+        return {"last_activity_at": None, "inactive_days": None, "operational_status": "SEM HISTÓRICO", "requires_review": False}
+    last_activity = max(activity_dates)
+    inactive_days = ((today or datetime.now().date()) - last_activity).days
+    status = operational_status_from_days(inactive_days)
+    return {"last_activity_at": last_activity.isoformat(), "inactive_days": inactive_days,
+            "operational_status": status, "requires_review": inactive_days > 365}
 
 
 def _build_timeline(student, datasets):
@@ -372,6 +384,7 @@ def api_student_timeline(request, student_id):
 
         with ThreadPoolExecutor(max_workers=6) as executor:
             datasets = dict(executor.map(fetch, sources.items()))
+        student.update(_operational_activity(datasets))
         student["programa_minimo_percentual"] = _program_progress(student, datasets.get("msa"))
         student["programa_minimo_informado"] = bool(datasets.get("msa")) or student["programa_minimo_informado"]
         return JsonResponse({
@@ -392,7 +405,7 @@ def api_student_detail(request, student_id):
         return _denied()
     if request.method != "PATCH":
         return JsonResponse({"error": "Método não permitido."}, status=405)
-    fields = {"nome_aluno", "status", "registro_msa", "comum_congregacao", "cargo_ministerio", "nivel", "instrumento", "municipio"}
+    fields = {"nome_aluno", "registro_msa", "comum_congregacao", "cargo_ministerio", "nivel", "instrumento", "municipio"}
     try:
         response = requests.get(
             f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers(),
@@ -416,6 +429,12 @@ def api_student_detail(request, student_id):
             params={"id": f"eq.{student_id}"}, json=payload, timeout=15,
         )
         saved.raise_for_status()
+        if payload.get("nivel") and payload["nivel"] != current.get("nivel"):
+            normalized = _norm(payload["nivel"])
+            milestone = ("oficializacao" if "OFICIALIZAD" in normalized else "ingresso_culto" if "CULTO OFICIAL" in normalized else "ingresso_rjm" if "RJM" in normalized or "MEIA HORA" in normalized else "ingresso_ensaio" if "ENSAIO" in normalized else None)
+            if milestone:
+                labels = {"ingresso_ensaio": "Ingresso no Ensaio", "ingresso_rjm": "Ingresso na RJM", "ingresso_culto": "Ingresso no Culto Oficial", "oficializacao": "Oficialização"}
+                requests.post(f"{settings.SUPABASE_URL}/rest/v1/{SOURCE_CONFIG['atividades'][0]}", headers=service_headers("return=minimal"), json={"aluno_id": str(student_id), "tipo_atividade": milestone, "titulo": labels[milestone], "descricao": "Marco registrado automaticamente pela alteração de nível.", "data_atividade": datetime.now().date().isoformat(), "comum_congregacao": candidate.get("comum_congregacao"), "municipio": candidate.get("municipio")}, timeout=15).raise_for_status()
         cache.delete("gem:students:v5")
         return JsonResponse({"item": saved.json()[0]})
     except json.JSONDecodeError:
@@ -434,7 +453,8 @@ def api_student_record(request, source_name, record_id=None):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     table, editable_fields = SOURCE_CONFIG[source_name]
     try:
-        raw = json.loads(request.body or "{}") if request.method in {"POST", "PATCH"} else {}
+        multipart = request.content_type and request.content_type.startswith("multipart/form-data")
+        raw = request.POST.dict() if multipart else (json.loads(request.body or "{}") if request.method in {"POST", "PATCH"} else {})
         record = None
         if record_id:
             record_response = requests.get(
@@ -464,6 +484,20 @@ def api_student_record(request, source_name, record_id=None):
             return JsonResponse({"item": record})
         if request.method in {"POST", "PATCH"}:
             payload = {key: raw.get(key) for key in editable_fields if key in raw}
+            document = request.FILES.get("documento") if multipart and source_name == "atividades" else None
+            if document:
+                allowed = {"application/pdf", "image/jpeg", "image/png"}
+                if document.content_type not in allowed or document.size > 10 * 1024 * 1024:
+                    return JsonResponse({"error": "Documento inválido. Envie PDF, JPG ou PNG com até 10 MB."}, status=400)
+                extension = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[document.content_type]
+                object_path = f"{student_id}/{uuid.uuid4().hex}{extension}"
+                upload = requests.post(
+                    f"{settings.SUPABASE_URL}/storage/v1/object/gem_documents/{object_path}",
+                    headers={"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": document.content_type},
+                    data=document.read(), timeout=45,
+                )
+                upload.raise_for_status()
+                payload.update({"documento_url": object_path, "nome_documento": document.name})
             if not payload:
                 return JsonResponse({"error": "Nenhum campo válido foi informado."}, status=400)
             if request.method == "POST":
@@ -489,3 +523,27 @@ def api_student_record(request, source_name, record_id=None):
         return JsonResponse({"error": "JSON inválido."}, status=400)
     except (requests.RequestException, ValueError, IndexError):
         return JsonResponse({"error": "Não foi possível atualizar o lançamento."}, status=502)
+
+
+def activity_document(request, record_id):
+    """Entrega documento privado somente após validar aluno e território."""
+    if not can_open_module(request):
+        return _denied()
+    try:
+        table = SOURCE_CONFIG["atividades"][0]
+        response = requests.get(f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers(), params={"select": "aluno_id,documento_url,nome_documento", "id": f"eq.{record_id}", "limit": 1}, timeout=15)
+        response.raise_for_status(); rows = response.json()
+        if not rows or not rows[0].get("documento_url"):
+            return JsonResponse({"error": "Documento não encontrado."}, status=404)
+        item = rows[0]
+        student_response = requests.get(f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers(), params={"select": "id,comum_congregacao,municipio", "id": f"eq.{item['aluno_id']}", "limit": 1}, timeout=15)
+        student_response.raise_for_status(); students = student_response.json()
+        if not students or not can_access(user_scope(request), dict(students[0], comum=students[0].get("comum_congregacao"), cidade=students[0].get("municipio"))):
+            return _denied()
+        download = requests.get(f"{settings.SUPABASE_URL}/storage/v1/object/authenticated/gem_documents/{item['documento_url']}", headers={"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"}, timeout=30)
+        download.raise_for_status()
+        result = HttpResponse(download.content, content_type=download.headers.get("Content-Type", "application/octet-stream"))
+        result["Content-Disposition"] = f'inline; filename="{item.get("nome_documento") or "documento"}"'
+        return result
+    except requests.RequestException:
+        return JsonResponse({"error": "Não foi possível consultar o documento."}, status=502)

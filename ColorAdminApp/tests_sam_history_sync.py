@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from .sam_history_sync import event_payload, event_signature, match_student
+from .sam_history_sync import event_match_signature, event_payload, event_signature, match_student, program_minimum_progress
 
 
 class SamHistorySyncTests(SimpleTestCase):
@@ -31,3 +31,17 @@ class SamHistorySyncTests(SimpleTestCase):
         second = event_payload("msa", event, self.targets[1])
         self.assertEqual(event_signature("msa", first), event_signature("msa", dict(reversed(list(first.items())))))
         self.assertNotEqual(event_signature("msa", first), event_signature("msa", second))
+
+    def test_same_msa_launch_matches_when_audit_fields_are_completed(self):
+        incomplete = event_payload("msa", {
+            "data_aula": "2026-08-15", "fase": "7.7 - 7.7", "paginas": "75 - 75",
+            "licoes": "55 - 55", "clave": "Sol",
+        }, self.targets[0])
+        complete = {**incomplete, "observacoes": "Solfejo do hino 67.", "autorizado_por": "ENIVALDO RIBEIRO DE SOUZA"}
+        self.assertEqual(event_match_signature("msa", incomplete), event_match_signature("msa", complete))
+        self.assertNotEqual(event_signature("msa", incomplete), event_signature("msa", complete))
+
+    def test_program_minimum_progress_uses_distinct_documented_ranges(self):
+        rows = [{"fase": "1.1 - 1.4"}, {"fase": "2.1 - 2.6"}, {"fase": "1.1 - 1.4"}]
+        self.assertEqual(program_minimum_progress(rows), 12)
+        self.assertEqual(program_minimum_progress([{"fase": "1.1 - 16.3"}]), 0)

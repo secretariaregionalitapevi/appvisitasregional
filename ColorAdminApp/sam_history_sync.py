@@ -1,5 +1,6 @@
 """Regras puras para conciliar uma exportação histórica do SAM com o GEM."""
 import json
+import re
 import unicodedata
 from hashlib import sha256
 
@@ -66,3 +67,35 @@ def event_signature(source_name, payload):
     identity.update({field: payload.get(field) for field in fields})
     serialized = json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str)
     return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def event_match_signature(source_name, payload):
+    """Identifica o mesmo lançamento sem usar campos descritivos que podem chegar incompletos."""
+    _, fields = SOURCE_CONFIG[source_name]
+    identity = {"source": source_name, "aluno_id": str(payload.get("aluno_id") or "")}
+    identity.update({field: payload.get(field) for field in fields if field not in {"observacoes", "autorizado_por"}})
+    serialized = json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str)
+    return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def program_minimum_progress(msa_rows):
+    """Calcula a cobertura comprovada das 16 faixas do Programa Mínimo."""
+    expected_ranges = (
+        (1.1, 1.4), (2.1, 2.6), (3.1, 3.4), (4.1, 4.5),
+        (4.6, 5.2), (5.3, 6.1), (6.2, 6.6), (6.7, 7.3),
+        (7.4, 8.1), (8.2, 11.2), (11.3, 12.2), (12.3, 13.2),
+        (13.3, 14.2), (14.3, 15.2), (15.3, 15.6), (15.7, 16.3),
+    )
+    covered = set()
+    for row in msa_rows or []:
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", str(row.get("fase") or ""))
+        values = [float(number.replace(",", ".")) for number in numbers]
+        if not values:
+            continue
+        start, end = min(values), max(values)
+        if end - start > 3:
+            continue
+        for index, (range_start, range_end) in enumerate(expected_ranges):
+            if start <= range_end and end >= range_start:
+                covered.add(index)
+    return round((len(covered) / len(expected_ranges)) * 100)

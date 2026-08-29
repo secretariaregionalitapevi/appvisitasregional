@@ -68,6 +68,8 @@ def portal_report_to_export(report):
                         event[field] = _date(event[field])
                 if not event.get(required_date[source]):
                     continue
+                if source == "hinario" and not event.get("hino"):
+                    continue
                 if any(event.values()):
                     history[source].append(event)
     return {"source": "SAM portal direto", "students": [{"source_id": report.get("student"), "nome": report.get("student"), "history": history}]}
