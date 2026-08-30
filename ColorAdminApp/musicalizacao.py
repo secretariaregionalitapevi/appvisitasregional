@@ -165,6 +165,19 @@ def _url(config):
     return f"{settings.SUPABASE_URL}/rest/v1/{config['table']}"
 
 
+def _activity_actor(request):
+    """Identidade de auditoria obtida da sessão autenticada, nunca do payload do cliente."""
+    profile = request.session.get("user_profile") or {}
+    return {
+        "user_id": str(request.session.get("user_id") or profile.get("user_id") or ""),
+        "name": str(
+            profile.get("full_name") or profile.get("nome") or profile.get("name") or
+            profile.get("email") or "Usuário autenticado"
+        ).strip(),
+        "email": str(profile.get("email") or "").strip(),
+    }
+
+
 def _coordinator_rows():
     response = requests.get(
         f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_monitores",
@@ -466,6 +479,19 @@ def api_resource(request, resource, record_id=None):
                 age_error = _child_age_error(candidate.get("data_nascimento"))
                 if age_error:
                     return JsonResponse({"error": age_error, "code": "child_age_out_of_range"}, status=400)
+            if resource == "aulas":
+                actor = _activity_actor(request)
+                payload.update({
+                    "updated_by_user_id": actor["user_id"] or None,
+                    "updated_by_name": actor["name"],
+                    "updated_by_email": actor["email"] or None,
+                })
+                if not record_id:
+                    payload.update({
+                        "created_by_user_id": actor["user_id"] or None,
+                        "created_by_name": actor["name"],
+                        "created_by_email": actor["email"] or None,
+                    })
             params = {"id": f"eq.{record_id}"} if record_id else None
             method = requests.patch if record_id else requests.post
             response = method(_url(config), headers=service_headers("return=representation"), params=params, json=payload, timeout=15)

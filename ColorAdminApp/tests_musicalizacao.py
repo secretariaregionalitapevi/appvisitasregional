@@ -19,6 +19,30 @@ def request_with_profile(path, profile, method="get", data=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class MusicalizacaoSecurityTests(SimpleTestCase):
+    @patch("ColorAdminApp.musicalizacao.requests.post")
+    def test_activity_authorship_comes_from_authenticated_session(self, mock_post):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [{"id": "activity-1", "polo": "POLO CENTRAL", "cidade": "ITAPEVI"}]
+        mock_post.return_value = response
+        profile = {
+            "user_id": "user-123", "full_name": "Operadora Musicalização",
+            "email": "operadora@example.com", "role_id": 1, "sector": "Musicalização",
+        }
+        request = request_with_profile("/musicalizacao/api/aulas/", profile, "post", {
+            "data_aula": "2026-08-30", "cidade": "ITAPEVI", "polo": "POLO CENTRAL",
+            "created_by_name": "Nome forjado pelo navegador",
+        })
+
+        result = api_resource(request, "aulas")
+
+        self.assertEqual(result.status_code, 201)
+        saved = mock_post.call_args.kwargs["json"]
+        self.assertEqual(saved["created_by_user_id"], "user-123")
+        self.assertEqual(saved["created_by_name"], "Operadora Musicalização")
+        self.assertEqual(saved["updated_by_name"], "Operadora Musicalização")
+        self.assertNotIn("Nome forjado", json.dumps(saved, ensure_ascii=False))
+
     def test_child_age_uses_completed_years(self):
         self.assertEqual(_child_age("20/09/2019", today=date(2026, 8, 26)), 6)
         self.assertEqual(_child_age("2019-08-20", today=date(2026, 8, 26)), 7)

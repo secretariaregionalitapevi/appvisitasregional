@@ -77,6 +77,49 @@ class Command(BaseCommand):
         )
         response.raise_for_status()
 
+    @staticmethod
+    def _validate_history(report, document, import_report=None):
+        tabs = report.get("tabs") if isinstance(report, dict) else None
+        if not isinstance(tabs, dict):
+            raise RuntimeError("O SAM não devolveu as abas do histórico do aluno.")
+        expected_tabs = ("MSA", "Método", "Hinário", "Provas", "Escalas")
+        missing = [name for name in expected_tabs if name not in tabs]
+        failed = [name for name in expected_tabs if isinstance(tabs.get(name), dict) and tabs[name].get("error")]
+        if missing or failed:
+            details = []
+            if missing:
+                details.append("ausentes: " + ", ".join(missing))
+            if failed:
+                details.append("com falha: " + ", ".join(failed))
+            raise RuntimeError("Extração incompleta do histórico (" + "; ".join(details) + ").")
+        if not any(isinstance(tabs[name].get("tables"), list) and tabs[name]["tables"] for name in expected_tabs):
+            raise RuntimeError("O SAM não devolveu nenhuma tabela de histórico; o aluno permanecerá na fila.")
+
+        students = document.get("students") if isinstance(document, dict) else None
+        if not isinstance(students, list) or len(students) != 1:
+            raise RuntimeError("A conversão do histórico não produziu exatamente um aluno.")
+        history = students[0].get("history")
+        if not isinstance(history, dict):
+            raise RuntimeError("A conversão do histórico não produziu eventos válidos.")
+        extracted_events = sum(len(history.get(source) or []) for source in (
+            "msa", "metodo", "hinario", "provas", "escalas", "atividades"
+        ))
+        if import_report is None:
+            return extracted_events
+
+        statistics = import_report.get("statistics") or {}
+        if statistics.get("linked") != 1:
+            raise RuntimeError("A importação não confirmou o vínculo permanente do aluno.")
+        reconciled_events = sum(int(statistics.get(key) or 0) for key in (
+            "new_events", "updated_events", "existing_events"
+        ))
+        if reconciled_events != extracted_events:
+            raise RuntimeError(
+                f"Validação da importação falhou: {extracted_events} evento(s) extraído(s), "
+                f"mas {reconciled_events} conciliado(s)."
+            )
+        return extracted_events
+
     def _cycle(self, session, history_limit, refresh_catalog=True):
         with tempfile.TemporaryDirectory(prefix="sam-sync-") as temporary_name:
             temporary = Path(temporary_name)
@@ -105,20 +148,26 @@ class Command(BaseCommand):
                     return index - 1
                 name = state["source_name"]
                 converted = temporary / f"history-{index}-converted.json"
+                import_report_path = temporary / f"history-{index}-import-report.json"
                 try:
                     self._heartbeat(current_student=name, processed_students=index - 1, worker_status="running",
                                     last_message=f"Processando {index} de {len(pending)} neste lote; a fila continuará automaticamente")
                     self.stdout.write(f"[{index}/{len(pending)}] Atualizando histórico de {name}")
-                    document = portal_report_to_export(session.history(name, state.get("source_key")))
+                    raw_report = session.history(name, state.get("source_key"))
+                    document = portal_report_to_export(raw_report)
+                    self._validate_history(raw_report, document)
                     converted.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
                     call_command(
                         "sync_sam_history", converted, student_id=state["aluno_id"], commit=True,
+                        report=import_report_path,
                         stdout=self.stdout, stderr=self.stderr,
                     )
+                    import_report = json.loads(import_report_path.read_text(encoding="utf-8"))
+                    event_count = self._validate_history(raw_report, document, import_report)
                     self._mark(state["id"], "synced")
                     consecutive_failures = 0
                     self._heartbeat(current_student=name, processed_students=index, worker_status="running",
-                                    last_message=f"Histórico de {name} sincronizado")
+                                    last_message=f"Histórico de {name} sincronizado e validado ({event_count} eventos)")
                 except Exception as exc:
                     self._mark(state["id"], "failed", str(exc)[:1000])
                     self.stderr.write(self.style.ERROR(f"Histórico de {name} falhou: {exc}"))
