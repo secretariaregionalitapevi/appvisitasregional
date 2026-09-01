@@ -13,39 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
   state.commons = Array.from(byId('member-common').options).slice(1).map(option => ({ common: option.value, city: option.dataset.city }));
 
   function alertMessage(message, type='danger') { byId('teams-alert').innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`; }
-  let assignmentToastTimer=null;
-  function closeAssignmentToast() {
-    clearTimeout(assignmentToastTimer);
-    assignmentToastTimer=null;
-    document.querySelector('.assignment-toast')?.remove();
-  }
-  function showAssignmentToast({type='info',title,message,duration=3000}) {
-    closeAssignmentToast();
-    let region=byId('assignment-toast-region');
-    if(!region){region=document.createElement('div');region.id='assignment-toast-region';region.setAttribute('aria-live','polite');region.setAttribute('aria-atomic','true');document.body.appendChild(region);}
-    const toast=document.createElement('div');
-    toast.className=`assignment-toast is-${type}`;
-    toast.setAttribute('role',type==='error'?'alert':'status');
-    const icon=document.createElement('span');
-    icon.className='assignment-toast-icon';
-    icon.innerHTML=type==='loading'?'<span class="assignment-spinner" aria-hidden="true"></span>':`<i class="fa ${type==='success'?'fa-check':type==='error'?'fa-xmark':'fa-info'}" aria-hidden="true"></i>`;
-    const copy=document.createElement('div');
-    copy.className='assignment-toast-copy';
-    const heading=document.createElement('strong');heading.textContent=title;
-    const detail=document.createElement('p');detail.textContent=message;
-    copy.append(heading,detail);
-    toast.append(icon,copy);
-    if(type!=='loading'){
-      const close=document.createElement('button');
-      close.type='button';close.className='assignment-toast-close';close.setAttribute('aria-label','Fechar aviso');close.innerHTML='<i class="fa fa-xmark" aria-hidden="true"></i>';
-      close.onclick=closeAssignmentToast;
-      const progress=document.createElement('span');progress.className='assignment-toast-progress';progress.style.setProperty('--toast-duration',`${duration}ms`);progress.setAttribute('aria-hidden','true');
-      toast.append(close,progress);
-      assignmentToastTimer=setTimeout(closeAssignmentToast,duration);
-    }
-    region.appendChild(toast);
-    return toast;
-  }
+  let assignmentNotice=null;
+  function closeAssignmentToast(){assignmentNotice?.close();assignmentNotice=null}
+  function showAssignmentToast({type='info',title,message,duration=4600}){closeAssignmentToast();assignmentNotice=AppFeedback.show({type:type==='info'?'warning':type,title,message,flow:title.toLocaleLowerCase('pt-BR').includes('atribu')?'update':'save',duration});return assignmentNotice}
   async function jsonFetch(url, options={}) {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
     let response;
@@ -151,23 +121,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if(deleteTeam){
       const count=Number(deleteTeam.dataset.members||0), name=deleteTeam.dataset.name||'Esta equipe';
       const detail=count?`Os ${count} participantes serão desvinculados, mas seus cadastros serão preservados.`:'Esta ação removerá a equipe cadastrada.';
-      const confirmed=await swal({title:`Excluir ${name}?`,text:detail,icon:'warning',dangerMode:true,buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Excluir equipe',visible:true,value:true}}});
+      const confirmed=await AppFeedback.confirm({title:`Excluir ${name}?`,message:detail,confirmText:'Excluir equipe'});
       if(!confirmed)return;
-      try{deleteTeam.disabled=true;await jsonFetch('/visitas/api/equipes/?equipe_id='+encodeURIComponent(deleteTeam.dataset.id),{method:'DELETE',headers:{'X-CSRFToken':csrf()}});alertMessage(name+' foi excluída com sucesso.','success');await load();}catch(error){deleteTeam.disabled=false;alertMessage(error.message);}return;
+      const notice=AppFeedback.show({type:'loading',flow:'delete',title:'Excluindo equipe',message:'Aguarde, a equipe e seus vínculos estão sendo atualizados.'});try{deleteTeam.disabled=true;await jsonFetch('/visitas/api/equipes/?equipe_id='+encodeURIComponent(deleteTeam.dataset.id),{method:'DELETE',headers:{'X-CSRFToken':csrf()}});notice.close();await load();AppFeedback.show({type:'success',title:'Equipe excluída',message:name+' foi excluída com sucesso.'})}catch(error){notice.close();deleteTeam.disabled=false;AppFeedback.show({type:'error',title:'Não foi possível excluir',message:error.message})}return;
     }
     if(edit){const member=state.members.find(item=>String(item.id)===String(edit.dataset.id));if(member)await openMemberModal(member,edit.dataset.teamId);return;}
     if(!unlink)return;
     const member=state.members.find(item=>String(item.id)===String(unlink.dataset.id));
     const memberName=(member && member.nome) ? member.nome : 'Este participante';
-    const confirmed=await swal({
-      title:'Desvincular participante?',
-      text:memberName + ' sera removido da equipe atual.',
-      icon:'warning',
-      dangerMode:true,
-      buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Desvincular',visible:true,value:true}}
-    });
+    const confirmed=await AppFeedback.confirm({title:'Desvincular participante?',message:memberName+' será removido da equipe atual.',highlight:memberName,confirmText:'Desvincular',confirmIcon:'fa-link-slash'});
     if(!confirmed)return;
-    try{unlink.disabled=true;await jsonFetch('/visitas/api/equipes/?id='+encodeURIComponent(unlink.dataset.id)+'&tipo='+encodeURIComponent(unlink.dataset.type||'LOCAL'),{method:'DELETE',headers:{'X-CSRFToken':csrf()}});alertMessage(memberName+' foi desvinculado da equipe.','success');await load();}catch(error){unlink.disabled=false;alertMessage(error.message);}
+    const notice=AppFeedback.show({type:'loading',flow:'delete',title:'Desvinculando participante',message:'Aguarde, o vínculo com a equipe está sendo removido.'});try{unlink.disabled=true;await jsonFetch('/visitas/api/equipes/?id='+encodeURIComponent(unlink.dataset.id)+'&tipo='+encodeURIComponent(unlink.dataset.type||'LOCAL'),{method:'DELETE',headers:{'X-CSRFToken':csrf()}});notice.close();await load();AppFeedback.show({type:'success',title:'Participante desvinculado',message:memberName+' foi removido da equipe.'})}catch(error){notice.close();unlink.disabled=false;AppFeedback.show({type:'error',title:'Não foi possível desvincular',message:error.message})}
   };
   byId('team-type').onchange=()=>{const regional=byId('team-type').value==='REGIONAL';byId('team-common-wrap').style.display=regional?'none':'';byId('team-common').required=!regional;byId('team-name').placeholder=regional?'Ex.: Grupo A':'Ex.: Equipe 1';byId('team-name-help').textContent=regional?'Grupo com abrangência municipal.':'Equipe vinculada à comum selecionada.';};
   byId('team-city').onchange=()=>rebuildCommons(byId('team-common'),byId('team-city').value);

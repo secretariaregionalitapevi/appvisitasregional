@@ -266,7 +266,7 @@ def log_audit(request, action, module='GLOBAL', details=None):
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     user_id = request.session.get('user_id')
     payload = {
         "user_id": user_id,
@@ -276,7 +276,7 @@ def log_audit(request, action, module='GLOBAL', details=None):
         "ip_address": request.META.get('REMOTE_ADDR'),
         "user_agent": request.META.get('HTTP_USER_AGENT')
     }
-    
+
     try:
         requests.post(url, headers=headers, json=payload, timeout=5)
     except Exception as e:
@@ -364,10 +364,10 @@ def close_access_session(request, reason="user_logout"):
 def apiAuth(request):
     """Proxy for Supabase Auth and Profiles management."""
     action = request.GET.get('action')
-    
+
     if request.method == 'POST':
         data = json.loads(request.body) if request.body else {}
-        
+
         if action == 'login':
             from django.core.cache import cache
             if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
@@ -395,7 +395,7 @@ def apiAuth(request):
                 url = f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password"
                 headers = {"apikey": settings.SUPABASE_ANON_KEY, "Content-Type": "application/json"}
                 payload = {"email": data.get('email'), "password": data.get('password')}
-                
+
                 response = requests.post(url, headers=headers, json=payload, timeout=10)
                 if response.status_code == 200:
                     cache.delete(rate_key)
@@ -405,10 +405,10 @@ def apiAuth(request):
                     token = res_data.get('access_token')
                     user_data = res_data.get('user', {})
                     user_id = user_data.get('id')
-                    
+
                     if not user_id:
                         return JsonResponse({"error": "Usuário não encontrado no Supabase."}, status=404)
-                    
+
                     # Fetch profile
                     profile_url = f"{settings.SUPABASE_URL}/rest/v1/profiles?user_id=eq.{user_id}&select=*"
                     profile_headers = {
@@ -416,14 +416,14 @@ def apiAuth(request):
                         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"
                     }
                     profile_res = requests.get(profile_url, headers=profile_headers, timeout=10)
-                    
+
                     if profile_res.status_code != 200:
                         return JsonResponse({"error": "Erro ao buscar perfil no banco de dados."}, status=profile_res.status_code)
-                    
+
                     profiles = profile_res.json()
                     if not profiles or len(profiles) == 0:
                         return JsonResponse({"error": "Perfil não encontrado. Contate o administrador."}, status=404)
-                    
+
                     profile = profiles[0]
 
                     # Repara contas do fluxo antigo, nas quais a comum ficou
@@ -467,7 +467,7 @@ def apiAuth(request):
                         })
                         request.session.pop('user_id', None)
                         return JsonResponse({"error": "Sua conta está aguardando aprovação."}, status=403)
-                    
+
                     # Save to session
                     request.session['authenticated'] = True
                     request.session['user_id'] = user_id
@@ -475,14 +475,14 @@ def apiAuth(request):
                     profile['email'] = data.get('email')
                     request.session['user_profile'] = profile
                     start_access_session(request, profile)
-                    
+
                     log_audit(request, 'LOGIN', 'AUTH', {
                         "email": data.get('email'), "role_id": profile.get('role_id'),
                         "comum": profile.get('comum'),
                         "municipio": profile.get('municipio') or profile.get('cidade')
                     })
                     return JsonResponse({"status": "ok", "user": profile})
-                
+
                 # Auth failure
                 try:
                     err_msg = response.json().get('error_description') or response.json().get('msg') or "Credenciais inválidas."
@@ -493,7 +493,7 @@ def apiAuth(request):
                 })
                 cache.set(rate_key, attempts + 1, timeout=15 * 60)
                 return JsonResponse({"error": err_msg}, status=response.status_code)
-                
+
             except requests.RequestException as exc:
                 logger.exception("Supabase authentication flow failed: %s", type(exc).__name__)
                 return JsonResponse({
@@ -526,7 +526,7 @@ def apiAuth(request):
             url = f"{settings.SUPABASE_URL}/auth/v1/signup"
             headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
             payload = {
-                "email": data.get('email'), 
+                "email": data.get('email'),
                 "password": data.get('password'),
                 "data": {
                     "full_name": data.get('full_name'),
@@ -620,16 +620,16 @@ def apiAuth(request):
                     return JsonResponse({
                         "error": "O serviço criou a conta sem retornar sua identificação. Contate o administrador."
                     }, status=502)
-                
+
                 # Note: The trigger on Supabase (handle_new_user_profile) will create the profile record.
                 # We just need to make sure level 7 is 'Usuário'.
-                
+
                 log_audit(request, 'REGISTER', details={
                     "email": data.get('email'), "user_id": user_id,
                     "comum": comum, "municipio": municipio, "role_id": 4,
                 })
                 return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
-            
+
             try:
                 auth_error = response.json()
                 error_message = (
@@ -663,6 +663,41 @@ def apiAuth(request):
 
     return JsonResponse({"error": "Invalid action or method"}, status=400)
 
+def _visitas_common_key(value):
+    text = " ".join(str(value or "").strip().upper().split())
+    code = re.search(r"BR-\d{2}-\d{4}", text)
+    if code:
+        return code.group(0)
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _visitas_monthly_key(row):
+    return (
+        int(row.get("referencia_ano") or 0),
+        int(row.get("referencia_mes") or 0),
+        _visitas_common_key(row.get("comum")),
+    )
+
+
+def _collapse_visitas_monthly_rows(rows):
+    """Return one authoritative monthly closing for each period and common."""
+    grouped = {}
+    for row in rows:
+        key = _visitas_monthly_key(row)
+        current = grouped.get(key)
+        row_order = str(row.get("updated_at") or row.get("created_at") or row.get("id") or "")
+        current_order = str((current or {}).get("updated_at") or (current or {}).get("created_at") or (current or {}).get("id") or "")
+        if current is None or row_order >= current_order:
+            selected, discarded = row, current
+        else:
+            selected, discarded = current, row
+        if discarded is not None:
+            selected["_duplicate_count"] = int((current or {}).get("_duplicate_count") or 1) + 1
+        grouped[key] = selected
+    return list(grouped.values())
+
+
 @csrf_exempt
 def apiVisitas(request):
     scope = user_scope(request)
@@ -679,12 +714,12 @@ def apiVisitas(request):
             "Content-Type": "application/json",
             "Prefer": "return=representation"
         }
-        
+
         params = [
             ("select", "*"),
             ("order", "referencia_ano.desc,referencia_mes.desc")
         ]
-        
+
         if ano and ano != 'all':
             params.append(("referencia_ano", f"eq.{ano}"))
         if mes and mes != 'all':
@@ -694,7 +729,7 @@ def apiVisitas(request):
             if response.status_code != 200:
                 logger.error("Dashboard query failed with HTTP %s", response.status_code)
                 return JsonResponse({"error": "Não foi possível consultar o painel."}, status=502)
-            rows = filter_rows(scope, response.json())
+            rows = _collapse_visitas_monthly_rows(filter_rows(scope, response.json()))
             # Monthly reports store musicians as `gvmu`; `gve` is the dashboard alias.
             for row in rows:
                 row['gve'] = int(row.get('gvmu') or 0)
@@ -731,7 +766,7 @@ def apiVisitas(request):
                 data['total_visitas'] = int(data.get('gvi', 0)) + int(data.get('gvm', 0)) + int(data.get('gvmu', 0)) + int(data.get('rf', 0)) + int(data.get('re', 0))
             if 'total' not in data:
                 data['total'] = data['total_visitas']
-                
+
             url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS}"
             headers = {
                 "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
@@ -739,20 +774,55 @@ def apiVisitas(request):
                 "Content-Type": "application/json",
                 "Prefer": "return=representation"
             }
-            
-            response = requests.post(url, headers=headers, json=data, timeout=10)
-            if response.status_code in [200, 201]:
-                log_audit(request, 'CREATE', 'VISITAS_LANCAMENTOS', {
-                    "scope": scope_details(scope), "novo": response.json()
+
+            year = int(data.get('referencia_ano') or 0)
+            month = int(data.get('referencia_mes') or 0)
+            common_key = _visitas_common_key(data.get('comum'))
+            if not year or not 1 <= month <= 12 or not common_key:
+                return JsonResponse({"error": "Ano, mes e comum sao obrigatorios."}, status=400)
+
+            lookup = requests.get(url, headers=headers, params=[
+                ("select", "id,comum,created_at"),
+                ("referencia_ano", f"eq.{year}"),
+                ("referencia_mes", f"eq.{month}"),
+                ("order", "created_at.desc"),
+            ], timeout=10)
+            if lookup.status_code != 200:
+                logger.error("Dashboard duplicate lookup failed with HTTP %s", lookup.status_code)
+                return JsonResponse({"error": "Nao foi possivel validar o fechamento existente."}, status=502)
+
+            existing = next((row for row in lookup.json() if _visitas_common_key(row.get('comum')) == common_key), None)
+            if existing:
+                payload = {key: value for key, value in data.items() if key not in {'id', 'created_at', 'updated_at'}}
+                response = requests.patch(
+                    url,
+                    headers=headers,
+                    params={"id": f"eq.{existing['id']}"},
+                    json=payload,
+                    timeout=10,
+                )
+                audit_action = 'UPDATE'
+            else:
+                response = requests.post(url, headers=headers, json=data, timeout=10)
+                audit_action = 'CREATE'
+
+            if response.status_code in [200, 201, 204]:
+                result = response.json() if response.content else []
+                log_audit(request, audit_action, 'VISITAS_LANCAMENTOS', {
+                    "scope": scope_details(scope), "registro": result,
+                    "fonte_principal": "APP_VISITAS_CCB"
                 })
-                return JsonResponse(response.json(), safe=False)
+                return JsonResponse({
+                    "operation": "updated" if existing else "created",
+                    "data": result,
+                })
             else:
                 logger.error("Dashboard save failed with HTTP %s", response.status_code)
                 return JsonResponse({"error": "Não foi possível salvar o lançamento."}, status=502)
         except Exception as e:
             logger.exception("Unexpected member API failure: %s", e)
             return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
-            
+
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 def apiVisitasIrmandade(request):
@@ -774,6 +844,21 @@ def apiVisitasIrmandade(request):
             return (" ".join(name.casefold().split()), str(row.get("id") or ""))
 
         return sorted(rows, key=member_key)
+    def restrict_requested_scope(rows, requested_common='', requested_city=''):
+        common_key = " ".join(str(requested_common or "").casefold().split())
+        city_key = " ".join(str(requested_city or "").casefold().split())
+        if not common_key:
+            return rows
+        restricted = []
+        for row in rows:
+            row_common = " ".join(str(row.get("comum") or "").casefold().split())
+            row_city = " ".join(str(row.get("cidade") or row.get("municipio") or "").casefold().split())
+            if row_common != common_key:
+                continue
+            if city_key and row_city and row_city != city_key:
+                continue
+            restricted.append(row)
+        return restricted
 
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
     headers = {
@@ -784,23 +869,29 @@ def apiVisitasIrmandade(request):
     }
     if request.method == 'GET':
         comum = request.GET.get('comum')
+        municipio = (request.GET.get('municipio') or '').strip()
         status = request.GET.get('status')
 
         if comum and comum != 'all':
-            allowed_commons = {str(item.get('comum') or '').strip() for item in visible_commons(scope)}
-            if comum.strip() not in allowed_commons:
-                return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
+            visible_catalog = visible_commons(scope)
+            selected_row = next((
+                item for item in visible_catalog
+                if str(item.get('comum') or '').strip() == comum.strip()
+                and (not municipio or str(item.get('cidade') or '').strip() == municipio)
+            ), None)
+            if not selected_row:
+                return JsonResponse({"error": "Comum fora do município ou do seu escopo de acesso."}, status=403)
 
         params = [("select", "*"), ("order", "nome.asc")]
-        
+
         if comum and comum != 'all':
             # Há registros legados com espaços ao final do nome da comum.
             # A comparação parcial preserva esses membros sem abrir o escopo,
             # pois a comum já foi validada contra o catálogo autorizado acima.
-            params.append(("comum", f"ilike.*{comum.strip()}*"))
+            params.append(("comum", f"ilike.{comum.strip()}%"))
         if status and status != 'all':
             params.append(("status", f"eq.{status}"))
-        
+
         setor = request.GET.get('setor')
         if setor and setor != 'all':
             params.append(("setor", f"eq.{setor}"))
@@ -819,14 +910,14 @@ def apiVisitasIrmandade(request):
                     rows.extend(page)
                     if len(page) < page_size:
                         break
-                rows = protect_restricted_notes(filter_rows(scope, rows))
+                rows = restrict_requested_scope(protect_restricted_notes(filter_rows(scope, rows)), comum, municipio)
                 return JsonResponse(order_members(rows), safe=False)
 
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
                 logger.error("Member query failed with HTTP %s", response.status_code)
                 return JsonResponse({"error": "Não foi possível consultar o cadastro."}, status=502)
-            rows = protect_restricted_notes(filter_rows(scope, response.json()))
+            rows = restrict_requested_scope(protect_restricted_notes(filter_rows(scope, response.json())), comum, municipio)
             return JsonResponse(order_members(rows), safe=False)
         except Exception as e:
             logger.exception("Unexpected member list failure: %s", e)
@@ -956,7 +1047,7 @@ def apiVisitasIrmandade(request):
             id = request.GET.get('id')
             if not id:
                 return JsonResponse({"error": "ID is required"}, status=400)
-            
+
             data = json.loads(request.body)
             if not can_view_restricted_notes:
                 data.pop("apontamentos_restritos", None)
@@ -979,7 +1070,7 @@ def apiVisitasIrmandade(request):
                     data['id_chefe_familia'] = None
                     data['vinculo_tipo'] = None
             params = [("id", f"eq.{id}")]
-            
+
             response = requests.patch(url, headers=headers, params=params, json=data, timeout=10)
             if response.status_code in [200, 201, 204]:
                 # Cônjuge é um vínculo simétrico: ao salvar A como cônjuge
@@ -1010,9 +1101,9 @@ def apiVisitasIrmandade(request):
         id = request.GET.get('id')
         if not id:
             return JsonResponse({"error": "ID is required"}, status=400)
-            
+
         params = [("id", f"eq.{id}")]
-        
+
         try:
             current = requests.get(url, headers=headers, params=params + [("select", "*")], timeout=10).json()
             if not current or not can_access(scope, current[0]):
@@ -1579,13 +1670,16 @@ def visitasRoteiro(request):
     data_filtro = request.GET.get('data') # formato YYYY-MM-DD
     comum = (request.GET.get('comum') or scope.get('comum') or '').strip()
     bairro = (request.GET.get('bairro') or '').strip()
+    route_map_mode = (request.GET.get('mapa') or 'none').strip().lower()
+    if route_map_mode not in {'none', 'demo', 'google'}:
+        route_map_mode = 'none'
     comum_row = next((row for row in visible_commons(scope) if str(row.get('comum') or '').strip() == comum), None)
     if comum and not comum_row:
         return render(request, 'pages/visitas-roteiro-impresso.html', {
             'error': 'A comum selecionada está fora do seu escopo de acesso.'
         })
     cidade_comum = (comum_row or {}).get('cidade') or ''
-    
+
     # 1. Buscar Visitas da Agenda
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
     headers = {
@@ -1593,13 +1687,13 @@ def visitasRoteiro(request):
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     params = [("select", "*")]
     if data_filtro:
         # Pega do inicio ao fim do dia
         params.append(("data_inicio", f"gte.{data_filtro}T00:00:00"))
         params.append(("data_inicio", f"lte.{data_filtro}T23:59:59"))
-        
+
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         visitas = filter_rows(scope, response.json()) if response.status_code == 200 else []
@@ -1608,7 +1702,7 @@ def visitasRoteiro(request):
                 v for v in visitas
                 if normalize_visit_team(v.get('equipe_responsavel')) == equipe
             ]
-        
+
         # Filtrar apenas as que não estão canceladas/não realizadas
         visitas_validas = [v for v in visitas if v.get('status') not in ['Cancelada', 'Não realizada']]
         if bairro:
@@ -1637,9 +1731,9 @@ def visitasRoteiro(request):
                     visit for visit in visitas_validas
                     if str(visit.get('irmandade_id')) not in team_member_ids
                 ]
-        
+
         from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically
-        
+
         # 2. Despacho Automático: a meta operacional é de 10 casas, não de
         # 10 pessoas. Moradores do mesmo endereço contam como uma única parada.
         total_casas = len(group_route_visits_by_address(visitas_validas))
@@ -1675,12 +1769,12 @@ def visitasRoteiro(request):
             visit['preferencia_periodo_visita'] = member.get('preferencia_periodo_visita') or ''
             if member.get('apontamentos_restritos'):
                 visit['apontamentos_restritos'] = member['apontamentos_restritos']
-                
+
         # 3. Ajustar fuso horário de volta para o Brasil (-3) no que veio do banco (UTC)
         from datetime import datetime, timezone, timedelta
         from dateutil import parser
         fuso_br = timezone(timedelta(hours=-3))
-        
+
         for v in visitas_validas:
             if v.get('data_inicio'):
                 try:
@@ -1702,7 +1796,7 @@ def visitasRoteiro(request):
         # Duas pessoas no mesmo endereço representam um único deslocamento neste
         # roteiro. A consolidação é somente visual e não altera os agendamentos.
         visitas_validas = group_route_visits_by_address(visitas_validas)
-                    
+
         # 4. Separar manhã e tarde
         visitas_manha = []
         visitas_tarde = []
@@ -1717,7 +1811,7 @@ def visitasRoteiro(request):
                 visitas_manha.append(v)
             else:
                 visitas_tarde.append(v)
-                
+
         # 5. Otimizar Rota (separadamente)
         ponto_comum = get_common_coordinates(comum, cidade_comum) if comum else None
         roteiro_manha = order_route_chronologically(
@@ -1751,11 +1845,11 @@ def visitasRoteiro(request):
             visit['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?' + urlencode({
                 'size': '180x180', 'data': visit['navigation_url']
             })
-        
+
         data_br = data_filtro
         if data_filtro and len(data_filtro) == 10:
             data_br = f"{data_filtro[8:10]}/{data_filtro[5:7]}/{data_filtro[0:4]}"
-        
+
         context = {
             'roteiro': roteiro_otimizado,
             'equipe': equipe,
@@ -1764,6 +1858,22 @@ def visitasRoteiro(request):
             'bairro': bairro,
             'total_visitas_roteiro': len(roteiro_otimizado),
             'roteiro_excede_referencia': len(roteiro_otimizado) > 10,
+            'route_map_mode': route_map_mode,
+            'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY if route_map_mode == 'google' else '',
+            'route_map_origin': (
+                {'lat': ponto_comum[0], 'lng': ponto_comum[1]} if ponto_comum else None
+            ),
+            'route_map_points': [
+                {
+                    'number': visit.get('route_number'),
+                    'title': visit.get('titulo') or '',
+                    'address': visit.get('endereco_exibicao') or '',
+                    'lat': visit.get('lat'),
+                    'lng': visit.get('lng'),
+                }
+                for visit in roteiro_otimizado
+                if visit.get('lat') not in (None, '') and visit.get('lng') not in (None, '')
+            ],
         }
         return render(request, 'pages/visitas-roteiro-impresso.html', context)
     except Exception as e:
@@ -1795,7 +1905,7 @@ def apiVisitasAgenda(request):
                     return JsonResponse({"error": "Comum fora do seu escopo de acesso."}, status=403)
             if municipio and municipio not in allowed_municipios:
                 return JsonResponse({"error": "Município fora do seu escopo de acesso."}, status=403)
-            
+
             params = [("select", "*"), ("order", "data_inicio.asc")]
             if irmandade_id:
                 params.append(("irmandade_id", f"eq.{irmandade_id}")) # ID do membro
@@ -1809,7 +1919,7 @@ def apiVisitasAgenda(request):
                 params.append(("data_inicio", f"gte.{start_date}"))
             if end_date:
                 params.append(("data_inicio", f"lt.{end_date}"))
-                
+
             response = requests.get(url, headers=headers, params=params, timeout=10)
             response.raise_for_status()
             rows = response.json()
@@ -2017,7 +2127,7 @@ def apiVisitasAgenda(request):
                                 f"em {candidate_day}. Mantenha todo o bairro com a mesma equipe."
                             )
                         }, status=409)
-            
+
             # Validação profissional: Se cancelada ou não realizada, exige motivo
             status_visita = data.get('status')
             if status_visita in ['Cancelada', 'Não realizada'] and not data.get('motivo_cancelamento'):
@@ -2027,14 +2137,14 @@ def apiVisitasAgenda(request):
                 response = requests.post(url, headers=headers, json=data, timeout=10)
             else:
                 response = requests.patch(url, headers=headers, params=[("id", f"eq.{id}")], json=data, timeout=10)
-            
+
             if response.status_code in [200, 201, 204]:
                 log_audit(request, 'CREATE' if request.method == 'POST' else 'UPDATE', 'VISITAS_AGENDA', {
                     "scope": scope_details(scope), "anterior": current[0] if current else None,
                     "novo": response.json() if response.text else data
                 })
                 return JsonResponse(response.json() if response.text else {"status": "ok"}, safe=False)
-            
+
             try:
                 err_content = response.json()
                 msg = err_content.get('message', response.text)
@@ -2110,10 +2220,10 @@ def apiGeocode(request):
 def apiStorageUpload(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     if not request.FILES.get('file'):
         return JsonResponse({"error": "No file uploaded"}, status=400)
-    
+
     file = request.FILES['file']
     file_name = request.POST.get('name', file.name)
     import uuid
@@ -2132,23 +2242,23 @@ def apiStorageUpload(request):
     if not valid_signature:
         return JsonResponse({"error": "O conteúdo do arquivo não corresponde a uma imagem válida."}, status=400)
     safe_name = f"{uuid.uuid4()}{ext}"
-    
+
     bucket = "irmandade_fotos"
     url = f"{settings.SUPABASE_URL}/storage/v1/object/{bucket}/{safe_name}"
-    
+
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": file.content_type
     }
-    
+
     def upload_to_supabase(content, current_url, current_headers):
         return requests.post(current_url, headers=current_headers, data=content, timeout=30)
 
     try:
         file_content = file.read()
         response = upload_to_supabase(file_content, url, headers)
-        
+
         # Se falhar porque o bucket não existe (404 ou 400 com mensagem específica)
         if response.status_code in [400, 404] and ("not found" in response.text.lower() or "not_found" in response.text.lower()):
             create_bucket_url = f"{settings.SUPABASE_URL}/storage/v1/bucket"
@@ -2164,17 +2274,17 @@ def apiStorageUpload(request):
                 "file_size_limit": 5 * 1024 * 1024,
                 "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
             }
-            
+
             create_res = requests.post(create_bucket_url, headers=create_headers, json=create_data, timeout=10)
             if create_res.status_code in [200, 201]:
                 response = upload_to_supabase(file_content, url, headers)
-        
+
         if response.status_code in [200, 201]:
             return JsonResponse({"url": f"/visitas/api/foto/{safe_name}/", "name": safe_name}, status=200)
         else:
             logger.error("Storage upload failed with HTTP %s", response.status_code)
             return JsonResponse({"error": "Não foi possível armazenar a imagem."}, status=502)
-            
+
     except (requests.RequestException, ValueError) as exc:
         logger.exception("Storage upload failed: %s", exc)
         return JsonResponse({"error": "Não foi possível armazenar a imagem."}, status=502)
@@ -2290,7 +2400,7 @@ def uiIntroJS(request):
 
 def uiOffcanvasToasts(request):
 	return render(request, "pages/ui-offcanvas-toasts.html")
-	
+
 def bootstrap5(request):
 	return render(request, "pages/bootstrap-5.html")
 
@@ -2302,25 +2412,25 @@ def formPlugins(request):
 
 def formSliderSwitcher(request):
 	return render(request, "pages/form-slider-switcher.html")
-	
+
 def formValidation(request):
 	return render(request, "pages/form-validation.html")
 
 def formWizards(request):
 	return render(request, "pages/form-wizards.html")
-	
+
 def formWysiwyg(request):
 	return render(request, "pages/form-wysiwyg.html")
-	
+
 def formXEditable(request):
 	return render(request, "pages/form-x-editable.html")
-	
+
 def formMultipleFileUpload(request):
 	return render(request, "pages/form-multiple-file-upload.html")
-	
+
 def formSummernote(request):
 	return render(request, "pages/form-summernote.html")
-	
+
 def formDropzone(request):
 	return render(request, "pages/form-dropzone.html")
 
@@ -2362,8 +2472,8 @@ def tableManageExtensionCombination(request):
 
 def posCustomerOrder(request):
 	context = {
-		"appSidebarHide": 1, 
-		"appHeaderHide": 1,  
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
 		"appContentFullHeight": 1,
 		"appContentClass": "p-0"
 	}
@@ -2371,8 +2481,8 @@ def posCustomerOrder(request):
 
 def posKitchenOrder(request):
 	context = {
-		"appSidebarHide": 1, 
-		"appHeaderHide": 1,  
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
 		"appContentFullHeight": 1,
 		"appContentClass": "p-0"
 	}
@@ -2380,8 +2490,8 @@ def posKitchenOrder(request):
 
 def posCounterCheckout(request):
 	context = {
-		"appSidebarHide": 1, 
-		"appHeaderHide": 1,  
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
 		"appContentFullHeight": 1,
 		"appContentClass": "p-0"
 	}
@@ -2389,8 +2499,8 @@ def posCounterCheckout(request):
 
 def posTableBooking(request):
 	context = {
-		"appSidebarHide": 1, 
-		"appHeaderHide": 1,  
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
 		"appContentFullHeight": 1,
 		"appContentClass": "p-0"
 	}
@@ -2398,8 +2508,8 @@ def posTableBooking(request):
 
 def posMenuStock(request):
 	context = {
-		"appSidebarHide": 1, 
-		"appHeaderHide": 1,  
+		"appSidebarHide": 1,
+		"appHeaderHide": 1,
 		"appContentFullHeight": 1,
 		"appContentClass": "p-0"
 	}
@@ -2416,7 +2526,7 @@ def chartD3(request):
 
 def chartApex(request):
 	return render(request, "pages/chart-apex.html")
-	
+
 def landing(request):
 	context = {
 		"appSidebarHide": 1,
@@ -2640,7 +2750,7 @@ def extraDataManagement(request):
 
 def extraSettings(request):
 	return render(request, "pages/extra-settings.html")
-	
+
 def userLoginV1(request):
 	context = {
 		"appSidebarHide": 1,
@@ -2691,7 +2801,7 @@ def logout_view(request):
 
 def helperCss(request):
 	return render(request, "pages/helper-css.html")
-	
+
 def error404(request):
 	context = {
 		"appSidebarHide": 1,

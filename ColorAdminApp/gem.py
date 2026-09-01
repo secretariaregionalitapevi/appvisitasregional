@@ -1,6 +1,8 @@
 """Painel gerencial do Grupo de Estudos Musicais (GEM)."""
 import json
+import io
 import math
+import re
 import unicodedata
 import uuid
 from collections import Counter
@@ -11,11 +13,16 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
+from django.http.multipartparser import MultiPartParser, MultiPartParserError
 from django.shortcuts import render
 
 from .access_control import can_access, filter_rows, scope_details, service_headers, user_scope
 from .module_access import MODULE_MUSICALIZACAO, can_access_module
 from .sam_history_sync import SOURCE_CONFIG, program_minimum_progress
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 
 TABLE = "musica_acompanhamento_aluno"
@@ -23,8 +30,16 @@ SELECT_FIELDS = (
     "id,nome_aluno,status,comum_congregacao,cargo_ministerio,nivel,instrumento,"
     "municipio,programa_minimo_percentual,registro_msa,updated_at"
 )
-SUMMARY_FIELDS = "id,nome_aluno,nivel,instrumento,municipio,comum_congregacao,programa_minimo_percentual"
+SUMMARY_FIELDS = "id,nome_aluno,status,nivel,instrumento,municipio,comum_congregacao,cargo_ministerio,registro_msa,programa_minimo_percentual,updated_at"
 GRADUATION_TOKEN = "OFICIALIZAD"
+LEVEL_OPTIONS = [
+    'CANDIDATO(A)', 'CULTO OFICIAL', 'ENSAIO', 'MEIA HORA', 'OFICIALIZADO(A)', 'RJM',
+    'RJM / CULTO OFICIAL', 'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
+]
+INSTRUMENT_OPTIONS = ['\u00d3RG\u00c3O', 'ACORDEON', 'VIOLINO', 'VIOLA', 'VIOLONCELO', 'FLAUTA TRANSVERSAL', 'OBO\u00c9', "OBO\u00c9 D'AMORE", 'CORNE INGL\u00caS', 'CLARINETE', 'CLARINETE ALTO', 'CLARINETE BAIXO (CLARONE)', 'FAGOTE', 'SAXOFONE SOPRANO (RETO)', 'SAXOFONE ALTO', 'SAXOFONE TENOR', 'SAXOFONE BAR\u00cdTONO', 'TROMPETE', 'CORNET', 'FLUGELHORN', 'TROMPA', 'TROMBONE', 'TROMBONITO', 'BAR\u00cdTONO (PISTO)', 'EUF\u00d4NIO', 'TUBA']
+MINISTRY_OPTIONS = ['M\u00daSICO', 'ORGANISTA']
+TONALITY_OPTIONS = ['D\u00d3', 'F\u00c1', 'F\u00c1 / SI\u266d', 'L\u00c1', 'MI\u266d', 'SI\u266d']
+STUDENT_CREATE_FIELDS = {'nome_aluno', 'comum_congregacao', 'municipio', 'cargo_ministerio', 'nivel', 'instrumento', 'possui_instrumento', 'instrumento_proprio', 'tonalidade', 'data_inicio_gem', 'data_nascimento', 'estado_civil', 'telefone', 'nome_responsavel', 'grau_parentesco', 'consentimento_lgpd'}
 
 
 def _norm(value):
@@ -221,7 +236,9 @@ def _denied():
 def page(request):
     if not can_open_module(request):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta GEM."}, status=403)
-    return render(request, "pages/gem.html", {"scope": scope_details(user_scope(request))})
+    profile = request.session.get('user_profile') or {}
+    actor = profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email') or 'Usuario'
+    return render(request, "pages/gem.html", {"scope": scope_details(user_scope(request)), 'report_user': actor})
 
 
 def student_summary_page(request, student_id):
@@ -237,7 +254,7 @@ def api_summary(request):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
         requested_scope = user_scope(request)
-        summary_key = f"gem:summary:v3:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
+        summary_key = f"gem:summary:v5:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
         cached_summary = cache.get(summary_key)
         if cached_summary is not None:
             return JsonResponse(cached_summary)
@@ -250,6 +267,7 @@ def api_summary(request):
         levels = Counter(_norm(row.get("nivel")) or "NÃO INFORMADO" for row in formation)
         instruments = Counter(_norm(row.get("instrumento")) or "A DEFINIR" for row in formation)
         municipalities = Counter(_norm(row.get("municipio")) or "NÃO INFORMADO" for row in formation)
+        commons = Counter(_norm(row.get('comum_congregacao')) or 'NÃO INFORMADA' for row in formation)
         payload = {
             "scope": scope_details(scope),
             "totals": {
@@ -264,6 +282,8 @@ def api_summary(request):
             "instruments": [{"label": label, "value": value} for label, value in instruments.most_common(8)],
             "instrument_options": sorted(instruments),
             "municipalities": [{"label": label, "value": value} for label, value in municipalities.most_common()],
+            'commons': [{'label': label, 'value': value} for label, value in commons.most_common()],
+            'catalogs': {'instruments': INSTRUMENT_OPTIONS, 'levels': LEVEL_OPTIONS, 'ministries': MINISTRY_OPTIONS, 'tonalities': TONALITY_OPTIONS},
         }
         cache.set(summary_key, payload, 300)
         return JsonResponse(payload)
@@ -274,6 +294,57 @@ def api_summary(request):
 def api_students(request):
     if not can_open_module(request):
         return _denied()
+    if request.method == 'POST':
+        try:
+            raw = json.loads(request.body or '{}')
+            payload = {key: raw.get(key) for key in STUDENT_CREATE_FIELDS if key in raw}
+            required = ('nome_aluno', 'comum_congregacao', 'municipio', 'cargo_ministerio', 'nivel', 'instrumento')
+            if any(not str(payload.get(key) or '').strip() for key in required):
+                return JsonResponse({'error': 'Preencha todos os campos obrigatorios.'}, status=400)
+            payload['nome_aluno'] = ' '.join(str(payload['nome_aluno']).upper().split())
+            if len(payload['nome_aluno'].split()) < 2:
+                return JsonResponse({'error': 'Informe o nome completo, sem abreviacoes.'}, status=400)
+            if payload.get('instrumento') not in INSTRUMENT_OPTIONS:
+                return JsonResponse({'error': 'Selecione um instrumento valido.'}, status=400)
+            if payload.get('nivel') not in LEVEL_OPTIONS or payload.get('cargo_ministerio') not in MINISTRY_OPTIONS:
+                return JsonResponse({'error': 'Nivel ou cargo invalido.'}, status=400)
+            if payload.get('tonalidade') and payload['tonalidade'] not in TONALITY_OPTIONS:
+                return JsonResponse({'error': 'Selecione uma tonalidade valida.'}, status=400)
+            if payload.get('consentimento_lgpd') is not True:
+                return JsonResponse({'error': 'O consentimento para tratamento dos dados e obrigatorio.'}, status=400)
+            for boolean_field in ('possui_instrumento', 'instrumento_proprio'):
+                if payload.get(boolean_field) not in (True, False, None):
+                    return JsonResponse({'error': 'Opcao de instrumento invalida.'}, status=400)
+            phone = re.sub(r'\D', '', str(payload.get('telefone') or ''))
+            if phone and len(phone) not in (10, 11):
+                return JsonResponse({'error': 'Informe um telefone valido com DDD.'}, status=400)
+            if phone:
+                payload['telefone'] = phone
+            for date_field in ('data_nascimento', 'data_inicio_gem'):
+                if payload.get(date_field):
+                    try:
+                        parsed_date = datetime.strptime(str(payload[date_field]), '%Y-%m-%d').date()
+                    except ValueError:
+                        return JsonResponse({'error': 'Informe as datas em formato valido.'}, status=400)
+                    if parsed_date > datetime.now().date():
+                        return JsonResponse({'error': 'As datas nao podem estar no futuro.'}, status=400)
+            if payload.get('data_nascimento'):
+                birth = datetime.strptime(str(payload['data_nascimento']), '%Y-%m-%d').date()
+                today = datetime.now().date()
+                age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+                if age < 18 and not str(payload.get('nome_responsavel') or '').strip():
+                    return JsonResponse({'error': 'Informe o responsavel para aluno menor de 18 anos.'}, status=400)
+            candidate = dict(payload, comum=payload['comum_congregacao'], cidade=payload['municipio'])
+            if not can_access(user_scope(request), candidate):
+                return _denied()
+            saved = requests.post(f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers('return=representation'), json=payload, timeout=20)
+            saved.raise_for_status()
+            cache.delete('gem:students:v5')
+            return JsonResponse({'item': saved.json()[0]}, status=201)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'JSON invalido.'}, status=400)
+        except (requests.RequestException, ValueError, IndexError):
+            return JsonResponse({'error': 'Nao foi possivel cadastrar o aluno.'}, status=502)
     if request.method != "GET":
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
@@ -296,10 +367,10 @@ def api_students(request):
             params["comum_congregacao"] = f"eq.{scope['comum']}"
         elif scope["level"] == "municipal":
             params["municipio"] = f"eq.{scope['municipio']}"
-        for query_name, column in (("nivel", "nivel"), ("municipio", "municipio"), ("instrumento", "instrumento")):
-            value = request.GET.get(query_name, "").strip()
-            if value:
-                params[column] = f"eq.{value}"
+        for query_name, column in (("nivel", "nivel"), ("municipio", "municipio"), ('comum', 'comum_congregacao'), ("instrumento", "instrumento")):
+            values = [value.strip() for value in request.GET.getlist(query_name) if value.strip()]
+            if values:
+                params[column] = f"eq.{values[0]}" if len(values) == 1 else 'in.(' + ','.join(json.dumps(value) for value in values) + ')'
         query = request.GET.get("q", "").strip()
         if query:
             safe_query = "".join(char for char in query if char not in "(),.*")[:80]
@@ -337,6 +408,79 @@ def api_students(request):
         })
     except (requests.RequestException, ValueError):
         return JsonResponse({"error": "Não foi possível consultar os alunos do GEM."}, status=502)
+
+
+def _report_rows(request):
+    _scope, rows = _visible_students(request)
+    category = request.GET.get('situacao', 'formacao')
+    selected = {key: set(request.GET.getlist(key)) for key in ('nivel', 'municipio', 'comum', 'instrumento')}
+    query = _norm(request.GET.get('q'))
+    result = []
+    for row in rows:
+        if category == 'formacao' and is_graduated(row):
+            continue
+        if category == 'graduados' and not is_graduated(row):
+            continue
+        if selected['nivel'] and row.get('nivel') not in selected['nivel']:
+            continue
+        if selected['municipio'] and row.get('municipio') not in selected['municipio']:
+            continue
+        if selected['comum'] and row.get('comum_congregacao') not in selected['comum']:
+            continue
+        if selected['instrumento'] and row.get('instrumento') not in selected['instrumento']:
+            continue
+        searchable = ' '.join(str(row.get(field) or '') for field in ('nome_aluno', 'comum_congregacao', 'municipio', 'instrumento', 'nivel'))
+        if query and query not in _norm(searchable):
+            continue
+        result.append(row)
+    return sorted(result, key=lambda row: _norm(row.get('nome_aluno')))
+
+
+def api_students_report(request):
+    if not can_open_module(request):
+        return _denied()
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Metodo nao permitido.'}, status=405)
+    return JsonResponse({'items': _report_rows(request)})
+
+
+def export_students_excel(request):
+    if not can_open_module(request):
+        return _denied()
+    rows = _report_rows(request)
+    profile = request.session.get('user_profile') or {}
+    actor = profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email') or 'Usuario'
+    now = datetime.now()
+    cities = request.GET.getlist('municipio')
+    commons = request.GET.getlist('comum')
+    scope = f"Municipios: {', '.join(cities) if cities else 'Todos'} | Comuns: {', '.join(commons) if commons else 'Todas'}"
+    headers = ['Aluno', 'Registro MSA', 'Municipio', 'Comum congregacao', 'Cargo/Ministerio', 'Instrumento', 'Nivel', 'Programa minimo', 'Atualizacao']
+    workbook = Workbook(); sheet = workbook.active; sheet.title = 'ALUNOS GEM'
+    navy, pale = '1E4B7A', 'EAF2F8'; last = get_column_letter(len(headers)); thin = Side(style='thin', color='CCD5DD')
+    for row_number, text_value, size in ((1, 'CONGREGAÇÃO CRISTÃ NO BRASIL', 15), (2, 'Regional Itapevi - São Paulo', 10), (3, 'GRUPO DE ESTUDOS MUSICAIS', 12)):
+        sheet.merge_cells(f'A{row_number}:{last}{row_number}'); cell = sheet.cell(row_number, 1, text_value)
+        cell.font = Font(size=size, bold=row_number != 2, color='FFFFFF' if row_number < 3 else navy)
+        cell.fill = PatternFill('solid', fgColor=navy if row_number < 3 else pale); cell.alignment = Alignment(horizontal='center')
+    sheet.merge_cells('A4:E4'); sheet['A4'] = 'Relatorio completo de alunos | ' + scope
+    sheet.merge_cells(f'F4:{last}4'); sheet['F4'] = f'Emissao: {now:%d/%m/%Y %H:%M} | Responsavel: {actor}'; sheet['F4'].alignment = Alignment(horizontal='right')
+    for cell in sheet[4]: cell.font = Font(size=8, bold=True, color='536A7D')
+    for column, label in enumerate(headers, 1):
+        cell = sheet.cell(6, column, label); cell.font = Font(bold=True, color='FFFFFF'); cell.fill = PatternFill('solid', fgColor=navy); cell.alignment = Alignment(horizontal='center'); cell.border = Border(bottom=thin)
+    for row_number, row in enumerate(rows, 7):
+        updated = str(row.get('updated_at') or '')
+        try: updated = datetime.fromisoformat(updated.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+        except ValueError: pass
+        values = [row.get('nome_aluno'), row.get('registro_msa'), row.get('municipio'), row.get('comum_congregacao'), row.get('cargo_ministerio'), row.get('instrumento'), row.get('nivel'), f"{_percent(row.get('programa_minimo_percentual'))}%", updated]
+        for column, value in enumerate(values, 1):
+            cell = sheet.cell(row_number, column, value or ''); cell.border = Border(bottom=thin); cell.alignment = Alignment(vertical='center', wrap_text=column in (1, 4))
+            if row_number % 2 == 0: cell.fill = PatternFill('solid', fgColor='F4F6F8')
+    for index, width in enumerate([34, 17, 20, 38, 22, 25, 24, 16, 22], 1): sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = 'A7'; sheet.auto_filter.ref = f'A6:{last}{max(6, sheet.max_row)}'; sheet.sheet_view.showGridLines = False
+    sheet.page_setup.orientation = 'landscape'; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    stream = io.BytesIO(); workbook.save(stream)
+    response = HttpResponse(stream.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename=Relatorio_Alunos_GEM_{now:%d-%m-%Y_%H-%M}.xlsx'
+    return response
 
 
 def api_student_timeline(request, student_id):
@@ -454,7 +598,15 @@ def api_student_record(request, source_name, record_id=None):
     table, editable_fields = SOURCE_CONFIG[source_name]
     try:
         multipart = request.content_type and request.content_type.startswith("multipart/form-data")
-        raw = request.POST.dict() if multipart else (json.loads(request.body or "{}") if request.method in {"POST", "PATCH"} else {})
+        uploaded_files = request.FILES
+        if multipart and request.method == "PATCH":
+            parser = MultiPartParser(request.META, request, request.upload_handlers, request.encoding)
+            multipart_data, uploaded_files = parser.parse()
+            raw = multipart_data.dict()
+        elif multipart:
+            raw = request.POST.dict()
+        else:
+            raw = json.loads(request.body or "{}") if request.method in {"POST", "PATCH"} else {}
         record = None
         if record_id:
             record_response = requests.get(
@@ -484,7 +636,8 @@ def api_student_record(request, source_name, record_id=None):
             return JsonResponse({"item": record})
         if request.method in {"POST", "PATCH"}:
             payload = {key: raw.get(key) for key in editable_fields if key in raw}
-            document = request.FILES.get("documento") if multipart and source_name == "atividades" else None
+            document = uploaded_files.get("documento") if multipart and source_name == "atividades" else None
+            remove_document = source_name == "atividades" and str(raw.get("remover_documento", "")).lower() in {"1", "true", "yes"}
             if document:
                 allowed = {"application/pdf", "image/jpeg", "image/png"}
                 if document.content_type not in allowed or document.size > 10 * 1024 * 1024:
@@ -497,7 +650,11 @@ def api_student_record(request, source_name, record_id=None):
                     data=document.read(), timeout=45,
                 )
                 upload.raise_for_status()
-                payload.update({"documento_url": object_path, "nome_documento": document.name})
+                payload["documento_url"] = object_path
+                if not payload.get("nome_documento"):
+                    payload["nome_documento"] = document.name
+            elif remove_document:
+                payload.update({"documento_url": None, "nome_documento": None})
             if not payload:
                 return JsonResponse({"error": "Nenhum campo válido foi informado."}, status=400)
             if request.method == "POST":
@@ -512,14 +669,26 @@ def api_student_record(request, source_name, record_id=None):
                     params={"id": f"eq.{record_id}"}, json=payload, timeout=15,
                 )
             response.raise_for_status()
-            return JsonResponse({"item": response.json()[0]}, status=201 if request.method == "POST" else 200)
+            saved_item = response.json()[0]
+            old_document_path = (record or {}).get("documento_url")
+            if old_document_path and (remove_document or (document and old_document_path != saved_item.get("documento_url"))):
+                try:
+                    cleanup = requests.delete(
+                        f"{settings.SUPABASE_URL}/storage/v1/object/gem_documents/{old_document_path}",
+                        headers={"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"},
+                        timeout=15,
+                    )
+                    cleanup.raise_for_status()
+                except requests.RequestException:
+                    pass
+            return JsonResponse({"item": saved_item}, status=201 if request.method == "POST" else 200)
         response = requests.delete(
             f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=minimal"),
             params={"id": f"eq.{record_id}"}, timeout=15,
         )
         response.raise_for_status()
         return JsonResponse({}, status=204)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, MultiPartParserError):
         return JsonResponse({"error": "JSON inválido."}, status=400)
     except (requests.RequestException, ValueError, IndexError):
         return JsonResponse({"error": "Não foi possível atualizar o lançamento."}, status=502)

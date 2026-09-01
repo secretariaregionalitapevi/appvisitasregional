@@ -259,17 +259,7 @@
         let addressCoordinates = '';
         let editingVisitDurationMinutes = 60;
 
-        const showAgendaSuccess = (title, text) => Swal.fire({
-            icon: 'success',
-            title: title,
-            text: text,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#348fe2',
-            timer: 2000,
-            timerProgressBar: true,
-            allowOutsideClick: true,
-            allowEscapeKey: true
-        });
+        const showAgendaSuccess=(title,text)=>Promise.resolve(AppFeedback.show({type:'success',title,message:text,duration:4600}));
 
         const updateBulkToolbar = () => {
             const listMode = calendar && calendar.view.type.startsWith('list');
@@ -654,32 +644,7 @@
             updateBulkToolbar();
         });
 
-        $('#btn-bulk-delete').on('click', async function () {
-            const ids = Array.from(selectedAgendaIds);
-            if (!ids.length) return;
-            const { isConfirmed } = await Swal.fire({
-                title: `Excluir ${ids.length} visita${ids.length === 1 ? '' : 's'}?`,
-                text: 'Esta ação não poderá ser desfeita.', icon: 'warning', showCancelButton: true,
-                confirmButtonColor: '#dc3545', confirmButtonText: 'Excluir selecionadas', cancelButtonText: 'Cancelar'
-            });
-            if (!isConfirmed) return;
-            const button = $(this).prop('disabled', true);
-            try {
-                const res = await fetch('/visitas/api/agenda/', {
-                    method: 'DELETE', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                    body: JSON.stringify({ ids })
-                });
-                const result = await res.json();
-                if (!res.ok) throw new Error(result.error || 'Não foi possível excluir as visitas.');
-                clearBulkSelection();
-                calendar.refetchEvents();
-                showAgendaSuccess(
-                    `${result.deleted} visita${result.deleted === 1 ? '' : 's'} excluída${result.deleted === 1 ? '' : 's'}!`,
-                    'A agenda foi atualizada com a remoção selecionada.'
-                );
-            } catch (error) { Swal.fire('Erro', error.message, 'error'); }
-            finally { button.prop('disabled', selectedAgendaIds.size === 0); }
-        });
+        $('#btn-bulk-delete').on('click',async function(){const ids=Array.from(selectedAgendaIds);if(!ids.length)return;const label=`${ids.length} visita${ids.length===1?'':'s'}`,confirmed=await AppFeedback.confirm({title:`Excluir ${label}?`,message:'Os agendamentos selecionados serão removidos definitivamente.',confirmText:'Excluir selecionadas'});if(!confirmed)return;const button=$(this).prop('disabled',true),notice=AppFeedback.show({type:'loading',flow:'delete',title:`Excluindo ${label}`,message:'Aguarde, os registros selecionados estão sendo removidos.'});try{const res=await fetch('/visitas/api/agenda/',{method:'DELETE',headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token }}'},body:JSON.stringify({ids})}),result=await res.json();if(!res.ok)throw new Error(result.error||'Não foi possível excluir as visitas.');notice.close();clearBulkSelection();calendar.refetchEvents();showAgendaSuccess(`${result.deleted} visita${result.deleted===1?'':'s'} excluída${result.deleted===1?'':'s'}`,'A agenda foi atualizada com a remoção selecionada.')}catch(error){notice.close();AppFeedback.show({type:'error',title:'Não foi possível excluir',message:error.message})}finally{button.prop('disabled',selectedAgendaIds.size===0)}});
 
         function resetModal() {
             addressCoordinates = '';
@@ -795,62 +760,7 @@
             }
         });
 
-        $('#btn-delete-event').on('click', async function () {
-            const id = $('#event-id').val();
-            const button = $(this);
-            const memberName = String($('#event-titulo').val() || 'esta pessoa').trim();
-            if (!id) return;
-
-            const confirmation = await Swal.fire({
-                title: `Excluir agendamento de ${memberName}?`,
-                text: 'Esta ação é irreversível e removerá definitivamente o agendamento do calendário.',
-                icon: 'warning',
-                showCancelButton: true,
-                reverseButtons: true,
-                focusCancel: true,
-                confirmButtonText: 'Excluir',
-                cancelButtonText: 'Cancelar',
-                confirmButtonColor: '#ff5b57',
-                cancelButtonColor: '#6c757d'
-            });
-            if (!confirmation.isConfirmed) return;
-
-            try {
-                button.prop('disabled', true);
-                Swal.fire({
-                    title: 'Excluindo agendamento...',
-                    text: 'Aguarde enquanto o agendamento é removido.',
-                    allowOutsideClick: false,
-                    allowEscapeKey: false,
-                    showConfirmButton: false,
-                    didOpen: () => Swal.showLoading()
-                });
-
-                const res = await fetch(`/visitas/api/agenda/?id=${encodeURIComponent(id)}`, {
-                    method: 'DELETE',
-                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-                });
-                const result = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(result.error || result.details || 'Não foi possível excluir o agendamento.');
-
-                $('#modal-event').modal('hide');
-                calendar.refetchEvents();
-                await showAgendaSuccess(
-                    'Agendamento excluído!',
-                    `O agendamento de ${memberName} foi excluído com sucesso.`
-                );
-            } catch (error) {
-                await Swal.fire({
-                    icon: 'error',
-                    title: 'Não foi possível excluir',
-                    text: error.message,
-                    confirmButtonText: 'OK',
-                    confirmButtonColor: '#348fe2'
-                });
-            } finally {
-                button.prop('disabled', false);
-            }
-        });
+        $('#btn-delete-event').on('click',async function(){const id=$('#event-id').val(),button=$(this),memberName=String($('#event-titulo').val()||'esta pessoa').trim();if(!id)return;const confirmed=await AppFeedback.confirm({title:`Excluir agendamento de ${memberName}?`,message:'O agendamento será removido definitivamente do calendário.',confirmText:'Sim, excluir'});if(!confirmed)return;button.prop('disabled',true);const notice=AppFeedback.show({type:'loading',flow:'delete',title:'Excluindo agendamento',message:'Aguarde, o agendamento está sendo removido.'});try{const res=await fetch(`/visitas/api/agenda/?id=${encodeURIComponent(id)}`,{method:'DELETE',headers:{'X-CSRFToken':'{{ csrf_token }}'}}),result=await res.json().catch(()=>({}));if(!res.ok)throw new Error(result.error||result.details||'Não foi possível excluir o agendamento.');notice.close();$('#modal-event').modal('hide');calendar.refetchEvents();showAgendaSuccess('Agendamento excluído',`O agendamento de ${memberName} foi excluído com sucesso.`)}catch(error){notice.close();AppFeedback.show({type:'error',title:'Não foi possível excluir',message:error.message})}finally{button.prop('disabled',false)}});
 
         $('#event-status').on('change', function() {
             if($(this).val() === 'Cancelada' || $(this).val() === 'Não realizada') $('#cancel-reason-container').show();

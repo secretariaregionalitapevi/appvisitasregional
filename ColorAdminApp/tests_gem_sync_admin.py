@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase
@@ -6,6 +7,16 @@ from django.urls import resolve
 from openpyxl import load_workbook
 
 from .gem_sync_admin import _report_date, _report_datetime, export_log_report, export_report
+
+
+class GemSyncAdminLayoutTests(SimpleTestCase):
+    def test_empty_offline_state_hides_control_card_and_keeps_banner_compact(self):
+        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        content = template.read_text(encoding="utf-8")
+
+        self.assertIn(".mirror.offline-empty .admin-control{display:none!important}", content)
+        self.assertIn(".mirror.offline-empty .connection-banner{min-height:0", content)
+        self.assertIn("mirror.classList.toggle('offline-empty',!hasData)", content)
 
 
 class GemSyncAdminReportTests(SimpleTestCase):

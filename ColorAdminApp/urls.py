@@ -6,6 +6,7 @@ from . import admin_module_views
 from . import musicalizacao
 from . import gem
 from . import gem_sync_admin
+from . import gem_classes
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
@@ -41,6 +42,7 @@ urlpatterns = [
     path('visitas/api/geocode/', views.apiGeocode, name='apiGeocode'),
     path('musicalizacao/', musicalizacao.page, name='musicalizacaoDashboard'),
     path('musicalizacao/api/resumo/', musicalizacao.api_summary, name='musicalizacaoSummary'),
+    path('musicalizacao/api/criancas/exportar-excel/', musicalizacao.export_children_excel, name='musicalizacaoChildrenExport'),
     path('musicalizacao/api/<str:resource>/', musicalizacao.api_resource, name='musicalizacaoResource'),
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
@@ -50,9 +52,17 @@ urlpatterns = [
     path('gem/sam/api/controle/', gem_sync_admin.api_control, name='gemSyncControl'),
     path('gem/sam/exportar/', gem_sync_admin.export_report, name='gemSyncExport'),
     path('gem/sam/exportar-logs/', gem_sync_admin.export_log_report, name='gemSyncLogExport'),
+    path('gem/aulas/', gem_classes.page, name='gemClasses'),
+    path('gem/aulas/api/dashboard/', gem_classes.api_dashboard, name='gemClassesDashboard'),
+    path('gem/aulas/alunos/<uuid:student_id>/boletim/', gem_classes.student_attendance_page, name='gemStudentAttendance'),
+    path('gem/aulas/api/alunos/<uuid:student_id>/boletim/', gem_classes.api_student_attendance, name='gemStudentAttendanceApi'),
+    path('gem/aulas/alunos/<uuid:student_id>/boletim/excel/', gem_classes.export_student_attendance_excel, name='gemStudentAttendanceExcel'),
+    path('gem/aulas/exportar-excel/', gem_classes.export_excel, name='gemClassesExcel'),
     path('gem/alunos/<uuid:student_id>/resumo/', gem.student_summary_page, name='gemStudentSummary'),
     path('gem/api/resumo/', gem.api_summary, name='gemSummary'),
     path('gem/api/alunos/', gem.api_students, name='gemStudents'),
+    path('gem/api/alunos/relatorio/', gem.api_students_report, name='gemStudentsReport'),
+    path('gem/alunos/exportar-excel/', gem.export_students_excel, name='gemStudentsExcel'),
     path('gem/api/alunos/<uuid:student_id>/linha-do-tempo/', gem.api_student_timeline, name='gemStudentTimeline'),
     path('gem/api/alunos/<uuid:student_id>/', gem.api_student_detail, name='gemStudentDetail'),
     path('gem/api/lancamentos/<str:source_name>/', gem.api_student_record, name='gemStudentRecordCreate'),

@@ -129,27 +129,54 @@ class SamLiveSession:
         if not source_key or not self.scraper._wait_for_students_datatable():
             return False
         try:
-            self.scraper.page.evaluate(
-                """key => { const table = jQuery('#table-grp').DataTable(); table.search(String(key)).draw(); }""",
-                str(source_key),
-            )
-            self.scraper._wait_for_table_refresh()
             row_index = self.scraper.page.evaluate(
-                """key => {
-                    const rows = [...document.querySelectorAll('#table-grp tbody tr')];
-                    return rows.findIndex(row => {
-                        const control = row.querySelector('input[value], button[value], [data-id]');
-                        return (control && (control.value === String(key) || control.dataset.id === String(key)))
-                            || row.innerHTML.includes(String(key));
+                r"""async ({key, student}) => {
+                    const table = jQuery('#table-grp').DataTable();
+                    const target = String(key).trim();
+                    const normalize = value => String(value ?? '')
+                        .replace(/<[^>]*>/g, ' ')
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .replace(/\s+/g, ' ').trim().toUpperCase();
+
+                    await new Promise(resolve => {
+                        let settled = false;
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            clearTimeout(timer);
+                            resolve();
+                        };
+                        const timer = setTimeout(finish, 15000);
+                        jQuery('#table-grp').one('draw.dt.samKey', finish);
+                        table.search(target).draw();
                     });
+
+                    const rows = [...document.querySelectorAll('#table-grp tbody tr')];
+                    const exactIndex = rows.findIndex(row => {
+                        const firstCell = row.querySelector('td');
+                        const control = row.querySelector('input[value], button[value], [data-id]');
+                        return normalize(firstCell?.textContent) === normalize(target)
+                            || (control && (String(control.value || '').trim() === target
+                                || String(control.dataset.id || '').trim() === target))
+                            || row.innerHTML.includes(target);
+                    });
+                    if (exactIndex >= 0) return exactIndex;
+
+                    const info = table.page.info();
+                    if (info.recordsDisplay !== 1 || rows.length !== 1) return -1;
+                    return normalize(rows[0].innerText).includes(normalize(student)) ? 0 : -1;
                 }""",
-                str(source_key),
+                {"key": str(source_key), "student": student},
             )
             if row_index is None or row_index < 0:
                 return False
             row = self.scraper.page.locator("#table-grp tbody tr").nth(row_index)
-            return self.scraper._open_history_from_row(row, student)
-        except Exception:
+            opened = self.scraper._open_history_from_row(row, student)
+            if opened:
+                print(f"  [BUSCA] Histórico aberto diretamente pelo ID {source_key}")
+            return opened
+        except Exception as exc:
+            print(f"  [AVISO] Busca direta pelo ID {source_key} falhou: {exc}")
             return False
 
     def _return_to_students(self):

@@ -32,7 +32,7 @@ class Command(BaseCommand):
             f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
             headers=service_headers(), params={
                 "select": "id,source_key,source_name,aluno_id", "sync_status": "in.(pending,failed)",
-                "aluno_id": "not.is.null", "order": "updated_at.asc", "limit": limit,
+                "aluno_id": "not.is.null", "order": "sync_status.desc,updated_at.asc", "limit": limit,
             }, timeout=30,
         )
         response.raise_for_status()
@@ -153,21 +153,28 @@ class Command(BaseCommand):
                     self._heartbeat(current_student=name, processed_students=index - 1, worker_status="running",
                                     last_message=f"Processando {index} de {len(pending)} neste lote; a fila continuará automaticamente")
                     self.stdout.write(f"[{index}/{len(pending)}] Atualizando histórico de {name}")
+                    student_started = time.monotonic()
                     raw_report = session.history(name, state.get("source_key"))
+                    portal_seconds = time.monotonic() - student_started
                     document = portal_report_to_export(raw_report)
                     self._validate_history(raw_report, document)
                     converted.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+                    database_started = time.monotonic()
                     call_command(
                         "sync_sam_history", converted, student_id=state["aluno_id"], commit=True,
                         report=import_report_path,
                         stdout=self.stdout, stderr=self.stderr,
                     )
+                    database_seconds = time.monotonic() - database_started
                     import_report = json.loads(import_report_path.read_text(encoding="utf-8"))
                     event_count = self._validate_history(raw_report, document, import_report)
                     self._mark(state["id"], "synced")
                     consecutive_failures = 0
+                    total_seconds = time.monotonic() - student_started
+                    timing = f"SAM {portal_seconds:.1f}s · banco {database_seconds:.1f}s · total {total_seconds:.1f}s"
+                    self.stdout.write(f"[TEMPO] {name}: {timing}")
                     self._heartbeat(current_student=name, processed_students=index, worker_status="running",
-                                    last_message=f"Histórico de {name} sincronizado e validado ({event_count} eventos)")
+                                    last_message=f"Histórico de {name} validado ({event_count} eventos) · {timing}")
                 except Exception as exc:
                     self._mark(state["id"], "failed", str(exc)[:1000])
                     self.stderr.write(self.style.ERROR(f"Histórico de {name} falhou: {exc}"))

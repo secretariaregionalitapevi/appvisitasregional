@@ -56,6 +56,7 @@ def sidebar_menu(request):
 	{ 'url': '/gem/', 'icon': 'fa fa-graduation-cap', 'title': 'GEM', 'name': 'gemDashboard',
 		'children': [
 			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' },
+			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses' },
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},

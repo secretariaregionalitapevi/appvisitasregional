@@ -13,7 +13,9 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartCount 999 `
     -RestartInterval (New-TimeSpan -Minutes 2) `
     -StartWhenAvailable `
-    -MultipleInstances IgnoreNew
+    -MultipleInstances IgnoreNew `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries
 
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description 'Sincroniza catálogo, níveis e históricos do SAM com o painel GEM.' -Force
 Start-ScheduledTask -TaskName $TaskName

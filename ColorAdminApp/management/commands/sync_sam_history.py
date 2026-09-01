@@ -1,6 +1,8 @@
 import json
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import local
 
 import requests
 from django.conf import settings
@@ -11,6 +13,18 @@ from ColorAdminApp.access_control import service_headers
 from ColorAdminApp.sam_history_sync import (
     SOURCE_CONFIG, event_match_signature, event_payload, event_signature, match_student, program_minimum_progress,
 )
+
+
+_HTTP_STATE = local()
+
+
+def _http():
+    session = getattr(_HTTP_STATE, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.mount("https://", requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4))
+        _HTTP_STATE.session = session
+    return session
 
 
 class Command(BaseCommand):
@@ -27,7 +41,7 @@ class Command(BaseCommand):
         url = f"{settings.SUPABASE_URL}/rest/v1/{table}"
         for offset in range(0, 100000, limit):
             params = {"select": select, "offset": offset, "limit": limit, **(filters or {})}
-            response = requests.get(url, headers=service_headers(), params=params, timeout=30)
+            response = _http().get(url, headers=service_headers(), params=params, timeout=30)
             response.raise_for_status()
             batch = response.json()
             rows.extend(batch)
@@ -37,7 +51,7 @@ class Command(BaseCommand):
 
     def _insert_batches(self, table, rows):
         for start in range(0, len(rows), 200):
-            response = requests.post(
+            response = _http().post(
                 f"{settings.SUPABASE_URL}/rest/v1/{table}",
                 headers=service_headers("return=minimal"), json=rows[start:start + 200], timeout=45,
             )
@@ -101,8 +115,13 @@ class Command(BaseCommand):
         try:
             existing = {}
             filters = {"aluno_id": f"in.({','.join(target_ids)})"} if target_ids else {"limit": 0}
-            for source_name, (table, _) in SOURCE_CONFIG.items():
-                source_rows = self._fetch_all(table, filters=filters)
+            def load_source(item):
+                source_name, (table, _) = item
+                return source_name, self._fetch_all(table, filters=filters)
+
+            with ThreadPoolExecutor(max_workers=len(SOURCE_CONFIG), thread_name_prefix="sam-history-read") as executor:
+                source_results = list(executor.map(load_source, SOURCE_CONFIG.items()))
+            for source_name, source_rows in source_results:
                 existing_rows[source_name] = source_rows
                 existing[source_name] = {event_signature(source_name, row) for row in source_rows}
                 existing[f"{source_name}:matches"] = {
@@ -154,13 +173,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("PRÉVIA concluída. Nenhum dado foi alterado. Use --commit somente após revisar o relatório."))
             return
         try:
-            for source_name, rows in inserts.items():
-                if rows:
-                    self._insert_batches(SOURCE_CONFIG[source_name][0], rows)
+            insert_jobs = [(SOURCE_CONFIG[source_name][0], rows) for source_name, rows in inserts.items() if rows]
+            with ThreadPoolExecutor(max_workers=min(len(insert_jobs), len(SOURCE_CONFIG)) or 1, thread_name_prefix="sam-history-write") as executor:
+                list(executor.map(lambda job: self._insert_batches(*job), insert_jobs))
             for source_name, rows in updates.items():
                 table = SOURCE_CONFIG[source_name][0]
                 for record_id, values in rows:
-                    response = requests.patch(
+                    response = _http().patch(
                         f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers("return=minimal"),
                         params={"id": f"eq.{record_id}"}, json=values, timeout=30,
                     )
@@ -168,7 +187,7 @@ class Command(BaseCommand):
             msa_rows = existing_rows.get("msa", []) + inserts.get("msa", [])
             for _, target in matched_students:
                 student_msa = [row for row in msa_rows if str(row.get("aluno_id")) == str(target["id"])]
-                response = requests.patch(
+                response = _http().patch(
                     f"{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno",
                     headers=service_headers("return=minimal"), params={"id": f"eq.{target['id']}"},
                     json={"programa_minimo_percentual": program_minimum_progress(student_msa)}, timeout=30,

@@ -262,6 +262,11 @@
         const MAP_COMMONS = JSON.parse(document.getElementById('map-commons-data')?.textContent || '[]');
         let selectedMunicipio = MAP_DEFAULT_MUNICIPIO;
         let selectedCommon = MAP_DEFAULT_COMUM;
+        const hasSelectedScope = () => Boolean(
+            selectedMunicipio && selectedCommon && MAP_COMMONS.some(
+                item => item.cidade === selectedMunicipio && item.comum === selectedCommon
+            )
+        );
         
         const CARGO_COLORS = {
             'Ancião': '#1a1a1a',
@@ -299,7 +304,7 @@
             // Marcador da Igreja
             churchMarker = new google.maps.Marker({
                 position: CHURCH_COORDS,
-                map: map,
+                map: null,
                 title: 'Comum Congregacao',
                 zIndex: 1000,
                 icon: {
@@ -326,7 +331,7 @@
                     strokeWeight: 1,
                     fillColor: c.color,
                     fillOpacity: c.op,
-                    map: map,
+                    map: null,
                     center: CHURCH_COORDS,
                     radius: c.r,
                     clickable: false
@@ -334,7 +339,7 @@
             });
 
             // Centraliza primeiro na comum autorizada; depois calcula pins e distâncias.
-            if (selectedCommon) await centerSelectedCommon();
+            if (hasSelectedScope()) await centerSelectedCommon();
 
             // Primeira carga completa
             await loadInitialData();
@@ -346,6 +351,7 @@
         const startAutoSync = () => {
             if (autoSyncInterval) clearInterval(autoSyncInterval);
             autoSyncInterval = setInterval(async () => {
+                if (!hasSelectedScope()) return;
                 // Sincronismo leve: apenas busca a agenda e atualiza ícones
                 const resAgenda = await fetch('/visitas/api/agenda/');
                 agendaEvents = await resAgenda.json();
@@ -356,15 +362,18 @@
         const loadInitialData = async () => {
             try {
                 // LIMPAR PINS EXISTENTES PARA EVITAR DUPLICIDADE
-                if (window.markers && markers.length > 0) {
-                    markers.forEach(m => m.setMap(null));
-                }
+                markers.forEach(marker => marker.setMap(null));
                 markers = [];
 
-                if (!selectedCommon) return;
+                if (!hasSelectedScope()) {
+                    agendaEvents = [];
+                    churchMarker?.setMap(null);
+                    coverageCircles.forEach(circle => circle.setMap(null));
+                    return;
+                }
 
                 const [resIrmandade, resAgenda] = await Promise.all([
-                    fetch(`/visitas/api/irmandade/?comum=${encodeURIComponent(selectedCommon)}`),
+                    fetch(`/visitas/api/irmandade/?comum=${encodeURIComponent(selectedCommon)}&municipio=${encodeURIComponent(selectedMunicipio)}`),
                     fetch('/visitas/api/agenda/')
                 ]);
 
@@ -985,7 +994,7 @@
         const commonCity = (commonName) => (MAP_COMMONS.find(item => item.comum === commonName) || {}).cidade || selectedMunicipio || MAP_DEFAULT_MUNICIPIO;
 
         const centerSelectedCommon = () => new Promise((resolve) => {
-            if (!selectedCommon || !geocoder) return resolve();
+            if (!hasSelectedScope() || !geocoder) return resolve();
             const cleanName = selectedCommon.replace(/^BR-\d+(?:-\d+)?\s*-\s*/i, '').trim();
             const city = commonCity(selectedCommon);
             geocoder.geocode({ address: `Congregação Cristã no Brasil ${cleanName}, ${city}, SP, Brasil` }, (results, status) => {
@@ -995,7 +1004,11 @@
                     map.setCenter(CHURCH_COORDS);
                     map.setZoom(15);
                     churchMarker?.setPosition(CHURCH_COORDS);
-                    coverageCircles.forEach(circle => circle.setCenter(CHURCH_COORDS));
+                    churchMarker?.setMap(map);
+                    coverageCircles.forEach(circle => {
+                        circle.setCenter(CHURCH_COORDS);
+                        circle.setMap(map);
+                    });
                 }
                 resolve();
             });
@@ -1004,7 +1017,7 @@
         const fillCommonSelect = () => {
             const commonSelect = document.getElementById('map-common-filter');
             if (!commonSelect) return;
-            const available = MAP_COMMONS.filter(item => !selectedMunicipio || item.cidade === selectedMunicipio);
+            const available = selectedMunicipio ? MAP_COMMONS.filter(item => item.cidade === selectedMunicipio) : [];
             commonSelect.replaceChildren(new Option('Selecione a comum...', ''));
             available.forEach(item => commonSelect.add(new Option(item.comum, item.comum)));
             if (available.some(item => item.comum === selectedCommon)) commonSelect.value = selectedCommon;
@@ -1026,6 +1039,9 @@
             const commonSelect = document.getElementById('map-common-filter');
             if (municipioSelect) {
                 [...new Set(MAP_COMMONS.map(item => item.cidade).filter(Boolean))].sort().forEach(city => municipioSelect.add(new Option(city, city)));
+                if ([...municipioSelect.options].some(option => option.value === selectedMunicipio)) {
+                    municipioSelect.value = selectedMunicipio;
+                }
                 municipioSelect.addEventListener('change', async () => {
                     selectedMunicipio = municipioSelect.value;
                     selectedCommon = '';
@@ -1036,7 +1052,10 @@
             fillCommonSelect();
             const handleCommonChange = async () => {
                 selectedCommon = commonSelect?.value || '';
-                if (!selectedCommon) return loadInitialData();
+                if (!hasSelectedScope()) {
+                    selectedCommon = '';
+                    return loadInitialData();
+                }
                 await centerSelectedCommon();
                 await loadInitialData();
             };

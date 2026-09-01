@@ -255,12 +255,25 @@
         const contextualAgenda = dashboardGroupContext === 'ALL'
             ? agendaData
             : agendaData.filter(item => agendaTeamType(item) === dashboardGroupContext);
-        // Monthly totals are the local project. Detailed agenda visits are an
-        // additional source and may belong to local or regional teams.
+        // O fechamento mensal e a fonte oficial do projeto principal. A agenda
+        // so compoe o total quando ainda nao existe fechamento para o periodo/comum.
         const contextualData = dashboardGroupContext === 'REGIONAL' ? [] : data;
-        const getKey = (mes, ano, comum) => `${mes}-${ano}-${comum}`;
+        const commonIdentity = comum => {
+            const value = String(comum || '').trim().toUpperCase();
+            const code = value.match(/BR-\d{2}-\d{4}/);
+            return code ? code[0] : value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+        };
+        const getKey = (mes, ano, comum) => `${parseInt(mes, 10)}-${parseInt(ano, 10)}-${commonIdentity(comum)}`;
+        const monthlyKeys = new Set(contextualData.map(item => getKey(item.referencia_mes, item.referencia_ano, item.comum)));
+        const agendaForTotals = dashboardGroupContext === 'REGIONAL'
+            ? contextualAgenda
+            : contextualAgenda.filter(item => {
+                if (dashboardGroupContext === 'ALL' && agendaTeamType(item) === 'REGIONAL') return true;
+                const dt = moment(item.data_inicio);
+                return dt.isValid() && !monthlyKeys.has(getKey(dt.month() + 1, dt.year(), item.comum));
+            });
         let agendaGVI = 0, agendaGVM = 0, agendaGVE = 0, agendaRF = 0, agendaRE = 0;
-        contextualAgenda.forEach(item => {
+        agendaForTotals.forEach(item => {
             const cat = (item.categoria || '').toUpperCase().trim();
             if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) agendaGVI++;
             else if (cat === 'GVM' || cat.includes('MOCIDADE')) agendaGVM++;
@@ -313,11 +326,14 @@
             .toggleClass('duration-alert', canSeeDurationAlert && averageDuration > 30);
 
         const manualTotal = manualGVI + manualGVM + manualGVE + manualRF + manualRE;
-        const detailedTotal = agendaGVI + agendaGVM + agendaGVE + agendaRF + agendaRE;
+        const provisionalTotal = agendaGVI + agendaGVM + agendaGVE + agendaRF + agendaRE;
+        const operationalTotal = contextualAgenda.length;
         const contextLabel = dashboardGroupContext === 'LOCAL' ? 'Projeto local' : (dashboardGroupContext === 'REGIONAL' ? 'Projeto regional' : 'Geral');
         const sourceDetail = dashboardGroupContext === 'REGIONAL'
-            ? `${formatNum(detailedTotal)} visitas pontuais regionais`
-            : `${formatNum(manualTotal)} do relat\u00f3rio mensal + ${formatNum(detailedTotal)} visitas pontuais`;
+            ? `${formatNum(provisionalTotal)} visitas pontuais regionais`
+            : provisionalTotal
+                ? `${formatNum(manualTotal)} no fechamento mensal + ${formatNum(provisionalTotal)} visitas provis\u00f3rias sem fechamento`
+                : `${formatNum(manualTotal)} no fechamento mensal. ${formatNum(operationalTotal)} registros da agenda exibidos apenas no detalhamento`;
         $('#exec-text').html(`<b>${contextLabel}: ${formatNum(totals.visitas)} visitas.</b> ${sourceDetail}.`);
 
         // Mesclar data e agendaData para a Tabela
@@ -344,8 +360,10 @@
 
             if (!tableMap[k]) {
                 tableMap[k] = { referencia_mes: mes, referencia_ano: ano, comum: comum, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, status: 'Agenda' };
-            } else if (tableMap[k].status === 'Mensal') {
+            } else if (String(tableMap[k].status || '').includes('Mensal')) {
                 tableMap[k].status = 'Mensal + Agenda';
+                // Agenda local detalha o fechamento; grupos regionais continuam independentes.
+                if (agendaTeamType(item) !== 'REGIONAL') return;
             }
             
             const cat = (item.categoria || '').toUpperCase().trim();
@@ -709,14 +727,15 @@
     };
 
     window.deleteAgendaEvent = async (id) => {
-        const { isConfirmed } = await Swal.fire({ title: 'Excluir?', text: "Remover este agendamento?", icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim, excluir', cancelButtonText: 'Cancelar' });
-        if (isConfirmed) {
-            const res = await fetch(`/visitas/api/agenda/?id=${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
-            if (res.ok) {
-                applyFilters();
-                Swal.fire({ icon: 'success', title: 'Apagado com sucesso!', timer: 1500, showConfirmButton: false });
-            }
-        }
+        const confirmed = await AppFeedback.confirm({title:'Excluir agendamento?',message:'O agendamento será removido definitivamente.',confirmText:'Sim, excluir'});
+        if (!confirmed) return;
+        const notice = AppFeedback.show({type:'loading',flow:'delete',title:'Excluindo agendamento',message:'Aguarde, o registro está sendo removido.'});
+        try {
+            const res = await fetch(`/visitas/api/agenda/?id=${id}`, {method:'DELETE',headers:{'X-CSRFToken':'{{ csrf_token }}'}});
+            if (!res.ok) { const body=await res.json(); throw new Error(body.error||'Não foi possível excluir o agendamento.'); }
+            notice.close(); await applyFilters();
+            AppFeedback.show({type:'success',title:'Agendamento excluído',message:'O registro foi removido e o painel foi atualizado.'});
+        } catch (error) { notice.close(); AppFeedback.show({type:'error',title:'Não foi possível excluir',message:error.message}); }
     };
 
     window.viewVisita = (id) => openVisitaModal(id, false);
@@ -758,91 +777,21 @@
     window.updateDetalhesVisita = async (e) => {
         if (e) e.preventDefault();
         const id = $('#det-id').val();
-        const data = {
-            data_inicio: $('#det-data').val() ? moment($('#det-data').val()).format('YYYY-MM-DDTHH:mm:ss-03:00') : null,
-            status: $('#det-status').val(),
-            titulo: $('#det-titulo').val(),
-            categoria: $('#det-categoria').val(),
-            equipe_responsavel: $('#det-equipe').val(),
-            endereco_visitado: $('#det-endereco').val(),
-            observacoes: $('#det-obs').val(),
-            motivo_cancelamento: $('#det-justificativa').val()
-        };
-
-        const btn = $('#btn-save-detalhes');
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
-
-        try {
-            const res = await fetch(`/visitas/api/agenda/?id=${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify(data)
-            });
-
-            if (res.ok) {
-                $('#modal-detalhes-visita').modal('hide');
-                Swal.fire({ icon: 'success', title: 'Atualizado com sucesso!', timer: 1500, showConfirmButton: false });
-                applyFilters();
-            } else {
-                let errorMsg = 'Erro ao salvar no servidor';
-                try {
-                    const errData = await res.json();
-                    errorMsg = errData.error || errData.message || errorMsg;
-                } catch(e) {}
-                throw new Error(errorMsg);
-            }
-        } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Erro', text: err.message });
-        } finally {
-            btn.prop('disabled', false).html('Salvar Alterações');
-        }
+        const data = {data_inicio:$('#det-data').val()?moment($('#det-data').val()).format('YYYY-MM-DDTHH:mm:ss-03:00'):null,status:$('#det-status').val(),titulo:$('#det-titulo').val(),categoria:$('#det-categoria').val(),equipe_responsavel:$('#det-equipe').val(),endereco_visitado:$('#det-endereco').val(),observacoes:$('#det-obs').val(),motivo_cancelamento:$('#det-justificativa').val()};
+        const btn=$('#btn-save-detalhes'),notice=AppFeedback.show({type:'loading',flow:'update',title:'Atualizando visita',message:'Aguarde, as alterações estão sendo salvas.'});
+        btn.prop('disabled',true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
+        try { const res=await fetch(`/visitas/api/agenda/?id=${id}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token }}'},body:JSON.stringify(data)}); if(!res.ok){let body={};try{body=await res.json()}catch(e){}throw new Error(body.error||body.message||'Erro ao salvar no servidor')} notice.close();$('#modal-detalhes-visita').modal('hide');await applyFilters();AppFeedback.show({type:'success',title:'Visita atualizada',message:'As alterações foram salvas e o painel foi atualizado.'}); }
+        catch(error){notice.close();AppFeedback.show({type:'error',title:'Não foi possível atualizar',message:error.message})}
+        finally{btn.prop('disabled',false).html('Salvar Alterações')}
     };
 
     const saveVisit = async () => {
-        const formData = {
-            referencia_ano: parseInt($('#fv-ano').val()),
-            referencia_mes: parseInt($('#fv-mes').val()),
-            municipio: '{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',
-            cidade: '{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',
-            comum: $('#fv-comum').val(),
-            gvi: parseInt($('#fv-gvi').val() || 0),
-            gvm: parseInt($('#fv-gvm').val() || 0),
-            gve: parseInt($('#fv-gve').val() || 0),
-            rf: parseInt($('#fv-rf').val() || 0),
-            re: parseInt($('#fv-re').val() || 0),
-            observacoes: $('#fv-obs').val(),
-            status: 'Lançado'
-        };
-
-        const btn = $('#btn-save');
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
-
-        try {
-            const res = await fetch('/visitas/api/dashboard/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify(formData)
-            });
-
-            if (res.ok) {
-                $('#modal-nova-visita').modal('hide');
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Lançado!',
-                    text: 'Relatório de visitas gravado com sucesso.',
-                    confirmButtonColor: '#2c3e50',
-                    timer: 3000
-                });
-                applyFilters();
-            } else {
-                const err = await res.json();
-                throw new Error(err.details || 'Erro ao salvar');
-            }
-        } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Erro ao Salvar', text: err.message });
-        } finally {
-            btn.prop('disabled', false).text('Salvar Lançamento');
-        }
+        const formData={referencia_ano:parseInt($('#fv-ano').val()),referencia_mes:parseInt($('#fv-mes').val()),municipio:'{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',cidade:'{{ request.session.user_profile.municipio|default:request.session.user_profile.cidade|escapejs }}',comum:$('#fv-comum').val(),gvi:parseInt($('#fv-gvi').val()||0),gvm:parseInt($('#fv-gvm').val()||0),gve:parseInt($('#fv-gve').val()||0),rf:parseInt($('#fv-rf').val()||0),re:parseInt($('#fv-re').val()||0),observacoes:$('#fv-obs').val(),status:'Lançado'};
+        const btn=$('#btn-save'),notice=AppFeedback.show({type:'loading',flow:'save',title:'Salvando fechamento',message:'Aguarde, o relatório está sendo validado e gravado.'});
+        btn.prop('disabled',true).html('<i class="fa fa-spinner fa-spin"></i> Salvando...');
+        try {const res=await fetch('/visitas/api/dashboard/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token }}'},body:JSON.stringify(formData)}),body=await res.json();if(!res.ok)throw new Error(body.error||body.details||'Erro ao salvar');notice.close();$('#modal-nova-visita').modal('hide');await applyFilters();AppFeedback.show({type:'success',title:body.operation==='updated'?'Fechamento atualizado':'Fechamento registrado',message:body.operation==='updated'?'O fechamento existente foi atualizado sem criar duplicidade.':'O relatório foi gravado e o painel foi atualizado.'});}
+        catch(error){notice.close();AppFeedback.show({type:'error',title:'Não foi possível salvar',message:error.message})}
+        finally{btn.prop('disabled',false).text('Salvar Lançamento')}
     };
 
     const exportPDF = () => {

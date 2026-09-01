@@ -1,10 +1,13 @@
 import json
 from datetime import date
+from io import BytesIO
+from urllib.parse import unquote
 from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
+from openpyxl import load_workbook
 
-from .musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _normalize_birth_date, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module
+from .musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _normalize_birth_date, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module, export_children_excel
 
 
 def request_with_profile(path, profile, method="get", data=None):
@@ -142,3 +145,35 @@ class MusicalizacaoSecurityTests(SimpleTestCase):
             result = api_resource(request, "criancas")
 
         self.assertEqual(result.status_code, 403)
+    @patch("ColorAdminApp.musicalizacao.requests.get")
+    def test_children_excel_matches_sam_export_standard(self, mock_get):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [{
+            "id": "1", "nome_crianca": "Ana Teste", "data_nascimento": "2020-08-30",
+            "nome_responsavel": "Responsável Teste", "celular_responsavel": "11912345678",
+            "dificuldade_aprendizagem": True, "dificuldade_descricao": "TDAH",
+            "polo_participacao": "BR-22-0414 - MORRO GRANDE", "cidade": "ITAPEVI", "status": "Ativo",
+        }]
+        mock_get.return_value = response
+        profile = {"role_id": 1, "sector": "Musicalização", "full_name": "Operadora Teste"}
+        request = request_with_profile("/musicalizacao/api/criancas/exportar-excel/?polo=BR-22-0414%20-%20MORRO%20GRANDE", profile)
+
+        result = export_children_excel(request)
+        workbook = load_workbook(BytesIO(result.content))
+        sheet = workbook["CRIANÇAS"]
+
+        self.assertEqual(result.status_code, 200)
+        self.assertIn("Cadastro_Musicaliza%C3%A7%C3%A3o_Morro_Grande_", result["Content-Disposition"])
+        self.assertTrue(unquote(result["Content-Disposition"]).endswith(".xlsx"))
+        self.assertEqual(sheet["A1"].value, "CONGREGAÇÃO CRISTÃ NO BRASIL")
+        self.assertEqual(sheet["A6"].value, "Criança")
+        self.assertEqual(sheet["E6"].value, "Necessidade especial")
+        self.assertEqual(sheet["D7"].value, "(11) 9 1234-5678")
+        self.assertEqual(sheet["E7"].value, "Sim — TDAH")
+        self.assertEqual(sheet.freeze_panes, "A7")
+        self.assertEqual(sheet.auto_filter.ref, "A6:H7")
+        self.assertFalse(sheet.sheet_view.showGridLines)
+        self.assertEqual(sheet.page_setup.orientation, "landscape")
+        self.assertEqual(sheet.page_setup.fitToWidth, 1)
+        self.assertEqual(sheet["A6"].fill.fgColor.rgb, "001E4B7A")

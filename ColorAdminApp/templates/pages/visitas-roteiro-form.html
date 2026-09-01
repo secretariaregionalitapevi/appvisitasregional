@@ -72,6 +72,20 @@
                         <div id="roteiro-bairro-ajuda" class="form-text">Selecione uma comum para mapear os bairros mais próximos.</div>
                     </div>
 
+
+                    <div class="mb-5">
+                        <label class="form-label fw-bold small text-muted">MAPA DO ROTEIRO</label>
+                        <select name="mapa" class="form-select form-select-lg">
+                            <option value="none" selected>Sem mapa — nenhuma consulta externa</option>
+                            <option value="demo">Demonstração segura — diagrama numerado do percurso</option>
+                            <option value="google">Google Maps — rota real pelas ruas (uso opcional)</option>
+                        </select>
+                        <div class="form-text">
+                            A demonstração é gerada localmente, sem API faturável e sem enviar coordenadas ou
+                            endereços a terceiros. O mapa rodoviário Google permanecerá desativado até aprovação.
+                        </div>
+                    </div>
+
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-warning btn-lg fw-bold text-dark shadow-sm">
                             <i class="fa fa-cogs me-2"></i> Processar e Imprimir Roteiro

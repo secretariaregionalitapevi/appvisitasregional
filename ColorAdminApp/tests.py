@@ -11,7 +11,7 @@ from .access_control import can_access, filter_rows, user_scope
 from .admin_views import administration, administration_data, administration_user
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiStorageUpload, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apiVisitasRelatoriosEquipes, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
-from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, street_key
+from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, route_selection_origin, select_coherent_households, street_key
 
 CATALOG = [
     {"comum": "BR-01 - CENTRAL ITAPEVI", "cidade": "ITAPEVI"},
@@ -158,6 +158,30 @@ class PrintedRoutePresentationTests(TestCase):
             'Estrada Velha da Olaria, 1990',
         )
 
+    def test_google_route_map_uses_legible_numbered_markers_and_overlap_spacing(self):
+        points = [
+            {'number': number, 'title': f'Casa {number}', 'address': f'Rua A, {number}', 'lat': -23.5, 'lng': -46.9}
+            for number in range(1, 11)
+        ]
+        request = RequestFactory().get('/visitas/roteiro/')
+        request.session = {'user_profile': {'role_id': 1, 'role': 'ADMINISTRADOR', 'name': 'Teste', 'email': 'teste@example.com', 'comum': 'COMUM A', 'municipio': 'ITAPEVI'}}
+        html = render_to_string('pages/visitas-roteiro-impresso.html', {
+            'roteiro': [{'route_period': 'manha', 'route_number': 1, 'titulo': 'Casa 1'}],
+            'equipe': 'Equipe 1', 'comum': 'COMUM A', 'data': '31/08/2026',
+            'route_map_mode': 'google', 'route_map_points': points,
+            'route_map_origin': {'lat': -23.5, 'lng': -46.9}, 'google_maps_api_key': 'test-key',
+        }, request=request)
+
+        self.assertIn('CONGREGA\u00c7\u00c3O CRIST\u00c3 NO BRASIL', html)
+        self.assertIn("fontSize: '12px'", html)
+        self.assertIn('const collisionDistancePx = 44;', html)
+        self.assertIn('projection.fromLatLngToDivPixel(entry.actual)', html)
+        self.assertIn('projection.fromDivPixelToLatLng(displayPoint)', html)
+        self.assertIn("google.maps.event.addListener(map, 'idle', layoutMarkers);", html)
+        self.assertIn("window.addEventListener('beforeprint', layoutMarkers);", html)
+        self.assertIn('entry.connector.setPath([entry.actual, displayLatLng]);', html)
+        self.assertIn('.slice(0, 10)', html)
+
     def test_route_is_ordered_by_scheduled_time(self):
         visits = [
             {'titulo': 'Segunda', 'data_inicio': '2026-08-14T09:45:00'},
@@ -228,6 +252,79 @@ class PrintedRoutePresentationTests(TestCase):
         ]
         keys = {route_address_key(visit) for visit in visits}
         self.assertEqual(len(keys), 2)
+
+    def test_first_scheduled_visit_becomes_temporary_route_origin(self):
+        visits = [
+            {'data_inicio': '2026-08-31T09:15:00', 'endereco_visitado': '[-23.62, -46.94] Rua Dois, 20'},
+            {'data_inicio': '2026-08-31T09:00:00', 'endereco_visitado': '[-23.61, -46.93] Rua Um, 10'},
+        ]
+        self.assertEqual(
+            route_selection_origin(visits, (-23.5, -46.9)),
+            (-23.61, -46.93),
+        )
+
+    def test_terrain_coverage_finishes_current_street_before_next_street(self):
+        def option(number, street, coords):
+            member = {'id': str(number), 'nome': f'Casa {number}', 'endereco': f'{street}, {number}'}
+            return ('Bairro A', f'{street} {number}', [{
+                'irmao': member, 'coords': coords, 'priority': (0, '', ''),
+            }])
+
+        options = [
+            option(number, 'Rua da Frente', (-23.5000, -46.9000 - number / 100000))
+            for number in range(1, 7)
+        ] + [
+            option(number, 'Rua de Trás', (-23.5002, -46.9000 - number / 100000))
+            for number in range(7, 13)
+        ]
+
+        selected = select_coherent_households(options, 10, origin=(-23.5, -46.9), equipe='Equipe 1')
+        streets = [street_key(household[0]['irmao']) for _, _, household in selected]
+        self.assertEqual(streets[:6], [street_key({'endereco': 'Rua da Frente, 1'})] * 6)
+        self.assertEqual(streets[6:], [street_key({'endereco': 'Rua de Trás, 7'})] * 4)
+
+    def test_team_avoids_nearby_neighborhood_owned_by_another_team(self):
+        def option(number, neighborhood, coords):
+            member = {'id': str(number), 'nome': f'Casa {number}', 'endereco': f'Rua Única, {number}'}
+            return (neighborhood, f'CASA {number}', [{
+                'irmao': member, 'coords': coords, 'priority': (0, '', ''),
+            }])
+
+        options = [
+            option(1, 'Bairro Ocupado', (-23.50001, -46.90001)),
+            option(2, 'Bairro Ocupado', (-23.50002, -46.90002)),
+            option(3, 'Bairro Livre', (-23.51001, -46.91001)),
+            option(4, 'Bairro Livre', (-23.51002, -46.91002)),
+        ]
+        selected = select_coherent_households(
+            options, 2, origin=(-23.5, -46.9), equipe='Equipe 1',
+            neighborhood_owners={'Bairro Ocupado': 'Equipe 2'},
+        )
+        self.assertEqual({neighborhood for neighborhood, _, _ in selected}, {'Bairro Livre'})
+
+    def test_household_rotation_precedes_geographic_convenience(self):
+        def option(number, priority, coords):
+            member = {
+                'id': str(number), 'nome': f'Casa {number}',
+                'endereco': f'Rua Teste, {number}',
+            }
+            return ('Centro', f'RUA TESTE {number}', [{
+                'irmao': member, 'coords': coords, 'priority': priority,
+            }])
+
+        waiting = [
+            option(number, (0, '', ''), (-23.60 - number / 10000, -46.95))
+            for number in range(1, 11)
+        ]
+        recently_visited_nearby = option(99, (2, 1, '2026-08-01T09:00:00-03:00'), (-23.50001, -46.90001))
+
+        selected = select_coherent_households(
+            waiting + [recently_visited_nearby], 10, origin=(-23.5, -46.9)
+        )
+
+        selected_ids = {household[0]['irmao']['id'] for _, _, household in selected}
+        self.assertEqual(selected_ids, {str(number) for number in range(1, 11)})
+        self.assertNotIn('99', selected_ids)
 
     @patch('ColorAdminApp.utils.routing.get_common_coordinates', return_value=(-23.5, -46.9))
     @patch('ColorAdminApp.utils.routing.requests.post')
@@ -1052,6 +1149,30 @@ class BrotherhoodUpdateTests(TestCase):
             [row["nome"].strip() for row in json.loads(response.content)],
             ["Abner", "Acacio", "Áurelia", "Wellington"],
         )
+
+
+    @patch("ColorAdminApp.views.visible_commons", return_value=[
+        {"comum": "COMUM A", "cidade": "ITAPEVI"},
+        {"comum": "COMUM A EXTENSA", "cidade": "ITAPEVI"},
+    ])
+    @patch("ColorAdminApp.views.requests.get")
+    def test_member_map_scope_returns_only_exact_selected_common(self, get, _visible):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = [
+            {"id": "a", "nome": "Da comum", "comum": "COMUM A   ", "cidade": "ITAPEVI"},
+            {"id": "extended", "nome": "Outra comum", "comum": "COMUM A EXTENSA", "cidade": "ITAPEVI"},
+            {"id": "other-city", "nome": "Outra cidade", "comum": "COMUM A", "cidade": "JANDIRA"},
+        ]
+        request = RequestFactory().get(
+            "/visitas/api/irmandade/", {"comum": "COMUM A", "municipio": "ITAPEVI"}
+        )
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasIrmandade(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["id"] for row in json.loads(response.content)], ["a"])
+        self.assertIn(("comum", "ilike.COMUM A%"), get.call_args.kwargs["params"])
 
     @patch("ColorAdminApp.views.requests.get")
     def test_restricted_notes_are_removed_from_instructor_response(self, get):

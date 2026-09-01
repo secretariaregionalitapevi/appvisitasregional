@@ -60,21 +60,21 @@
             font-weight: 700 !important;
         }
     }
-    
+
     .print-container {
         max-width: 21cm;
         margin: 0 auto;
         background: #fff;
         padding: 20px;
     }
-    
+
     .roteiro-header {
         border-bottom: 2px solid #1e4b7a;
         padding-bottom: 10px;
         margin-bottom: 15px;
         text-align: center;
     }
-    
+
     .visit-card {
         border: 1px solid #e2e7eb;
         border-left: 4px solid #348fe2;
@@ -87,7 +87,7 @@
         background: #fdfdfd;
         page-break-inside: avoid;
     }
-    
+
     .visit-number {
         font-size: 20px;
         font-weight: 900;
@@ -95,12 +95,12 @@
         width: 30px;
         flex-shrink: 0;
     }
-    
+
     .visit-info {
         flex-grow: 1;
         padding: 0 10px;
     }
-    
+
     .qr-code-box {
         text-align: center;
         border-left: 1px dashed #ccc;
@@ -108,14 +108,14 @@
         width: 84px;
         flex-shrink: 0;
     }
-    
+
     .qr-code-box img {
         width: 74px;
         height: 74px;
         border: 1px solid #eee;
         border-radius: 3px;
     }
-    
+
     .shift-divider {
         background: #f0f4f8;
         padding: 5px;
@@ -128,7 +128,7 @@
         text-transform: uppercase;
         font-size: 12px;
     }
-    
+
     .text-compact {
         font-size: 11px !important;
         margin-bottom: 2px !important;
@@ -137,6 +137,11 @@
         padding: 3px 6px !important;
         font-size: 9px !important;
     }
+
+    .route-map-page { page-break-before: always; padding-top: 4px; }
+    .route-map-canvas { width: 100%; height: 620px; border: 1px solid #c8d1da; border-radius: 6px; background: #f8fafc; }
+    .route-map-context { background: #eaf2f8; color: #1e4b7a; border: 1px solid #c8d1da; border-radius: 5px; padding: 7px 10px; margin-bottom: 10px; font-size: 11px; }
+    @media print { .route-map-canvas { height: 222mm; } }
 </style>
 {% endblock %}
 
@@ -180,7 +185,7 @@
                 avalie a redistribuição entre os grupos antes da saída.
             </div>
         {% endif %}
-        
+
         {% for visit in roteiro %}
             {% ifchanged visit.route_period %}
                 {% if visit.route_period == "manha" %}
@@ -197,7 +202,7 @@
                 <div class="visit-info">
                     <h6 class="fw-bold mb-0 text-dark" style="font-size: 14px;">{{ visit.titulo }}</h6>
                     <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_exibicao|default:"Endereço não cadastrado" }}</p>
-                    
+
                     <div class="d-flex flex-wrap gap-2 mt-1">
                         <span class="badge badge-compact bg-light text-dark border"><i class="fa fa-clock me-1"></i> {{ visit.data_inicio|slice:"11:16" }}</span>
                         {% if visit.setor %}
@@ -223,14 +228,215 @@
                     <div class="fw-bold text-muted mt-1" style="font-size: 8px;">ESCANEAR E ESCOLHER GPS</div>
                 </div>
             </div>
-            
+
         {% endfor %}
-        
+
         <div class="text-center mt-5 pt-3 border-top">
             <p class="small text-muted">Documento gerado automaticamente pelo Sistema de Visitas da Regional Itapevi. <br>Que Deus abençoe a visitação!</p>
         </div>
 
+
+        {% if route_map_mode == 'demo' and route_map_points %}
+            <section class="route-map-page">
+                <div class="roteiro-header">
+                    <div style="font-size:15pt;font-weight:700;">CONGREGAÇÃO CRISTÃ NO BRASIL</div>
+                    <div style="font-size:9pt;">Regional Itapevi - São Paulo</div>
+                    <div style="font-size:12pt;font-weight:700;color:#1e4b7a;margin-top:4px;">VISITAS</div>
+                    <div style="font-size:9pt;">Diagrama demonstrativo do roteiro</div>
+                </div>
+                <div class="route-map-context"><strong>{{ equipe|default:"Equipe" }}</strong> · {{ comum }} · {{ data }} · {{ route_map_points|length }} ponto(s) geolocalizado(s)</div>
+                <svg id="route-map" class="route-map-canvas" viewBox="0 0 760 620" role="img" aria-label="Diagrama numerado do roteiro"></svg>
+                <p class="small text-muted mt-2 mb-0">Demonstração local e sem custo. A posição relativa e a linha servem para auditar direção, dispersão e cruzamentos; não representam o desenho exato das ruas.</p>
+            </section>
+            {{ route_map_points|json_script:"route-map-points" }}
+        {% endif %}
+
+
+        {% if route_map_mode == 'google' and route_map_points %}
+            <section class="route-map-page">
+                <div class="roteiro-header">
+                    <div style="font-size:15pt;font-weight:700;">CONGREGAÇÃO CRISTÃ NO BRASIL</div>
+                    <div style="font-size:9pt;">Regional Itapevi - São Paulo</div>
+                    <div style="font-size:12pt;font-weight:700;color:#1e4b7a;margin-top:4px;">VISITAS</div>
+                    <div style="font-size:9pt;">Rota rodoviária Google Maps</div>
+                </div>
+                <div class="route-map-context"><strong>{{ equipe|default:"Equipe" }}</strong> · {{ comum }} · {{ data }} · primeiros {{ route_map_points|length }} ponto(s) geolocalizado(s)</div>
+                {% if google_maps_api_key %}
+                    <div id="google-route-map" class="route-map-canvas" aria-label="Rota numerada no Google Maps"></div>
+                    <p id="google-route-status" class="small text-muted mt-2 mb-0">Calculando o percurso pelas ruas na ordem definida pelo sistema...</p>
+                {% else %}
+                    <div class="alert alert-warning"><strong>Google Maps indisponível:</strong> configure <code>GOOGLE_MAPS_API_KEY</code> no arquivo <code>.env.local</code> ou no ambiente da hospedagem.</div>
+                {% endif %}
+            </section>
+            {{ route_map_points|json_script:"google-route-map-points" }}
+            {{ route_map_origin|json_script:"google-route-map-origin" }}
+        {% endif %}
+
     {% endif %}
 
 </div>
+{% endblock %}
+
+
+{% block js %}
+{% if route_map_mode == 'demo' and route_map_points %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const svg = document.getElementById('route-map');
+    const source = document.getElementById('route-map-points');
+    const points = JSON.parse(source ? source.textContent : '[]').filter(point => Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)));
+    if (!svg || !points.length) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const add = (name, attrs, text) => { const node = document.createElementNS(ns, name); Object.entries(attrs || {}).forEach(([key, value]) => node.setAttribute(key, value)); if (text != null) node.textContent = text; svg.appendChild(node); return node; };
+    const lats = points.map(point => Number(point.lat)), lngs = points.map(point => Number(point.lng));
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const pad = 55, width = 650, height = 510;
+    const scaleX = lng => pad + ((lng - minLng) / (maxLng - minLng || 1)) * width;
+    const scaleY = lat => pad + ((maxLat - lat) / (maxLat - minLat || 1)) * height;
+    add('rect', {x: 1, y: 1, width: 758, height: 618, fill: '#f8fafc'});
+    for (let i = 0; i <= 5; i += 1) { add('line', {x1: pad, y1: pad + i * height / 5, x2: 705, y2: pad + i * height / 5, stroke: '#d8dee5'}); add('line', {x1: pad + i * width / 5, y1: pad, x2: pad + i * width / 5, y2: 565, stroke: '#d8dee5'}); }
+    add('text', {x: 710, y: 34, fill: '#1e4b7a', 'font-size': 14, 'font-weight': 700}, 'N');
+    add('path', {d: 'M715 45 L715 76 M707 55 L715 45 L723 55', fill: 'none', stroke: '#1e4b7a', 'stroke-width': 3});
+    const projected = points.map(point => [scaleX(Number(point.lng)), scaleY(Number(point.lat))]);
+    add('polyline', {points: projected.map(pair => pair.join(',')).join(' '), fill: 'none', stroke: '#1e4b7a', 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: .8});
+    points.forEach((point, index) => {
+        const x = projected[index][0], y = projected[index][1], group = document.createElementNS(ns, 'g'), circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', x); circle.setAttribute('cy', y); circle.setAttribute('r', 16); circle.setAttribute('fill', '#1e4b7a'); circle.setAttribute('stroke', '#fff'); circle.setAttribute('stroke-width', 3);
+        const title = document.createElementNS(ns, 'title'); title.textContent = point.number + '. ' + point.title + ' — ' + point.address; circle.appendChild(title); group.appendChild(circle);
+        const label = document.createElementNS(ns, 'text'); label.setAttribute('x', x); label.setAttribute('y', y + 5); label.setAttribute('text-anchor', 'middle'); label.setAttribute('fill', '#fff'); label.setAttribute('font-size', 12); label.setAttribute('font-weight', 700); label.textContent = point.number; group.appendChild(label); svg.appendChild(group);
+    });
+});
+</script>
+{% endif %}
+
+{% if route_map_mode == 'google' and route_map_points and google_maps_api_key %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key|urlencode }}&libraries=geometry"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const pointsSource = document.getElementById('google-route-map-points');
+    const originSource = document.getElementById('google-route-map-origin');
+    const points = JSON.parse(pointsSource ? pointsSource.textContent : '[]')
+        .filter(point => Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))).slice(0, 10);
+    const origin = JSON.parse(originSource ? originSource.textContent : 'null');
+    const status = document.getElementById('google-route-status');
+    if (!points.length || !window.google) return;
+    const map = new google.maps.Map(document.getElementById('google-route-map'), {mapTypeControl: false, streetViewControl: false, fullscreenControl: false});
+    const bounds = new google.maps.LatLngBounds();
+    const hasOrigin = origin && Number.isFinite(Number(origin.lat)) && Number.isFinite(Number(origin.lng));
+    const start = hasOrigin ? {lat: Number(origin.lat), lng: Number(origin.lng)} : {lat: Number(points[0].lat), lng: Number(points[0].lng)};
+    const pinPath = 'M 0,-16 C 9,-16 15,-10 15,-2 C 15,8 0,19 0,19 C 0,19 -15,8 -15,-2 C -15,-10 -9,-16 0,-16 Z';
+    const markerIcon = {
+        path: pinPath, fillColor: '#e53935', fillOpacity: 1,
+        strokeColor: '#ffffff', strokeWeight: 2, scale: 1,
+        labelOrigin: new google.maps.Point(0, -2),
+    };
+    const originIcon = {...markerIcon, fillColor: '#1e4b7a'};
+    const markerEntries = [];
+    const addNumberedMarker = ({key, actual, number, title, icon, zIndex}) => {
+        const actualLatLng = new google.maps.LatLng(actual.lat, actual.lng);
+        const connector = new google.maps.Polyline({
+            map, path: [actualLatLng, actualLatLng], clickable: false,
+            strokeColor: '#5f6b76', strokeOpacity: .65, strokeWeight: 1.5, zIndex: 80,
+        });
+        const marker = new google.maps.Marker({
+            map, position: actualLatLng, icon,
+            label: {text: String(number), color: '#fff', fontSize: '12px', fontWeight: '700'},
+            title, zIndex,
+        });
+        markerEntries.push({key, actual: actualLatLng, marker, connector});
+        bounds.extend(actualLatLng);
+    };
+    if (hasOrigin) {
+        addNumberedMarker({
+            key: 'origin', actual: start, number: 0, icon: originIcon, zIndex: 200,
+            title: 'Marco zero — congregação',
+        });
+    }
+    points.forEach((point, index) => addNumberedMarker({
+        key: `point-${index}`,
+        actual: {lat: Number(point.lat), lng: Number(point.lng)},
+        number: point.number, icon: markerIcon,
+        title: String(point.number) + '. ' + point.title + ' — ' + point.address,
+        zIndex: 100 + Number(point.number || 0),
+    }));
+
+    // A colisão precisa ser resolvida em pixels, não em metros: a cada zoom o
+    // mesmo deslocamento geográfico ocupa um tamanho diferente na impressão.
+    const collisionOverlay = new google.maps.OverlayView();
+    collisionOverlay.onAdd = () => {};
+    collisionOverlay.draw = () => {};
+    collisionOverlay.onRemove = () => {};
+    collisionOverlay.setMap(map);
+    const collisionDistancePx = 44;
+    const layoutMarkers = () => {
+        const projection = collisionOverlay.getProjection();
+        if (!projection) return;
+        const screenPoints = markerEntries.map(entry => projection.fromLatLngToDivPixel(entry.actual));
+        const pending = new Set(markerEntries.map((_, index) => index));
+        while (pending.size) {
+            const first = pending.values().next().value;
+            const cluster = [];
+            const queue = [first];
+            pending.delete(first);
+            while (queue.length) {
+                const current = queue.shift();
+                cluster.push(current);
+                [...pending].forEach(candidate => {
+                    const dx = screenPoints[current].x - screenPoints[candidate].x;
+                    const dy = screenPoints[current].y - screenPoints[candidate].y;
+                    if (Math.hypot(dx, dy) < collisionDistancePx) {
+                        pending.delete(candidate);
+                        queue.push(candidate);
+                    }
+                });
+            }
+            if (cluster.length === 1) {
+                const entry = markerEntries[cluster[0]];
+                entry.marker.setPosition(entry.actual);
+                entry.connector.setPath([entry.actual, entry.actual]);
+                continue;
+            }
+            const center = {
+                x: cluster.reduce((sum, index) => sum + screenPoints[index].x, 0) / cluster.length,
+                y: cluster.reduce((sum, index) => sum + screenPoints[index].y, 0) / cluster.length,
+            };
+            const radiusPx = Math.max(
+                24,
+                collisionDistancePx / (2 * Math.sin(Math.PI / cluster.length))
+            );
+            cluster.forEach((entryIndex, position) => {
+                const angle = -Math.PI / 2 + position * (Math.PI * 2 / cluster.length);
+                const displayPoint = new google.maps.Point(
+                    center.x + radiusPx * Math.cos(angle),
+                    center.y + radiusPx * Math.sin(angle)
+                );
+                const displayLatLng = projection.fromDivPixelToLatLng(displayPoint);
+                const entry = markerEntries[entryIndex];
+                entry.marker.setPosition(displayLatLng);
+                entry.connector.setPath([entry.actual, displayLatLng]);
+            });
+        }
+    };
+    google.maps.event.addListener(map, 'idle', layoutMarkers);
+    window.addEventListener('beforeprint', layoutMarkers);
+    map.fitBounds(bounds, 45);
+    if (points.length < 2) return;
+    const destination = {lat: Number(points[points.length - 1].lat), lng: Number(points[points.length - 1].lng)};
+    const intermediate = hasOrigin ? points.slice(0, -1) : points.slice(1, -1);
+    new google.maps.DirectionsService().route({
+        origin: start, destination,
+        waypoints: intermediate.map(point => ({location: {lat: Number(point.lat), lng: Number(point.lng)}, stopover: true})),
+        optimizeWaypoints: false, travelMode: google.maps.TravelMode.DRIVING,
+    }, (result, routeStatus) => {
+        if (routeStatus === 'OK') {
+            new google.maps.DirectionsRenderer({map, directions: result, suppressMarkers: true, preserveViewport: false});
+            if (status) status.textContent = 'Percurso rodoviário calculado pelo Google na ordem 0–10.';
+        } else if (status) {
+            status.textContent = 'O Google não calculou o traçado pelas ruas (' + routeStatus + '). Os marcadores permanecem disponíveis para conferência.';
+            status.classList.add('text-danger');
+        }
+    });
+});
+</script>
+{% endif %}
 {% endblock %}

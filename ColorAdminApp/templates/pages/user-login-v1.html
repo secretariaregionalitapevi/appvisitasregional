@@ -144,7 +144,7 @@
                     const location = user.comum || user.municipio || user.cidade || 'Regional Itapevi';
                     Swal.fire({
                         html: `<div class="login-success-hero"><div class="login-success-brand"><i class="fa fa-shield-halved"></i>Acesso seguro confirmado</div><div class="login-success-check"><i class="fa fa-check"></i></div></div><div class="login-success-body"><h2>Bem-vindo, ${escapeHtml(firstName)}!</h2><p>Seu acesso foi validado. Estamos preparando sua área de trabalho.</p><div class="login-success-profile"><div class="login-success-avatar">${escapeHtml(initials)}</div><div><strong>${escapeHtml(fullName)}</strong><span>${escapeHtml(access)} · ${escapeHtml(location)}</span></div></div><div class="login-success-footer"><i class="fa fa-lock"></i><span>Sessão protegida e atividade registrada com segurança</span><i class="fa fa-spinner fa-spin ms-auto"></i></div></div>`,
-                        timer: 2200,
+                        timer: 4200,
                         timerProgressBar: true,
                         showConfirmButton: false,
                         allowOutsideClick: false,

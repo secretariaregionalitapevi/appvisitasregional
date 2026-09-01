@@ -1,4 +1,6 @@
 $ErrorActionPreference = 'Stop'
+$SupervisorMutex = [Threading.Mutex]::new($false, 'Local\CCBRegionalSamWorkerSupervisor')
+if (-not $SupervisorMutex.WaitOne(0)) { exit 0 }
 $ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $PythonExe = (Get-Command python -ErrorAction Stop).Source
 $ScraperDir = $env:SAM_SCRAPER_DIR

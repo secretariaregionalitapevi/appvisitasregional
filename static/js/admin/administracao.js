@@ -21,18 +21,7 @@
   };
 
   function alertMessage(message, type='danger') { $('#admin-alert').attr('class',`alert alert-${type}`).text(message); setTimeout(()=>$('#admin-alert').addClass('d-none'),5000); }
-  function adminToast(message, type='success') {
-    const success=type==='success';
-    return swal({
-      title:success?'Salvo com sucesso!':'Não foi possível salvar',
-      text:message,
-      icon:success?'success':'error',
-      className:success?'admin-feedback-success':'admin-feedback-error',
-      button:{text:'OK',visible:true,value:true,closeModal:true},
-      dangerMode:!success,
-      timer:3000,
-    });
-  }
+  function adminToast(message,type='success'){return AppFeedback.show({type:type==='success'?'success':'error',title:type==='success'?'Operação concluída':'Não foi possível concluir',message,duration:type==='success'?4600:6000})}
   const successToast = message => adminToast(message, 'success');
   async function fetchJsonWithTimeout(url, options={}, timeout=20000) {
     const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeout);
@@ -118,40 +107,17 @@
   }
 
   async function saveUserWithToast() {
-    const id=$('#edit-user-id').val(), previous=data.profiles.find(item=>String(item.user_id)===String(id))||{}, body={full_name:$('#edit-name').val().trim(),role_id:Number($('#edit-role').val()),status:$('#edit-status').val(),sector:$('#edit-sector').val(),comum:$('#edit-comum').val().trim(),municipio:$('#edit-municipio').val().trim(),cidade:$('#edit-municipio').val().trim(),cargo:$('#edit-cargo').val().trim()}, modules=$('.module-check:checked').map((_,item)=>item.value).get(), button=$('#save-user'), originalButton=button.html(), userName=body.full_name||previous.full_name||previous.username||'Usuário';
-    body.full_name=formatPersonName(body.full_name);
-    $('#edit-name').val(body.full_name);
-    const displayUserName=body.full_name||formatPersonName(userName);
-    button.prop('disabled',true).html('<i class="fa fa-spinner fa-spin me-1"></i>Salvando...');
-    try {
-      await fetchJsonWithTimeout(`/administracao/api/usuarios/${id}/`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});
-      await fetchJsonWithTimeout(`/administracao/api/usuarios/${id}/modulos/`,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({modules})});
-      const modal=bootstrap.Modal.getInstance(document.querySelector('#user-modal')), approvedNow=previous.status!=='approved'&&body.status==='approved';
-      if(modal)modal.hide();
-      successToast(approvedNow?`${displayUserName} foi aprovado e salvo com sucesso.`:`Cadastro de ${displayUserName} atualizado com sucesso.`);
-      load();
-    } catch(error) {
-      adminToast(`Não foi possível salvar o cadastro de ${displayUserName}. ${error.message||'Tente novamente.'}`,'error');
-    } finally {
-      button.prop('disabled',false).html(originalButton);
-    }
+    const id=$('#edit-user-id').val(),previous=data.profiles.find(item=>String(item.user_id)===String(id))||{},body={full_name:formatPersonName($('#edit-name').val().trim()),role_id:Number($('#edit-role').val()),status:$('#edit-status').val(),sector:$('#edit-sector').val(),comum:$('#edit-comum').val().trim(),municipio:$('#edit-municipio').val().trim(),cidade:$('#edit-municipio').val().trim(),cargo:$('#edit-cargo').val().trim()},modules=$('.module-check:checked').map((_,item)=>item.value).get(),button=$('#save-user'),originalButton=button.html(),displayUserName=body.full_name||previous.full_name||previous.username||'Usuário';
+    $('#edit-name').val(body.full_name);button.prop('disabled',true).html('<i class="fa fa-spinner fa-spin me-1"></i>Salvando...');
+    const notice=AppFeedback.show({type:'loading',flow:'update',title:'Atualizando autorização',message:`Aguarde, o cadastro de ${displayUserName} está sendo atualizado.`});
+    try{await fetchJsonWithTimeout(`/administracao/api/usuarios/${id}/`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify(body)});await fetchJsonWithTimeout(`/administracao/api/usuarios/${id}/modulos/`,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({modules})});const modal=bootstrap.Modal.getInstance(document.querySelector('#user-modal')),approvedNow=previous.status!=='approved'&&body.status==='approved';if(modal)modal.hide();notice.close();await load();successToast(approvedNow?`${displayUserName} foi aprovado e salvo com sucesso.`:`Cadastro de ${displayUserName} atualizado com sucesso.`)}catch(error){notice.close();adminToast(`Não foi possível salvar o cadastro de ${displayUserName}. ${error.message||'Tente novamente.'}`,'error')}finally{button.prop('disabled',false).html(originalButton)}
   }
 
   async function deleteUser(id) {
-    const profile=data.profiles.find(item=>item.user_id===id); if(!profile) return;
-    const confirmed=await swal({
-      title:'Excluir usuário?',
-      text:`${profile.full_name||profile.username||'Este usuário'} perderá definitivamente o acesso ao sistema.`,
-      icon:'warning',
-      buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Excluir definitivamente',visible:true,value:true,closeModal:true}},
-      dangerMode:true,
-    });
-    if(!confirmed) return;
-    try {
-      const response=await fetch(`/administracao/api/usuarios/${id}/`,{method:'DELETE',headers:{'X-CSRFToken':csrf()}});
-      const payload=await response.json(); if(!response.ok) throw new Error(payload.error||'Falha ao excluir o usuário.');
-      await load(); successToast(payload.message||'Usuário excluído com sucesso.');
-    } catch(error) { alertMessage(error.message); }
+    const profile=data.profiles.find(item=>item.user_id===id);if(!profile)return;const name=profile.full_name||profile.username||'Este usuário';
+    const confirmed=await AppFeedback.confirm({title:'Excluir usuário?',message:`${name} perderá definitivamente o acesso ao sistema.`,highlight:name,confirmText:'Excluir definitivamente'});if(!confirmed)return;
+    const notice=AppFeedback.show({type:'loading',flow:'delete',title:'Excluindo usuário',message:'Aguarde, o acesso e os vínculos estão sendo removidos.'});
+    try{const response=await fetch(`/administracao/api/usuarios/${id}/`,{method:'DELETE',headers:{'X-CSRFToken':csrf()}}),payload=await response.json();if(!response.ok)throw new Error(payload.error||'Falha ao excluir o usuário.');notice.close();await load();successToast(payload.message||'Usuário excluído com sucesso.')}catch(error){notice.close();adminToast(error.message,'error')}
   }
 
   $(function(){

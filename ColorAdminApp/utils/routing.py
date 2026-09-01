@@ -441,6 +441,114 @@ def optimize_route_by_territory(visits, start_coords=None):
     return route
 
 
+
+def route_selection_origin(existing_visits, common_origin=None):
+    """Usa a primeira parada programada como marco zero temporário da equipe."""
+    for visit in order_route_chronologically(list(existing_visits or [])):
+        coords = get_visit_coordinates(visit)
+        if coords:
+            return coords
+    return common_origin
+
+
+def select_coherent_households(household_options, limit, origin=None, equipe='', neighborhood_owners=None):
+    """Seleciona a rodada justa e percorre o terreno rua a rua."""
+    options = list(household_options or [])
+    if limit <= 0 or not options:
+        return []
+
+    neighborhood_owners = neighborhood_owners or {}
+
+    def priority_for(option):
+        return min(item['priority'] for item in option[2])
+
+    def rotation_bucket(option):
+        priority = priority_for(option)
+        # Nunca visitadas formam a primeira rodada. Retomadas formam a segunda.
+        # Depois, cada quantidade de visitas é uma rodada própria: ninguém com
+        # duas visitas passa à frente de quem ainda recebeu apenas uma.
+        if priority[0] == 2:
+            return (2, priority[1])
+        return (priority[0],)
+
+    def coords_for(option):
+        coords = [item.get('coords') for item in option[2] if item.get('coords')]
+        if not coords:
+            return None
+        return (
+            sum(coord[0] for coord in coords) / len(coords),
+            sum(coord[1] for coord in coords) / len(coords),
+        )
+
+    def street_for(option):
+        return street_key(option[2][0]['irmao'])
+
+    def owner_penalty(option):
+        owner = neighborhood_owners.get(option[0])
+        return 1 if owner and owner != equipe else 0
+
+    options.sort(key=lambda option: (
+        rotation_bucket(option), priority_for(option), owner_penalty(option),
+        coords_for(option) is None,
+        haversine_distance(origin, coords_for(option)) if origin and coords_for(option) else 0,
+        option[0], street_for(option), address_number(option[2][0]['irmao']),
+    ))
+
+    # Fecha uma rodada antes de entrar na seguinte. Se a rodada de menor
+    # cobertura tem mais casas do que vagas, a escolha dentro dela será
+    # territorial; casas de rodadas anteriores continuam obrigatórias.
+    groups = {}
+    for option in options:
+        groups.setdefault(rotation_bucket(option), []).append(option)
+
+    selected = []
+    boundary = []
+    for bucket in sorted(groups):
+        group = groups[bucket]
+        remaining = limit - len(selected)
+        if remaining <= 0:
+            break
+        if len(group) <= remaining:
+            selected.extend(group)
+        else:
+            boundary = group
+            break
+
+    def order_terrain(items, start_origin, initial_neighborhood='', initial_street=''):
+        pending = list(items)
+        ordered = []
+        current = start_origin
+        current_neighborhood = initial_neighborhood
+        current_street = initial_street
+        while pending:
+            pending.sort(key=lambda option: (
+                owner_penalty(option),
+                bool(current_neighborhood and option[0] != current_neighborhood),
+                bool(current_street and street_for(option) != current_street),
+                coords_for(option) is None,
+                haversine_distance(current, coords_for(option)) if current and coords_for(option) else 0,
+                priority_for(option), option[0], street_for(option),
+                address_number(option[2][0]['irmao']),
+            ))
+            chosen = pending.pop(0)
+            ordered.append(chosen)
+            current = coords_for(chosen) or current
+            current_neighborhood = chosen[0]
+            current_street = street_for(chosen)
+        return ordered
+
+    selected = order_terrain(selected, origin)
+    remaining = limit - len(selected)
+    if boundary and remaining > 0:
+        current_origin = coords_for(selected[-1]) if selected else origin
+        current_neighborhood = selected[-1][0] if selected else ''
+        current_street = street_for(selected[-1]) if selected else ''
+        selected.extend(order_terrain(
+            boundary, current_origin, current_neighborhood, current_street
+        )[:remaining])
+
+    return order_terrain(selected, origin)
+
 # Mantém a API existente enquanto aplica a estratégia territorial.
 optimize_route = optimize_route_by_territory
 
@@ -685,9 +793,19 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         street_key(option[2][0]['irmao']),
         address_number(option[2][0]['irmao']),
     ))
+    # Quando a equipe já possui uma primeira parada, ela passa a ser o marco
+    # zero temporário. Assim a expansão continua daquele ponto, sem obrigar um
+    # retorno artificial à congregação antes de cobrir as ruas adjacentes.
+    selection_origin = route_selection_origin(existing_visits, igreja_coords)
     selected_households = [
         (address_key, household)
-        for _, address_key, household in household_options[:num_to_generate]
+        for _, address_key, household in select_coherent_households(
+            household_options,
+            num_to_generate,
+            origin=selection_origin,
+            equipe=equipe,
+            neighborhood_owners=neighborhood_owners,
+        )
     ]
     
     if not selected_households:

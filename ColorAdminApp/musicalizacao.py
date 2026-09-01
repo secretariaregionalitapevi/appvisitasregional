@@ -1,4 +1,5 @@
 """Módulo gerencial de Musicalização com autorização obrigatória no servidor."""
+import io
 import json
 import re
 import unicodedata
@@ -8,8 +9,11 @@ from datetime import date, datetime
 import requests
 from django.conf import settings
 from django.core.cache import cache
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from .access_control import can_access, common_catalog, filter_rows, scope_details, service_headers, user_scope
 from .module_access import MODULE_MUSICALIZACAO, can_access_module
@@ -411,6 +415,104 @@ def api_summary(request):
         return JsonResponse({"error": "Não foi possível consultar os dados de Musicalização."}, status=502)
 
 
+def _export_phone(value):
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) in {12, 13} and digits.startswith("55"):
+        digits = digits[2:]
+    if len(digits) == 11:
+        return f"({digits[:2]}) {digits[2]} {digits[3:7]}-{digits[7:]}"
+    if len(digits) == 10:
+        return f"({digits[:2]}) {digits[2:6]}-{digits[6:]}"
+    return str(value or "").strip()
+
+
+def _special_need(row):
+    description = str(row.get("dificuldade_descricao") or "").strip()
+    flag = _norm(row.get("dificuldade_aprendizagem"))
+    if description:
+        return f"Sim — {description}"
+    return "Sim" if flag in {"SIM", "TRUE", "1", "ATIVO"} else "Não"
+
+
+def _polo_filename_part(value):
+    name = re.sub(r"^BR-\d+(?:-\d+)+\s*-\s*", "", str(value or "").strip(), flags=re.IGNORECASE)
+    name = re.sub(r'[^\w\s-]', " ", name, flags=re.UNICODE)
+    return re.sub(r"[\s-]+", "_", name.title()).strip("_") or "Todos_os_Polos"
+
+
+def export_children_excel(request):
+    if not can_open_module(request):
+        return _denied()
+    if request.method != "GET":
+        return JsonResponse({"error": "Método não permitido."}, status=405)
+    config = RESOURCES["criancas"]
+    try:
+        response = requests.get(_url(config), headers=service_headers(), params={"select": "*", "order": config["order"]}, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException:
+        return JsonResponse({"error": "Não foi possível consultar as crianças para exportação."}, status=502)
+    rows = _visible(user_scope(request), config, response.json())
+    city, polo, search = request.GET.get("cidade", ""), request.GET.get("polo", ""), _norm(request.GET.get("pesquisa", ""))
+    rows = [row for row in rows if (not city or _norm(row.get("cidade")) == _norm(city))
+            and (not polo or _norm(row.get("polo_participacao")) == _norm(polo))
+            and (not search or search in _norm(json.dumps(row, ensure_ascii=False, default=str)))]
+    profile = request.session.get("user_profile") or {}
+    actor = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
+    now = datetime.now()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "CRIANÇAS"
+    headers = ["Criança", "Nascimento", "Responsável", "Contato", "Necessidade especial", "Polo", "Município", "Situação"]
+    last_column = get_column_letter(len(headers))
+    navy, pale, thin = "1E4B7A", "EAF2F8", Side(style="thin", color="CCD5DD")
+    for row_number, text_value, size, color, fill in ((1, "CONGREGAÇÃO CRISTÃ NO BRASIL", 15, "FFFFFF", navy), (2, "Regional Itapevi - São Paulo", 10, "FFFFFF", navy), (3, "MUSICALIZAÇÃO INFANTIL", 12, navy, pale)):
+        sheet.merge_cells(f"A{row_number}:{last_column}{row_number}")
+        cell = sheet.cell(row_number, 1, text_value)
+        cell.font = Font(size=size, bold=row_number != 2, color=color)
+        cell.fill = PatternFill("solid", fgColor=fill)
+        cell.alignment = Alignment(horizontal="center")
+    sheet.merge_cells("A4:D4")
+    sheet["A4"] = f"Cadastro de crianças · {polo or 'Todos os polos'}"
+    sheet.merge_cells(f"E4:{last_column}4")
+    sheet["E4"] = f"Emissão: {now:%d/%m/%Y %H:%M} · Impresso por: {actor}"
+    sheet["E4"].alignment = Alignment(horizontal="right")
+    for cell in sheet[4]:
+        cell.font = Font(size=9, bold=True, color="536A7D")
+    for column, label in enumerate(headers, 1):
+        cell = sheet.cell(6, column, label)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=navy)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(bottom=thin)
+    for row_index, row in enumerate(sorted(rows, key=lambda item: str(item.get("nome_crianca") or "")), 7):
+        birth = _normalize_birth_date(row.get("data_nascimento")) if row.get("data_nascimento") else None
+        if birth:
+            birth = datetime.strptime(birth, "%Y-%m-%d").strftime("%d/%m/%Y")
+        values = [row.get("nome_crianca"), birth, row.get("nome_responsavel"), _export_phone(row.get("celular_responsavel")), _special_need(row), row.get("polo_participacao"), row.get("cidade"), row.get("status")]
+        for column, value in enumerate(values, 1):
+            cell = sheet.cell(row_index, column, value or "")
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(vertical="center", wrap_text=column in {1, 3, 5, 6})
+            if row_index % 2 == 0:
+                cell.fill = PatternFill("solid", fgColor="F4F6F8")
+    for index, width in enumerate([32, 14, 30, 20, 28, 42, 22, 14], 1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = "A7"
+    sheet.auto_filter.ref = f"A6:{last_column}{max(6, sheet.max_row)}"
+    sheet.row_dimensions[1].height = 24
+    sheet.sheet_view.showGridLines = False
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.print_title_rows = "1:6"
+    stream = io.BytesIO()
+    workbook.save(stream)
+    result = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    filename = f"Cadastro_Musicalização_{_polo_filename_part(polo)}_{now:%d_%m_%Y}.xlsx"
+    from urllib.parse import quote
+    result["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return result
 def api_resource(request, resource, record_id=None):
     if not can_open_module(request):
         return _denied()

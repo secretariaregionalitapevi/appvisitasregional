@@ -20,13 +20,12 @@
   };
 
   function feedback(title, text, icon = 'success') {
-    if (!window.swal) return alert(`${title}\n${text}`);
-    return swal({
-      title, text, icon,
-      className: icon === 'success' ? 'admin-feedback-success' : 'admin-feedback-error',
-      button: {text:'OK', visible:true, value:true, closeModal:true},
-      dangerMode: icon === 'error', timer: icon === 'success' ? 3000 : undefined
-    });
+    return Promise.resolve(AppFeedback.show({
+      type: icon === 'success' ? 'success' : icon === 'warning' ? 'warning' : 'error',
+      title,
+      message: text,
+      duration: icon === 'success' ? 4600 : 6000
+    }));
   }
 
   function setOptions(select, values, placeholder) {
@@ -100,7 +99,7 @@
       if (latest) {
         const last = new Date(`${iso(latest.data_aula)}T12:00:00`);
         days = Math.max(0, Math.floor((today - last) / 86400000));
-        if (days <= 7) { status = 'EM DIA'; tone = 'ok'; detail = `Enviado há ${days} dia${days === 1 ? '' : 's'}`; }
+        if (days <= 7) { status = 'EM DIA'; tone = 'ok'; detail = days === 0 ? 'Enviado hoje' : `Enviado há ${days} dia${days === 1 ? '' : 's'}`; }
         else if (days <= 14) { status = 'ATENÇÃO'; tone = 'attention'; detail = `${days} dias sem novo diário`; }
         else { status = 'ATRASADO'; tone = 'late'; detail = `${days} dias sem novo diário`; }
       }
@@ -316,14 +315,32 @@
   }
 
   async function deleteEntry(row) {
-    const confirmed = window.swal ? await swal({title:'Excluir lançamento?',text:`A atividade de ${dateLabel(row.data_aula)} em ${row.polo || 'polo não informado'} será removida.`,icon:'warning',buttons:{cancel:{text:'Cancelar',visible:true,value:false},confirm:{text:'Sim, excluir',visible:true,value:true}},dangerMode:true}) : confirm('Excluir este lançamento?');
+    const activityDate = dateLabel(row.data_aula);
+    const activityPolo = row.polo || 'polo não informado';
+    const confirmed = await AppFeedback.confirm({
+      title: 'Excluir lançamento?',
+      message: `A atividade de ${activityDate} em ${activityPolo} será removida definitivamente.`,
+      highlight: activityPolo,
+      confirmText: 'Sim, excluir'
+    });
     if (!confirmed) return;
+    const notice = AppFeedback.show({
+      type: 'loading',
+      flow: 'delete',
+      title: 'Excluindo lançamento',
+      message: 'Aguarde enquanto a atividade é removida e o histórico é atualizado.'
+    });
     try {
       const response = await fetch(`/musicalizacao/api/aulas/${row.id}/`, {method:'DELETE', headers:{'X-CSRFToken':csrf()}});
-      if (!response.ok) { const body=await response.json(); throw new Error(body.error||'Falha ao excluir.'); }
-      await feedback('Excluído com sucesso!', 'O lançamento foi removido.', 'success');
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Falha ao excluir.');
+      notice.close();
       await load();
-    } catch (exception) { feedback('Não foi possível excluir', exception.message, 'error'); }
+      await feedback('Lançamento excluído', 'A atividade foi removida e os dados foram atualizados.', 'success');
+    } catch (exception) {
+      notice.close();
+      feedback('Não foi possível excluir', exception.message, 'error');
+    }
   }
 
   function exportRows() {
