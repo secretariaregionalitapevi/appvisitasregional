@@ -1115,22 +1115,20 @@
                     }
                 }
 
-                // Cálculo de Próxima Visita (Agendada)
+                // Próxima visita somente quando houver agenda vinculada à própria pessoa.
+                // Moradores no mesmo endereço não herdam o evento uns dos outros: isso
+                // criava uma data aparente no cadastro sem registro correspondente no calendário.
                 const finalStatuses = new Set(['Realizada', 'Cancelada', 'Não realizada']);
-                const itemAddress = normalizeHouseAddress(item.endereco);
-                const futureVisits = agendaData.filter(a => {
-                    if (finalStatuses.has(a.status) || !moment(a.data_inicio).isSameOrAfter(moment().startOf('day'))) return false;
-                    const sameMember = a.irmandade_id == item.id || a.id_membro == item.id;
-                    const sameHouse = itemAddress && normalizeHouseAddress(a.endereco_visitado) === itemAddress;
-                    return sameMember || sameHouse;
-                });
+                const futureVisits = agendaData.filter(a =>
+                    !finalStatuses.has(a.status)
+                    && moment(a.data_inicio).isSameOrAfter(moment().startOf('day'))
+                    && (a.irmandade_id == item.id || a.id_membro == item.id)
+                );
                 let nextVisitHtml = '<span class="text-muted small">-</span>';
-                
+
                 if (futureVisits.length > 0) {
                     const nextDate = moment(Math.min(...futureVisits.map(v => new Date(v.data_inicio))));
-                    const directlyScheduled = futureVisits.some(a => a.irmandade_id == item.id || a.id_membro == item.id);
-                    const title = directlyScheduled ? 'Visita agendada' : 'Casa incluída no roteiro por outro morador';
-                    nextVisitHtml = `<span class="badge bg-indigo-100 text-indigo border border-indigo" title="${title}"><i class="fa fa-calendar-alt me-1"></i>${nextDate.format('DD/MM/YY')}</span>`;
+                    nextVisitHtml = `<span class="badge bg-indigo-100 text-indigo border border-indigo" title="Visita agendada"><i class="fa fa-calendar-alt me-1"></i>${nextDate.format('DD/MM/YY')}</span>`;
                 }
 
                 // Renderização de Cargos (Agregação de Fontes)

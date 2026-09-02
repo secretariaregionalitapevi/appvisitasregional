@@ -1895,6 +1895,7 @@ def apiVisitasAgenda(request):
             irmandade_id = request.GET.get('irmandade_id')
             status = request.GET.get('status')
             equipe = normalize_team_name(request.GET.get('equipe'), request.GET.get('equipe_tipo'))
+            equipe_id = (request.GET.get('equipe_id') or '').strip()
             comum = (request.GET.get('comum') or '').strip()
             municipio = (request.GET.get('municipio') or '').strip()
             visible_catalog = visible_commons(scope)
@@ -1913,6 +1914,11 @@ def apiVisitasAgenda(request):
                 params.append(("status", f"eq.{status}")) # Ex: Realizada
             if equipe:
                 params.append(("equipe_responsavel", f"eq.{equipe}"))
+            if equipe_id:
+                # The team app uses the structured team's UUID.
+                # Without this filter, visits from other teams in the same common
+                # were returned together and displayed in the wrong itinerary.
+                params.append(("equipe_id", f"eq.{equipe_id}"))
             start_date = request.GET.get('start_date')
             end_date = request.GET.get('end_date')
             if start_date:
@@ -2176,6 +2182,41 @@ def apiVisitasAgenda(request):
             current_response = requests.get(url, headers=headers, params=[("id", id_filter), ("select", "*")], timeout=15)
             current_response.raise_for_status()
             current = current_response.json()
+
+            # A tabela de agenda não possui coluna `comum`. Na leitura, o escopo é
+            # hidratado pelo cadastro da irmandade; a exclusão precisa aplicar a
+            # mesma regra antes de autorizar, ou usuários locais/municipais recebem
+            # 403 mesmo tendo aberto legitimamente o evento no calendário.
+            if scope["level"] in {"local", "municipal"} and current:
+                member_ids = list(dict.fromkeys(
+                    str(item.get("irmandade_id") or "").strip()
+                    for item in current if item.get("irmandade_id")
+                ))
+                member_locations = {}
+                if member_ids:
+                    members_url = (
+                        f"{settings.SUPABASE_URL}/rest/v1/"
+                        f"{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
+                    )
+                    members_response = requests.get(
+                        members_url,
+                        headers=headers,
+                        params=[
+                            ("id", f"in.({','.join(member_ids)})"),
+                            ("select", "id,comum,cidade"),
+                        ],
+                        timeout=15,
+                    )
+                    members_response.raise_for_status()
+                    member_locations = {
+                        str(item.get("id")): item for item in members_response.json()
+                        if item.get("id")
+                    }
+                for item in current:
+                    location = member_locations.get(str(item.get("irmandade_id") or ""), {})
+                    item["comum"] = location.get("comum") or item.get("comum")
+                    item["municipio"] = location.get("cidade") or item.get("municipio")
+
             if len(current) != len(ids) or any(not can_access(scope, item) for item in current):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
             response = requests.delete(url, headers=headers, params=[("id", id_filter)], timeout=15)

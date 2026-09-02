@@ -11,7 +11,7 @@ Set-Location -LiteralPath $ProjectRoot
 $ErrorActionPreference = 'Continue'
 while ($true) {
     "[$(Get-Date -Format o)] Iniciando servidor local em 127.0.0.1:8000." | Tee-Object -FilePath $LogPath -Append
-    & $PythonExe manage.py runserver 127.0.0.1:8000 --noreload 2>&1 | Tee-Object -FilePath $LogPath -Append
+    & $PythonExe manage.py runserver 127.0.0.1:8000 2>&1 | Tee-Object -FilePath $LogPath -Append
     $ServerExitCode = $LASTEXITCODE
     "[$(Get-Date -Format o)] Servidor encerrado com codigo $ServerExitCode; reiniciando em 10 segundos." |
         Tee-Object -FilePath $LogPath -Append

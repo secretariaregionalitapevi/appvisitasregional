@@ -720,6 +720,12 @@ class MapScopeFilterTests(TestCase):
         self.assertNotContains(response, 'id="cadastro-municipio-filter"')
         self.assertNotContains(response, 'id="cadastro-common-filter"')
 
+    @patch("ColorAdminApp.views.visible_commons", return_value=[commons[0]])
+    def test_registration_next_visit_requires_direct_member_agenda(self, _commons):
+        response = visitasCadastro(self.map_request(4))
+        self.assertContains(response, "a.irmandade_id == item.id || a.id_membro == item.id")
+        self.assertNotContains(response, "const sameHouse =")
+        self.assertNotContains(response, "Casa incluída no roteiro por outro morador")
     @patch("ColorAdminApp.views.visible_commons", return_value=commons)
     def test_regional_calendar_has_hierarchical_searchable_filters(self, _commons):
         response = visitasAgenda(self.map_request(2, comum="", municipio=""))
@@ -845,6 +851,27 @@ class VisitTeamsTests(TestCase):
         self.assertEqual(payload[0]["comum"], "BR-01 - CENTRAL ITAPEVI")
         self.assertEqual(payload[0]["municipio"], "ITAPEVI")
 
+    @patch("ColorAdminApp.views.visible_commons", return_value=CATALOG)
+    @patch("ColorAdminApp.views.requests.get")
+    def test_agenda_filters_visits_by_structured_team_id(self, get, _commons):
+        agenda_response = Mock(status_code=200)
+        agenda_response.json.return_value = []
+        members_response = Mock(status_code=200)
+        members_response.json.return_value = []
+        get.side_effect = [agenda_response, members_response]
+        request = RequestFactory().get('/visitas/api/agenda/', {
+            "equipe_id": "team-1",
+            "comum": "BR-01 - CENTRAL ITAPEVI",
+            "start_date": "2026-09-05T00:00:00-03:00",
+            "end_date": "2026-09-06T00:00:00-03:00",
+        })
+        request.session = {"user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 200)
+        agenda_params = get.call_args_list[0].kwargs["params"]
+        self.assertIn(("equipe_id", "eq.team-1"), agenda_params)
     def test_report_names_use_consistent_capitalization(self):
         self.assertEqual(format_display_name("ADERBAL BAZANTE"), "Aderbal Bazante")
         self.assertEqual(format_display_name("IAIR JOÃO"), "Iair João")
@@ -1026,6 +1053,35 @@ class VisitTeamsTests(TestCase):
             "grupo_regional_id": "regional-a", "grupo_regional_nome": "Grupo A", "cargo_outros": "Grupo de Visitas",
         })
 
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.delete")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_local_user_can_delete_agenda_hydrated_from_member_common(self, get, delete, audit):
+        visit_id = "11111111-1111-4111-8111-111111111111"
+        member_id = "22222222-2222-4222-8222-222222222222"
+        current_response = Mock(status_code=200)
+        current_response.json.return_value = [{
+            "id": visit_id, "irmandade_id": member_id, "titulo": "Marinete",
+            "data_inicio": "2026-09-01T09:15:00-03:00", "status": "Marcada",
+        }]
+        member_response = Mock(status_code=200)
+        member_response.json.return_value = [{
+            "id": member_id, "comum": "BR-22-0673 - VILA DOUTOR CARDOSO", "cidade": "ITAPEVI",
+        }]
+        get.side_effect = [current_response, member_response]
+        delete.return_value = Mock(status_code=204)
+        request = RequestFactory().delete(f"/visitas/api/agenda/?id={visit_id}")
+        request.session = {"user_id": "user-1", "user_profile": {
+            "role_id": 4, "comum": "BR-22-0673 - VILA DOUTOR CARDOSO", "municipio": "ITAPEVI",
+        }}
+
+        response = apiVisitasAgenda(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload, {"status": "deleted", "deleted": 1})
+        delete.assert_called_once()
+        audit.assert_called_once()
     @patch("ColorAdminApp.views.log_audit")
     @patch("ColorAdminApp.views.requests.patch")
     @patch("ColorAdminApp.views.requests.get")

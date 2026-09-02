@@ -8,7 +8,7 @@ from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from .gem import (
     INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
-    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days,
+    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options,
 )
 
 
@@ -20,6 +20,12 @@ def request_with_profile(path, profile, params=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class GemTests(SimpleTestCase):
+    def test_instrument_filter_uses_pedagogical_order(self):
+        values = {"CLARINETE", "VIOLONCELO", "VIOLINO", "VIOLA", "BARÍTONO DE PISTO"}
+        self.assertEqual(
+            ordered_instrument_options(values),
+            ["VIOLINO", "VIOLA", "VIOLONCELO", "CLARINETE", "BARÍTONO DE PISTO"],
+        )
     def setUp(self):
         self.rows = [
             {"id": "1", "nome_aluno": "Ana", "nivel": "CANDIDATO(A)", "municipio": "ITAPEVI", "comum_congregacao": "CENTRAL", "instrumento": "VIOLINO", "programa_minimo_percentual": 25},

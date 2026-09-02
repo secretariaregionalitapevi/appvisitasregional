@@ -19,6 +19,7 @@ from django.shortcuts import render
 from .access_control import can_access, filter_rows, scope_details, service_headers, user_scope
 from .module_access import MODULE_MUSICALIZACAO, can_access_module
 from .sam_history_sync import SOURCE_CONFIG, program_minimum_progress
+from .sam_program import assess_program
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -46,6 +47,14 @@ def _norm(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
     return " ".join("".join(char for char in text if not unicodedata.combining(char)).upper().split())
 
+
+def ordered_instrument_options(values):
+    """Mantém a ordem pedagógica do catálogo e envia valores legados ao final."""
+    available = {_norm(value): str(value).strip() for value in values if _norm(value)}
+    ordered = [instrument for instrument in INSTRUMENT_OPTIONS if _norm(instrument) in available]
+    catalog = {_norm(instrument) for instrument in INSTRUMENT_OPTIONS}
+    ordered.extend(sorted(label for key, label in available.items() if key not in catalog))
+    return ordered
 
 def is_graduated(row):
     """Oficialização encerra a formação, inclusive em níveis compostos."""
@@ -244,7 +253,9 @@ def page(request):
 def student_summary_page(request, student_id):
     if not can_open_module(request):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta GEM."}, status=403)
-    return render(request, "pages/gem_student_summary.html", {"student_id": student_id})
+    profile = request.session.get("user_profile") or {}
+    report_user = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
+    return render(request, "pages/gem_student_summary.html", {"student_id": student_id, "report_user": report_user})
 
 
 def api_summary(request):
@@ -254,7 +265,7 @@ def api_summary(request):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
         requested_scope = user_scope(request)
-        summary_key = f"gem:summary:v5:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
+        summary_key = f"gem:summary:v6:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
         cached_summary = cache.get(summary_key)
         if cached_summary is not None:
             return JsonResponse(cached_summary)
@@ -279,8 +290,8 @@ def api_summary(request):
                 "average_progress": round(sum(row["programa_minimo_percentual"] for row in with_progress) / len(with_progress)) if with_progress else 0,
             },
             "levels": [{"label": label, "value": value} for label, value in levels.most_common()],
-            "instruments": [{"label": label, "value": value} for label, value in instruments.most_common(8)],
-            "instrument_options": sorted(instruments),
+            "instruments": [{"label": label, "value": value} for label, value in instruments.most_common(9)],
+            "instrument_options": ordered_instrument_options(instruments),
             "municipalities": [{"label": label, "value": value} for label, value in municipalities.most_common()],
             'commons': [{'label': label, 'value': value} for label, value in commons.most_common()],
             'catalogs': {'instruments': INSTRUMENT_OPTIONS, 'levels': LEVEL_OPTIONS, 'ministries': MINISTRY_OPTIONS, 'tonalities': TONALITY_OPTIONS},
@@ -533,6 +544,7 @@ def api_student_timeline(request, student_id):
         student["programa_minimo_informado"] = bool(datasets.get("msa")) or student["programa_minimo_informado"]
         return JsonResponse({
             "student": student,
+            "program_assessment": assess_program(student, datasets),
             "milestones": _milestones(student.get("nivel")),
             "events": _build_timeline(student, datasets),
             "counts": {name: len(rows) for name, rows in datasets.items()},
