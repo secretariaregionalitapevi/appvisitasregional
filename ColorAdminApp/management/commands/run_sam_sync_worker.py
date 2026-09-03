@@ -16,13 +16,21 @@ from ColorAdminApp.access_control import service_headers
 from ColorAdminApp.sam_live_session import SamLiveSession
 from ColorAdminApp.sam_portal_history import portal_report_to_export
 
+DEFAULT_IDLE_INTERVAL_SECONDS = 120
+MIN_IDLE_INTERVAL_SECONDS = 60
+
 
 class Command(BaseCommand):
     help = "Executa a sincronização SAM em processo separado, com ciclos periódicos e atualização de históricos."
 
     def add_arguments(self, parser):
         parser.add_argument("--scraper-dir", type=Path, default=os.getenv("SAM_SCRAPER_DIR"))
-        parser.add_argument("--interval", type=int, default=int(os.getenv("SAM_SYNC_INTERVAL_SECONDS", "1800")))
+        parser.add_argument(
+            "--interval",
+            type=int,
+            default=int(os.getenv("SAM_SYNC_INTERVAL_SECONDS", str(DEFAULT_IDLE_INTERVAL_SECONDS))),
+            help="Intervalo ocioso entre consultas do catálogo; padrão: 120 segundos.",
+        )
         parser.add_argument("--history-limit", type=int, default=int(os.getenv("SAM_SYNC_HISTORY_LIMIT", "100")))
         parser.add_argument("--visible", action="store_true", help="Exibe o navegador somente para diagnóstico")
         parser.add_argument("--once", action="store_true")
@@ -32,7 +40,8 @@ class Command(BaseCommand):
             f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
             headers=service_headers(), params={
                 "select": "id,source_key,source_name,aluno_id", "sync_status": "in.(pending,failed)",
-                "aluno_id": "not.is.null", "order": "sync_status.desc,updated_at.asc", "limit": limit,
+                "aluno_id": "not.is.null", "missing_since": "is.null",
+                "order": "sync_status.desc,updated_at.asc", "limit": limit,
             }, timeout=30,
         )
         response.raise_for_status()
@@ -132,7 +141,8 @@ class Command(BaseCommand):
             pending = self._pending(history_limit)
             count_response = requests.get(
                 f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
-                headers=service_headers("count=exact"), params={"select": "id", "limit": 1}, timeout=20,
+                headers=service_headers("count=exact"),
+                params={"select": "id", "missing_since": "is.null", "limit": 1}, timeout=20,
             )
             count_response.raise_for_status()
             try:
@@ -207,7 +217,7 @@ class Command(BaseCommand):
         scraper_dir = Path(options["scraper_dir"]).resolve() if options.get("scraper_dir") else None
         if not scraper_dir or not (scraper_dir / "web_scraper.py").is_file():
             raise CommandError("Configure SAM_SCRAPER_DIR ou informe --scraper-dir.")
-        interval = max(300, options["interval"])
+        interval = max(MIN_IDLE_INTERVAL_SECONDS, options["interval"])
         lock_path = Path(tempfile.gettempdir()) / "app_visitas_sam_sync.lock"
         if lock_path.exists():
             try:

@@ -119,6 +119,18 @@ def _visible_rows(request):
         if len(batch) < 1000:
             break
         offset += 1000
+    missing_state_ids = set()
+    missing_offset = 0
+    while True:
+        batch = _get("sam_student_sync_state", {
+            "select": "id", "missing_since": "not.is.null", "offset": missing_offset,
+        }, 1000)
+        missing_state_ids.update(row.get("id") for row in batch)
+        if len(batch) < 1000:
+            break
+        missing_offset += 1000
+    if missing_state_ids:
+        rows = [row for row in rows if row.get("sync_state_id") not in missing_state_ids]
     missing_ids = {row.get("sync_state_id") for row in rows if not row.get("municipio")}
     if missing_ids:
         source_rows = []

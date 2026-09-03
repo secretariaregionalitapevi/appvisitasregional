@@ -69,6 +69,15 @@ class Command(BaseCommand):
             )
             response.raise_for_status()
 
+    @staticmethod
+    def _missing_states(states, observed_keys):
+        observed = {str(key) for key in observed_keys}
+        return [state for state in states if str(state.get("source_key")) not in observed]
+
+    @staticmethod
+    def _catalog_size_is_safe(discovered, previous_active, minimum_ratio=0.8):
+        return not previous_active or discovered >= max(1, int(previous_active * minimum_ratio))
+
     def handle(self, *args, **options):
         path = options["input"]
         if not path.is_file():
@@ -102,6 +111,14 @@ class Command(BaseCommand):
             description = str(row.get("comum") or "").split(" - ", 1)[-1]
             commons_by_location.setdefault((norm(description), norm(row.get("cidade"))), []).append(row)
         now = datetime.now(timezone.utc).isoformat()
+        observed_keys = {student["source_key"] for student in students}
+        previous_active = sum(1 for state in states if not state.get("missing_since"))
+        if options["commit"] and not self._catalog_size_is_safe(len(students), previous_active):
+            raise CommandError(
+                f"Catálogo SAM possivelmente incompleto: {len(students)} alunos recebidos para "
+                f"{previous_active} estados ativos. Nenhum estado foi alterado."
+            )
+        missing_states = self._missing_states(states, observed_keys)
         stats, changes, unresolved, state_upserts = Counter(), [], [], []
         run_id = None
         if options["commit"]:
@@ -204,8 +221,21 @@ class Command(BaseCommand):
             if options["commit"]:
                 self.stdout.write(f"Gravando {len(state_upserts)} estados SAM em lotes...")
                 self._upsert_states(state_upserts)
+                newly_missing = [state for state in missing_states if not state.get("missing_since")]
+                if newly_missing:
+                    self.stdout.write(f"Marcando {len(newly_missing)} aluno(s) ausente(s) do catálogo atual...")
+                    with ThreadPoolExecutor(max_workers=min(8, len(newly_missing))) as executor:
+                        list(executor.map(
+                            lambda state: self._patch("sam_student_sync_state", state["id"], {
+                                "missing_since": now,
+                                "last_error": None,
+                                "updated_at": now,
+                            }),
+                            newly_missing,
+                        ))
 
             stats["catalog_students"] = len(students)
+            stats["missing_students"] = len(missing_states)
             report = {"mode": "commit" if options["commit"] else "preview", "statistics": dict(stats), "changes": changes, "unresolved": unresolved}
             if options.get("report"):
                 options["report"].write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

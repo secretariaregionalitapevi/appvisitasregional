@@ -1,6 +1,11 @@
 from django.test import SimpleTestCase
+from unittest.mock import Mock, patch
 
-from .management.commands.run_sam_sync_worker import Command
+from .management.commands.run_sam_sync_worker import (
+    DEFAULT_IDLE_INTERVAL_SECONDS,
+    MIN_IDLE_INTERVAL_SECONDS,
+    Command,
+)
 
 
 class SamWorkerValidationTests(SimpleTestCase):
@@ -32,3 +37,18 @@ class SamWorkerValidationTests(SimpleTestCase):
             Command._validate_history(self.report, self.document, {
                 "statistics": {"linked": 1},
             })
+
+    @patch("ColorAdminApp.management.commands.run_sam_sync_worker.requests.get")
+    def test_pending_queue_ignores_students_missing_from_current_catalog(self, get):
+        response = Mock()
+        response.json.return_value = []
+        response.raise_for_status.return_value = None
+        get.return_value = response
+
+        Command()._pending(100)
+
+        self.assertEqual(get.call_args.kwargs["params"]["missing_since"], "is.null")
+
+    def test_idle_discovery_interval_is_fast_but_rate_limited(self):
+        self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 120)
+        self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 60)

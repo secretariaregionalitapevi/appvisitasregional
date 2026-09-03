@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase
 
 from .sam_catalog import match_local_common, match_target, parse_catalog
+from .management.commands.sync_sam_catalog import Command
 
 
 class SamCatalogTests(SimpleTestCase):
@@ -27,3 +28,18 @@ class SamCatalogTests(SimpleTestCase):
         student = {"name": "JOÃO DA SILVA"}
         targets = [{"id": "1", "nome_aluno": "JOÃO DA SILVA"}, {"id": "2", "nome_aluno": "JOAO DA SILVA"}]
         self.assertEqual(match_target(student, targets)[1], "ambiguous")
+
+    def test_missing_states_excludes_students_seen_in_current_catalog(self):
+        states = [
+            {"id": "1", "source_key": "100"},
+            {"id": "2", "source_key": "200"},
+            {"id": "3", "source_key": "300", "missing_since": "2026-08-01T00:00:00Z"},
+        ]
+        self.assertEqual(
+            [state["id"] for state in Command._missing_states(states, {"100", "300"})],
+            ["2"],
+        )
+
+    def test_catalog_guard_rejects_abnormal_drop(self):
+        self.assertTrue(Command._catalog_size_is_safe(4460, 4500))
+        self.assertFalse(Command._catalog_size_is_safe(500, 4500))

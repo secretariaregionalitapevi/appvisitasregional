@@ -900,8 +900,14 @@
                 let createdTotal = 0;
                 let updatedTotal = 0;
                 let skippedTotal = 0;
+                let importNotice = null;
                 for (let start=0; start<records.length; start+=250) {
-                    Swal.fire({title:'Sincronizando...', text:`Analisando ${Math.min(start+250, records.length)} de ${records.length}`, allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
+                    importNotice = AppFeedback.show({
+                        type: 'loading',
+                        flow: 'sync',
+                        title: 'Sincronizando planilha',
+                        message: `Analisando ${Math.min(start + 250, records.length)} de ${records.length} registros.`
+                    });
                     const response = await fetch('/visitas/api/irmandade/?smart=1', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token }}'}, body:JSON.stringify(records.slice(start,start+250))});
                     const result = await response.json();
                     if (!response.ok) throw new Error(friendlyImportError(result, start, Math.min(start + 250, records.length)));
@@ -909,12 +915,24 @@
                     updatedTotal += Number(result.updated || 0);
                     skippedTotal += Number(result.skipped || 0);
                 }
-                await Swal.fire({
-                    icon:'success', title:'Sincronização concluída',
-                    html:`<b>${createdTotal}</b> novo(s) membro(s) cadastrado(s).<br><b>${updatedTotal}</b> cadastro(s) receberam novas preferências/classificações.<br><b>${skippedTotal}</b> registro(s) já estavam atualizados e foram preservados.`
+                importNotice?.close();
+                await loadContent();
+                AppFeedback.show({
+                    type: 'success',
+                    flow: 'sync',
+                    title: 'Sincronização concluída',
+                    message: `${createdTotal} novo(s), ${updatedTotal} atualizado(s) e ${skippedTotal} preservado(s).`,
+                    detail: 'A planilha foi processada e a lista de irmandade foi atualizada.'
                 });
-                loadContent();
-            } catch (error) { Swal.fire('Erro na importação', error.message, 'error'); }
+            } catch (error) {
+                AppFeedback.close();
+                AppFeedback.show({
+                    type: 'error',
+                    flow: 'sync',
+                    title: 'Erro na importação',
+                    message: error.message
+                });
+            }
         };
 
         const updateWidgets = (data) => {
@@ -1234,7 +1252,11 @@
                 const data = await res.json();
                 
                 if (data.erro) {
-                    Swal.fire('Erro', 'CEP não encontrado.', 'error');
+                    AppFeedback.show({
+                        type: 'warning',
+                        title: 'CEP não encontrado',
+                        message: 'Confira o número informado e tente novamente.'
+                    });
                     return;
                 }
 
@@ -1494,11 +1516,12 @@
                     }
                 } catch (err) {
                     console.error("Erro no upload da foto:", err);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Falha no Upload da Foto',
-                        text: `Não foi possível salvar a imagem: ${err.message}. Contate o administrador se o problema continuar.`,
-                        confirmButtonText: 'Entendido'
+                    AppFeedback.show({
+                        type: 'error',
+                        flow: 'upload',
+                        title: 'Falha no upload da foto',
+                        message: `Não foi possível salvar a imagem: ${err.message}`,
+                        detail: 'Revise o arquivo e tente novamente. Se o problema continuar, contate o administrador.'
                     });
                     return; // Bloqueia o salvamento do registro
                 }
@@ -1537,19 +1560,19 @@
 
             const url = id ? `/visitas/api/irmandade/?id=${id}` : '/visitas/api/irmandade/';
             const nomeCadastro = String(payload.nome || '').trim() || 'este membro';
+            const saveFlow = id ? 'update' : 'create';
+            const saveNotice = AppFeedback.show({
+                type: 'loading',
+                flow: saveFlow,
+                title: id ? 'Atualizando cadastro' : 'Realizando cadastro',
+                message: `Aguarde enquanto salvamos os dados de ${nomeCadastro}.`
+            });
             try {
                 const requestOptions = {
                     method: id ? 'PATCH' : 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                     body: JSON.stringify(payload)
                 };
-                Swal.fire({
-                    title: id ? 'Atualizando cadastro...' : 'Salvando cadastro...',
-                    text: `Aguarde enquanto salvamos o cadastro de ${nomeCadastro}.`,
-                    allowOutsideClick: false,
-                    allowEscapeKey: false,
-                    didOpen: () => Swal.showLoading()
-                });
                 let res;
                 try {
                     res = await fetch(url, requestOptions);
@@ -1560,14 +1583,15 @@
                 }
 
                 if (res.ok) {
+                    saveNotice.close();
                     $('#modal-cadastro').modal('hide');
-                    loadContent();
-                    Swal.fire({
-                        icon: 'success',
-                        title: id ? 'Cadastro atualizado!' : 'Cadastro realizado!',
-                        text: `${nomeCadastro} foi salvo com sucesso.`,
-                        timer: 1800,
-                        showConfirmButton: false
+                    await loadContent();
+                    AppFeedback.show({
+                        type: 'success',
+                        flow: saveFlow,
+                        title: id ? 'Cadastro atualizado' : 'Cadastro realizado',
+                        message: `${nomeCadastro} foi salvo com sucesso.`,
+                        detail: 'Os dados foram salvos e a lista de irmandade foi atualizada.'
                     });
                 } else {
                     const errData = await res.json();
@@ -1582,11 +1606,23 @@
                     }
                     
                     console.error("Erro Original:", errData);
-                    Swal.fire('Não foi possível salvar', msg, 'error');
+                    saveNotice.close();
+                    AppFeedback.show({
+                        type: 'error',
+                        flow: saveFlow,
+                        title: 'Não foi possível salvar',
+                        message: msg
+                    });
                 }
             } catch (e) {
                 console.error('Falha de conexão ao salvar cadastro:', e);
-                Swal.fire('Erro', 'O servidor não respondeu. Aguarde alguns segundos e tente novamente.', 'error');
+                saveNotice.close();
+                AppFeedback.show({
+                    type: 'error',
+                    flow: saveFlow,
+                    title: 'Servidor indisponível',
+                    message: 'O servidor não respondeu. Aguarde alguns segundos e tente novamente.'
+                });
             }
         };
 
