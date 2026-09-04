@@ -1,11 +1,11 @@
-<div class="activity-workspace" id="activity-workspace" data-mode="{{ section }}">
+<div class="activity-workspace" id="activity-workspace" data-mode="{{ section }}" data-report-user="{{ request.session.user_profile.full_name|default:'Usuário do Sistema'|escape }}">
   <div class="activity-toolbar">
     <div class="activity-toolbar-grid">
       <div class="activity-filter-field"><label class="activity-filter-label" for="activity-month">Mês</label><select class="form-select" id="activity-month"><option value="">Todos os meses</option></select></div>
       <div class="activity-filter-field"><label class="activity-filter-label" for="activity-from">De</label><input class="form-control" type="date" id="activity-from"></div>
       <div class="activity-filter-field"><label class="activity-filter-label" for="activity-to">Até</label><input class="form-control" type="date" id="activity-to"></div>
-      <div class="activity-filter-field"><label class="activity-filter-label" for="activity-city">Município</label><select class="form-select" id="activity-city"><option value="">Todos os municípios</option></select></div>
-      <div class="activity-filter-field"><label class="activity-filter-label" for="activity-polo">Comum / Polo</label><select class="form-select" id="activity-polo"><option value="">Todos os polos</option></select></div>
+      <div class="activity-filter-field"><label class="activity-filter-label" for="activity-city">Município</label><select class="form-select" id="activity-city" multiple data-music-multiple data-placeholder="Todos os municípios" data-search="Pesquisar município…"></select></div>
+      <div class="activity-filter-field"><label class="activity-filter-label" for="activity-polo">Comum / Polo</label><select class="form-select" id="activity-polo" multiple data-music-multiple data-placeholder="Todos os polos" data-search="Pesquisar polo…"></select></div>
       <div class="activity-toolbar-actions"><div class="activity-actions">
         <button class="btn btn-white border-gray-400" type="button" id="activity-refresh"><i class="fa fa-sync-alt text-primary me-1"></i>Atualizar</button>
         <button class="btn btn-white border-gray-400" type="button" id="activity-excel"><i class="fa fa-file-excel text-success me-1"></i>Excel</button>

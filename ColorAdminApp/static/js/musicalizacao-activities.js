@@ -3,6 +3,7 @@
   if (!root) return;
 
   const mode = root.dataset.mode;
+  const reportUser = root.dataset.reportUser || 'Usuário do Sistema';
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const norm = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
@@ -18,6 +19,8 @@
     month: $('#activity-month'), from: $('#activity-from'), to: $('#activity-to'),
     city: $('#activity-city'), polo: $('#activity-polo')
   };
+  const multi = window.MusicMultiSelect;
+  multi.setupAll(root);
 
   function feedback(title, text, icon = 'success') {
     return Promise.resolve(AppFeedback.show({
@@ -29,9 +32,7 @@
   }
 
   function setOptions(select, values, placeholder) {
-    const selected = select.value;
-    select.innerHTML = `<option value="">${esc(placeholder)}</option>` + values.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join('');
-    if (values.includes(selected)) select.value = selected;
+    multi.setOptions(select, values, placeholder);
   }
 
   function unique(values) {
@@ -44,7 +45,7 @@
   function syncFilters(firstLoad = false) {
     const cities = unique([...state.municipios, ...state.polos.map(poloCity), ...state.aulas.map(row => row.cidade)]);
     setOptions(filters.city, cities, 'Todos os municípios');
-    const polos = unique(state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).map(poloName));
+    const polos = unique(state.polos.filter(row => multi.matches(filters.city, poloCity(row))).map(poloName));
     setOptions(filters.polo, polos, 'Todos os polos');
     const months = unique(state.aulas.map(row => iso(row.data_aula).slice(0, 7))).sort().reverse();
     const monthSelected = filters.month.value;
@@ -55,12 +56,12 @@
     if (months.includes(monthSelected)) filters.month.value = monthSelected;
     if (firstLoad) {
       const query = new URLSearchParams(location.search);
-      const queryCity = query.get('municipio') || '';
-      const queryPolo = query.get('polo') || '';
-      if (cities.some(value => norm(value) === norm(queryCity))) filters.city.value = cities.find(value => norm(value) === norm(queryCity));
-      const availablePolos = unique(state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).map(poloName));
+      const queryCities = query.getAll('municipio');
+      const queryPolos = query.getAll('polo');
+      multi.setValues(filters.city, queryCities);
+      const availablePolos = unique(state.polos.filter(row => multi.matches(filters.city, poloCity(row))).map(poloName));
       setOptions(filters.polo, availablePolos, 'Todos os polos');
-      if (availablePolos.some(value => norm(value) === norm(queryPolo))) filters.polo.value = availablePolos.find(value => norm(value) === norm(queryPolo));
+      multi.setValues(filters.polo, queryPolos);
     }
   }
 
@@ -70,8 +71,8 @@
       return (!filters.month.value || activityDate.startsWith(filters.month.value)) &&
         (!filters.from.value || activityDate >= filters.from.value) &&
         (!filters.to.value || activityDate <= filters.to.value) &&
-        (!filters.city.value || norm(row.cidade) === norm(filters.city.value)) &&
-        (!filters.polo.value || norm(row.polo) === norm(filters.polo.value));
+        multi.matches(filters.city, row.cidade) &&
+        multi.matches(filters.polo, row.polo);
     }).sort((a, b) => iso(b.data_aula).localeCompare(iso(a.data_aula)));
   }
 
@@ -83,14 +84,14 @@
     const attendance = rows.reduce((sum, row) => sum + number(row.meninos_presentes) + number(row.meninas_presentes), 0);
     const team = rows.reduce((sum, row) => sum + number(row.instrutores_presentes) + number(row.colaboradores_presentes) + number(row.coordenadores_presentes), 0);
     const activePolos = new Set(rows.map(row => norm(row.polo)).filter(Boolean)).size;
-    const catalog = state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).filter(row => !filters.polo.value || norm(poloName(row)) === norm(filters.polo.value));
+    const catalog = state.polos.filter(row => multi.matches(filters.city, poloCity(row))).filter(row => multi.matches(filters.polo, poloName(row)));
     const coverage = catalog.length ? Math.round(activePolos / catalog.length * 100) : 0;
     return { launches: rows.length, attendance, team, average: rows.length ? Math.round(attendance / rows.length * 10) / 10 : 0, coverage, activePolos, catalog: catalog.length };
   }
 
   function operationalRows() {
     const today = new Date(); today.setHours(12, 0, 0, 0);
-    const catalog = state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).filter(row => !filters.polo.value || norm(poloName(row)) === norm(filters.polo.value));
+    const catalog = state.polos.filter(row => multi.matches(filters.city, poloCity(row))).filter(row => multi.matches(filters.polo, poloName(row)));
     return catalog.map(polo => {
       const name = poloName(polo);
       const launches = state.aulas.filter(row => norm(row.polo) === norm(name)).sort((a, b) => iso(b.data_aula).localeCompare(iso(a.data_aula)));
@@ -203,15 +204,16 @@
   function openEntry(row = null) {
     state.selected = row;
     $('#activity-entry-title').textContent = row ? 'Editar lançamento' : 'Novo lançamento';
-    setupEntryOptions(row?.cidade || filters.city.value, row?.polo || filters.polo.value);
+    const selectedCity = multi.values(filters.city), selectedPolo = multi.values(filters.polo);
+    setupEntryOptions(row?.cidade || (selectedCity.length === 1 ? selectedCity[0] : ''), row?.polo || (selectedPolo.length === 1 ? selectedPolo[0] : ''));
     document.querySelectorAll('.activity-entry').forEach(input => {
       const field = input.dataset.field;
       let value = row?.[field] ?? '';
       if (input.type === 'number' && value === '') value = 0;
       if (!row && field === 'data_aula') value = new Date().toISOString().slice(0,10);
       if (!row && field === 'ciclo') value = 'Ciclo 1';
-      if (!row && field === 'cidade') value = filters.city.value;
-      if (!row && field === 'polo') value = filters.polo.value;
+      if (!row && field === 'cidade') value = selectedCity.length === 1 ? selectedCity[0] : '';
+      if (!row && field === 'polo') value = selectedPolo.length === 1 ? selectedPolo[0] : '';
       input.value = value;
     });
     bootstrap.Modal.getOrCreateInstance($('#activity-entry-modal')).show();
@@ -262,7 +264,7 @@
       .filter(person => norm(person.status) !== 'INATIVO' && norm(person.polo_auxilio || person.comum_congregacao) === norm(row.polo))
       .map(person => {
         const coordinator = norm(person.role).includes('COORDEN');
-        return {key:`staff:${person.id}`, name:person.nome_completo, role:coordinator?'Coordenadora':'Monitora', group:coordinator?2:1};
+        return {key:`staff:${person.id}`, name:person.nome_completo, role:coordinator?'Coordenador (a)':'Monitora', group:coordinator?2:1};
       })
       .sort((a,b)=>a.group-b.group||String(a.name).localeCompare(String(b.name),'pt-BR'));
     const participants = [...children, ...staff];
@@ -272,7 +274,7 @@
     staff.forEach(person => {
       const saved = callByParticipant.get(person.key);
       if (saved && (saved.presente === true || norm(saved.status) === 'PRESENTE')) {
-        if (person.role === 'Coordenadora') coordinatorsToRecover--; else monitorsToRecover--;
+        if (person.group === 2) coordinatorsToRecover--; else monitorsToRecover--;
       }
     });
 
@@ -284,8 +286,8 @@
       if (norm(observation).startsWith('PRESENCA RECUPERADA DO LANCAMENTO ORIGINAL DA ATIVIDADE')) observation = '';
       if (!activityNotHeld && saved && norm(saved.status).includes('JUSTIFIC')) { status='Justificado'; tone='attention'; }
       else if (saved && (saved.presente === true || norm(saved.status) === 'PRESENTE')) { status='Presente'; tone='ok'; }
-      else if (!activityNotHeld && !saved && person.role === 'Coordenadora' && coordinatorsToRecover > 0) { status='Presente'; tone='ok'; coordinatorsToRecover--; }
-      else if (!activityNotHeld && !saved && person.role === 'Monitora' && monitorsToRecover > 0) { status='Presente'; tone='ok'; monitorsToRecover--; }
+      else if (!activityNotHeld && !saved && person.group === 2 && coordinatorsToRecover > 0) { status='Presente'; tone='ok'; coordinatorsToRecover--; }
+      else if (!activityNotHeld && !saved && person.group === 1 && monitorsToRecover > 0) { status='Presente'; tone='ok'; monitorsToRecover--; }
       return {...person,status,tone,observation};
     });
 
@@ -356,7 +358,15 @@
   function exportPdf() {
     if (!window.pdfMake) return feedback('PDF indisponível','O gerador de PDF não foi carregado.','error');
     const rows = exportRows();
-    pdfMake.createPdf({pageOrientation:'landscape',pageMargins:[36,38,36,34],content:[{text:'CONGREGAÇÃO CRISTÃ NO BRASIL',style:'org'},{text:'Regional Itapevi - São Paulo',style:'regional'},{text:'MUSICALIZAÇÃO INFANTIL',style:'title'},{text:mode==='aulas'?'Relatório Operacional de Atividades':'Histórico de Atividades',style:'subtitle'},{text:`Localidade: ${filters.city.value||'Todos os municípios'} · ${filters.polo.value||'Todos os polos'} · ${rows.length} registros`,margin:[0,8,0,12]},{table:{headerRows:1,widths:[55,70,150,45,35,'*',38,38,38],body:[['Data','Município','Polo','Ciclo','Aula','Atividade','Meninos','Meninas','Equipe'],...rows]},layout:{fillColor:i=>i===0?'#214f7c':i%2?'#f3f5f7':null,hLineColor:()=> '#cbd5dc',vLineColor:()=> '#cbd5dc'}}],styles:{org:{fontSize:16,bold:true,alignment:'center'},regional:{fontSize:10,alignment:'center'},title:{fontSize:13,bold:true,color:'#214f7c',alignment:'center',margin:[0,8,0,0]},subtitle:{fontSize:10,alignment:'center'}},defaultStyle:{fontSize:7}}).download(`Musicalizacao_${mode}_${new Date().toISOString().slice(0,10)}.pdf`);
+    if (!rows.length) return feedback('Sem registros','Não há atividades neste recorte para exportar.','warning');
+    const now = new Date(), pad = value => String(value).padStart(2, '0');
+    const timestamp = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const cities = multi.labels(filters.city, 'Todos os municípios'), polos = multi.labels(filters.polo, 'Todos os polos');
+    const scope = `Municípios: ${cities} · Polos: ${polos}`;
+    const title = mode === 'aulas' ? 'Relatório Operacional de Atividades' : 'Histórico de Atividades';
+    const tableBody = [['Data','Município','Polo','Ciclo','Aula','Atividade','Meninos','Meninas','Equipe'].map(text => ({text,style:'tableHeader'})), ...rows];
+    const definition = {pageSize:'A4',pageOrientation:'landscape',pageMargins:[28,100,28,34],header:(page,pageCount)=>({margin:[28,16,28,0],columns:[{width:210,text:''},{width:'*',stack:[{text:'CONGREGAÇÃO CRISTÃ NO BRASIL',style:'entityName'},{text:'Regional Itapevi - São Paulo',style:'entitySub'},{text:'MUSICALIZAÇÃO INFANTIL',style:'moduleName'},{text:title,style:'reportTitle'}]},{width:210,stack:[{text:`Página ${page} de ${pageCount}`,bold:true},{text:`Emissão: ${timestamp}`},{text:`Recorte: ${scope}`,fontSize:7},{text:`Responsável: ${reportUser}`,fontSize:7}],alignment:'right',fontSize:8}]}),footer:(page,pageCount)=>({margin:[28,5,28,0],columns:[{text:`Musicalização Infantil · ${rows.length} registros · ${scope}`,fontSize:7,color:'#6b7280'},{text:`Página ${page} de ${pageCount}`,alignment:'right',fontSize:7,color:'#6b7280'}]}),content:[{table:{widths:['*'],body:[[{text:`RECORTE DO RELATÓRIO • ${scope} • ${rows.length} REGISTROS`,fillColor:'#eaf2f8',color:'#1e4b7a',bold:true,fontSize:8,margin:[6,4,6,4]}]]},layout:'noBorders',margin:[0,0,0,8]},{table:{headerRows:1,dontBreakRows:true,widths:[45,62,105,48,34,'*',38,38,38],body:tableBody},layout:{fillColor:row=>row>0?(row%2?'#ffffff':'#f4f6f8'):null,hLineColor:()=>'#c8d1da',vLineColor:()=>'#d8dee5',hLineWidth:()=>.45,vLineWidth:()=>.35,paddingLeft:()=>4,paddingRight:()=>4,paddingTop:()=>4,paddingBottom:()=>4}}],styles:{entityName:{fontSize:15,bold:true,alignment:'center'},entitySub:{fontSize:9,alignment:'center'},moduleName:{fontSize:12,bold:true,color:'#1e4b7a',alignment:'center',margin:[0,5,0,0]},reportTitle:{fontSize:9,alignment:'center'},tableHeader:{color:'#ffffff',bold:true,alignment:'center',fillColor:'#1e4b7a',fontSize:7}},defaultStyle:{fontSize:7,color:'#263238'}};
+    pdfMake.createPdf(definition).download(`Musicalizacao_${mode}_${pad(now.getDate())}-${pad(now.getMonth()+1)}-${now.getFullYear()}_${pad(now.getHours())}-${pad(now.getMinutes())}.pdf`);
   }
 
   async function load() {
@@ -376,11 +386,11 @@
   }
 
   Object.values(filters).forEach(control => control.addEventListener('change', () => {
-    if (control === filters.city) { filters.polo.value=''; syncFilters(); }
+    if (control === filters.city) { multi.clear(filters.polo); syncFilters(); }
     render();
   }));
   $('#activity-refresh').onclick=load;
-  $('#activity-clear').onclick=()=>{Object.values(filters).forEach(control=>control.value='');syncFilters();render()};
+  $('#activity-clear').onclick=()=>{multi.clear(filters.city);multi.clear(filters.polo);filters.month.value='';filters.from.value='';filters.to.value='';syncFilters();render()};
   $('#activity-excel').onclick=exportExcel;
   $('#activity-pdf').onclick=exportPdf;
   $('#activity-new')?.addEventListener('click',()=>openEntry());
@@ -390,7 +400,7 @@
     const collapse = event.target.closest('[data-collapse-target]');
     if (collapse) { const target=document.getElementById(collapse.dataset.collapseTarget); if(target)target.hidden=!target.hidden; return; }
     const button=event.target.closest('[data-activity-action]'); if(!button)return;
-    if(button.dataset.activityAction==='view-polo'){filters.polo.value=button.dataset.polo;render();document.querySelector('.activity-section:last-child')?.scrollIntoView({behavior:'smooth'});return;}
+    if(button.dataset.activityAction==='view-polo'){multi.setValues(filters.polo,[button.dataset.polo]);render();document.querySelector('.activity-section:last-child')?.scrollIntoView({behavior:'smooth'});return;}
     const row=state.aulas.find(item=>String(item.id)===String(button.dataset.id)); if(!row)return;
     if(button.dataset.activityAction==='details')showDetails(row);
     if(button.dataset.activityAction==='attendance')showAttendance(row);

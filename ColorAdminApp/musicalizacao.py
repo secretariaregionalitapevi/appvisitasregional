@@ -210,13 +210,13 @@ def _set_polo_coordinator(scope, polo_name, coordinator_id):
     rows = _coordinator_rows()
     selected = next((row for row in rows if str(row.get("id")) == str(coordinator_id)), None) if coordinator_id else None
     if coordinator_id and not selected:
-        raise ValueError("A coordenadora selecionada não foi encontrada.")
+        raise ValueError("O Coordenador (a) selecionado não foi encontrado.")
     if selected and not can_access(scope, RESOURCES["instrutores"]["location"](selected)):
         raise PermissionError
     if selected and not (
             _norm(selected.get("polo_auxilio")) == _norm(polo_name) or
             _norm(selected.get("comum_congregacao")) == _norm(polo_name)):
-        raise ValueError("A coordenadora deve estar cadastrada no polo selecionado.")
+        raise ValueError("O Coordenador (a) deve estar cadastrado no polo selecionado.")
 
     headers = service_headers("return=minimal")
     chosen_id = str(selected.get("id")) if selected else None
@@ -452,9 +452,11 @@ def export_children_excel(request):
     except requests.RequestException:
         return JsonResponse({"error": "Não foi possível consultar as crianças para exportação."}, status=502)
     rows = _visible(user_scope(request), config, response.json())
-    city, polo, search = request.GET.get("cidade", ""), request.GET.get("polo", ""), _norm(request.GET.get("pesquisa", ""))
-    rows = [row for row in rows if (not city or _norm(row.get("cidade")) == _norm(city))
-            and (not polo or _norm(row.get("polo_participacao")) == _norm(polo))
+    cities = {_norm(value) for value in request.GET.getlist("cidade") if _norm(value)}
+    polos = {_norm(value) for value in request.GET.getlist("polo") if _norm(value)}
+    search = _norm(request.GET.get("pesquisa", ""))
+    rows = [row for row in rows if (not cities or _norm(row.get("cidade")) in cities)
+            and (not polos or _norm(row.get("polo_participacao")) in polos)
             and (not search or search in _norm(json.dumps(row, ensure_ascii=False, default=str)))]
     profile = request.session.get("user_profile") or {}
     actor = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuário"
@@ -472,7 +474,11 @@ def export_children_excel(request):
         cell.fill = PatternFill("solid", fgColor=fill)
         cell.alignment = Alignment(horizontal="center")
     sheet.merge_cells("A4:D4")
-    sheet["A4"] = f"Cadastro de crianças · {polo or 'Todos os polos'}"
+    city_scope = ", ".join(request.GET.getlist("cidade")) or "Todos os municípios"
+    polo_scope = ", ".join(request.GET.getlist("polo")) or "Todos os polos"
+    sheet["A4"] = f"Cadastro de crianças · Municípios: {city_scope} · Polos: {polo_scope}"
+    sheet["A4"].alignment = Alignment(vertical="center", wrap_text=True)
+    sheet.row_dimensions[4].height = 32
     sheet.merge_cells(f"E4:{last_column}4")
     sheet["E4"] = f"Emissão: {now:%d/%m/%Y %H:%M} · Impresso por: {actor}"
     sheet["E4"].alignment = Alignment(horizontal="right")
@@ -509,7 +515,9 @@ def export_children_excel(request):
     stream = io.BytesIO()
     workbook.save(stream)
     result = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    filename = f"Cadastro_Musicalização_{_polo_filename_part(polo)}_{now:%d_%m_%Y}.xlsx"
+    selected_polos = request.GET.getlist("polo")
+    filename_scope = selected_polos[0] if len(selected_polos) == 1 else "Multiplos_Polos" if selected_polos else ""
+    filename = f"Cadastro_Musicalização_{_polo_filename_part(filename_scope)}_{now:%d-%m-%Y_%H-%M}.xlsx"
     from urllib.parse import quote
     result["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
     return result

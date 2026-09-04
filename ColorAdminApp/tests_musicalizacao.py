@@ -177,3 +177,29 @@ class MusicalizacaoSecurityTests(SimpleTestCase):
         self.assertEqual(sheet.page_setup.orientation, "landscape")
         self.assertEqual(sheet.page_setup.fitToWidth, 1)
         self.assertEqual(sheet["A6"].fill.fgColor.rgb, "001E4B7A")
+
+    @patch("ColorAdminApp.musicalizacao.requests.get")
+    def test_children_excel_accepts_multiple_cities_and_polos(self, mock_get):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [
+            {"id": "1", "nome_crianca": "Ana", "cidade": "ITAPEVI", "polo_participacao": "POLO A", "status": "Ativo"},
+            {"id": "2", "nome_crianca": "Bia", "cidade": "COTIA", "polo_participacao": "POLO B", "status": "Ativo"},
+            {"id": "3", "nome_crianca": "Clara", "cidade": "JANDIRA", "polo_participacao": "POLO C", "status": "Ativo"},
+        ]
+        mock_get.return_value = response
+        profile = {"role_id": 1, "sector": "Musicalização", "full_name": "Operadora Teste"}
+        request = request_with_profile(
+            "/musicalizacao/api/criancas/exportar-excel/?cidade=ITAPEVI&cidade=COTIA&polo=POLO%20A&polo=POLO%20B",
+            profile,
+        )
+
+        result = export_children_excel(request)
+        sheet = load_workbook(BytesIO(result.content))["CRIANÇAS"]
+
+        self.assertEqual([sheet["A7"].value, sheet["A8"].value], ["Ana", "Bia"])
+        self.assertIsNone(sheet["A9"].value)
+        self.assertIn("Municípios: ITAPEVI, COTIA", sheet["A4"].value)
+        self.assertIn("Polos: POLO A, POLO B", sheet["A4"].value)
+        self.assertTrue(sheet["A4"].alignment.wrap_text)
+        self.assertIn("Multiplos_Polos", unquote(result["Content-Disposition"]))
