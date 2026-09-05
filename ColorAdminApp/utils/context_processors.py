@@ -9,8 +9,9 @@ def _norm(value):
 
 def mark_active_link(menu, current_path_name, current_path=''):
     for item in menu:
-        item_url = str(item.get('url') or '').split('#', 1)[0]
-        exact_path = item_url.startswith('/') and item_url.rstrip('/') == current_path.rstrip('/')
+        raw_item_url = str(item.get('url') or '')
+        item_url = raw_item_url.split('#', 1)[0]
+        exact_path = '#' not in raw_item_url and item_url.startswith('/') and item_url.rstrip('/') == current_path.rstrip('/')
         item['is_active'] = exact_path or (
             not item_url.startswith('/') and item.get('name', '') == current_path_name
         )
@@ -60,11 +61,19 @@ def sidebar_menu(request):
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},
-	{ 'url': '/administracao/', 'icon': 'fa fa-shield-halved', 'title': 'Administração', 'name': 'administration',
+	{ 'url': '/administracao/', 'icon': 'fa fa-building-shield', 'title': 'Administração', 'name': 'administration',
 		'children': [
-			{ 'url': '/administracao#pendentes', 'title': 'Liberar Usuários' },
-			{ 'url': '/administracao#usuarios', 'title': 'Usuários' },
-			{ 'url': '/administracao#auditoria', 'title': 'Auditoria' }
+			{ 'url': '/administracao/congregacoes/', 'title': 'Congregações', 'name': 'operationalAdministration' },
+			{ 'url': '/administracao/ministerio/', 'title': 'Ministério', 'name': 'operationalAdministration' },
+			{ 'url': '/administracao/santa-ceia/', 'title': 'Santa Ceia', 'name': 'operationalAdministration' }
+		]
+	},
+	{ 'url': '/auditoria/', 'icon': 'fa fa-shield-halved', 'title': 'Auditoria', 'name': 'auditCenter',
+		'children': [
+			{ 'url': '/auditoria/#pendentes', 'title': 'Liberações' },
+			{ 'url': '/auditoria/#usuarios', 'title': 'Usuários' },
+			{ 'url': '/auditoria/#auditoria', 'title': 'Trilha de Auditoria' },
+			{ 'url': '/auditoria/#sessoes', 'title': 'Sessões de Acesso' }
 		]
 	},
 	{ 'url': '/email', 'icon': 'fa fa-hdd', 'title': 'Email', 'badge': '10',
@@ -248,7 +257,12 @@ def sidebar_menu(request):
 	# O menu usa a mesma autorizacao aplicada pelo servidor nas URLs e APIs.
 	from ..module_access import MODULE_MUSICALIZACAO, MODULE_VISITAS, allowed_modules, is_global
 	user_profile = request.session.get('user_profile', {})
-	if not is_global(user_profile):
+	is_global_user = is_global(user_profile)
+	try:
+		is_admin_user = int(user_profile.get('role_id') or 99) in {1, 2}
+	except (TypeError, ValueError):
+		is_admin_user = _norm(user_profile.get('role')) in {'MASTER', 'GLOBAL', 'ADMIN'}
+	if not is_global_user:
 		modules = allowed_modules(request)
 		allowed_titles = set()
 		if MODULE_VISITAS in modules:
@@ -256,6 +270,8 @@ def sidebar_menu(request):
 		if MODULE_MUSICALIZACAO in modules:
 			allowed_titles.add('Musicalização')
 			allowed_titles.add('GEM')
+		if is_admin_user:
+			allowed_titles.add('Administração')
 		sidebar_menu = [item for item in sidebar_menu if item.get('is_header') or item.get('title') == 'Dashboard' or item.get('title') in allowed_titles]
 
 	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)

@@ -1,5 +1,9 @@
 {% load static %}
 <!-- BEGIN #header -->
+<style>
+.pending-access-toast{position:fixed;z-index:1080;top:82px;right:24px;width:min(390px,calc(100vw - 32px));display:flex;gap:13px;align-items:flex-start;padding:16px 44px 16px 16px;border:1px solid #ffffff73;border-radius:16px;background:linear-gradient(120deg,#6547d9,#0ea9a1 62%,#22c1b5);box-shadow:0 18px 40px #263b5d45;color:#fff;animation:pending-toast-enter .35s ease-out}.pending-access-toast:before{content:'';position:absolute;right:-42px;top:-72px;width:160px;height:160px;border:1px solid #ffffff40;border-radius:50%;box-shadow:0 0 0 26px #ffffff10,0 0 0 52px #ffffff08}.pending-access-toast>*{position:relative;z-index:1}.pending-access-toast-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:13px;background:#ffffff25;font-size:19px}.pending-access-toast-copy{min-width:0}.pending-access-toast-copy strong{display:block;font-size:.89rem}.pending-access-toast-copy span{display:block;margin-top:3px;color:#eefeff;font-size:.76rem;line-height:1.35}.pending-access-toast-copy a{display:inline-block;margin-top:9px;color:#fff;font-size:.74rem;font-weight:800;text-decoration:none}.pending-access-toast-close{position:absolute;right:11px;top:10px;border:0;background:transparent;color:#fff;opacity:.86}.pending-access-toast-close:hover{opacity:1}@keyframes pending-toast-enter{from{transform:translateY(-12px);opacity:0}to{transform:translateY(0);opacity:1}}@media(max-width:575.98px){.pending-access-toast{top:70px;right:16px}}
+</style>
+
 <div id="header" class="app-header" data-bs-theme="{% if appHeaderInverse %}dark{% endif %}">
 	<!-- BEGIN navbar-header -->
 	<div class="navbar-header">
@@ -29,11 +33,11 @@
 		</button>
 	</div>
 	<!-- END navbar-header -->
-	
+
 	{% if appHeaderMegaMenu %}
 		{% include 'partial/header-mega-menu.html' %}
 	{% endif %}
-	
+
 	<!-- BEGIN header-nav -->
 	<div class="navbar-nav">
 		<div class="navbar-item navbar-form">
@@ -44,67 +48,37 @@
 				</div>
 			</form>
 		</div>
-		<div class="navbar-item dropdown">
+		{% if request.session.user_profile.role_id == 1 or request.session.user_profile.role == 'Master' or request.session.user_profile.role == 'MASTER' or request.session.user_profile.role == 'Global' or request.session.user_profile.role == 'GLOBAL' %}
+		<div class="navbar-item dropdown" id="pending-access-notifications" data-pending-url="{% url 'ColorAdminApp:pendingAccessCount' %}">
 			<a href="#" data-bs-toggle="dropdown" class="navbar-link dropdown-toggle icon">
-				<i class="fa fa-bell"></i>
-				<span class="badge">5</span>
+				<i class="fa fa-bell" aria-hidden="true"></i>
+				<span class="badge d-none" id="pending-access-badge">0</span>
+				<span class="visually-hidden">Alertas de acesso pendentes</span>
 			</a>
 			<div class="dropdown-menu media-list dropdown-menu-end">
-				<div class="dropdown-header">NOTIFICATIONS (5)</div>
-				<a href="javascript:;" class="dropdown-item media">
-					<div class="media-left">
-						<i class="fa fa-bug media-object bg-gray-500"></i>
-					</div>
+				<div class="dropdown-header">ALERTAS DE ACESSO (<span id="pending-access-header-count">0</span>)</div>
+				<a href="{% url 'ColorAdminApp:auditCenter' %}" class="dropdown-item media d-none" id="pending-access-item">
+					<div class="media-left"><i class="fa fa-user-plus media-object bg-warning"></i></div>
 					<div class="media-body">
-						<h6 class="media-heading">Server Error Reports <i class="fa fa-exclamation-circle text-danger"></i></h6>
-						<div class="text-muted fs-10px">3 minutes ago</div>
-					</div>
-				</a>
-				<a href="javascript:;" class="dropdown-item media">
-					<div class="media-left">
-						<img src="{% static 'img/user/user-1.jpg' %}" class="media-object" alt="" />
-						<i class="fab fa-facebook-messenger text-blue media-object-icon"></i>
-					</div>
-					<div class="media-body">
-						<h6 class="media-heading">John Smith</h6>
-						<p>Quisque pulvinar tellus sit amet sem scelerisque tincidunt.</p>
-						<div class="text-muted fs-10px">25 minutes ago</div>
-					</div>
-				</a>
-				<a href="javascript:;" class="dropdown-item media">
-					<div class="media-left">
-						<img src="{% static 'img/user/user-2.jpg' %}" class="media-object" alt="" />
-						<i class="fab fa-facebook-messenger text-blue media-object-icon"></i>
-					</div>
-					<div class="media-body">
-						<h6 class="media-heading">Olivia</h6>
-						<p>Quisque pulvinar tellus sit amet sem scelerisque tincidunt.</p>
-						<div class="text-muted fs-10px">35 minutes ago</div>
-					</div>
-				</a>
-				<a href="javascript:;" class="dropdown-item media">
-					<div class="media-left">
-						<i class="fa fa-plus media-object bg-gray-500"></i>
-					</div>
-					<div class="media-body">
-						<h6 class="media-heading"> New User Registered</h6>
-						<div class="text-muted fs-10px">1 hour ago</div>
-					</div>
-				</a>
-				<a href="javascript:;" class="dropdown-item media">
-					<div class="media-left">
-						<i class="fa fa-envelope media-object bg-gray-500"></i>
-						<i class="fab fa-google text-warning media-object-icon fs-14px"></i>
-					</div>
-					<div class="media-body">
-						<h6 class="media-heading"> New Email From John</h6>
-						<div class="text-muted fs-10px">2 hour ago</div>
+						<h6 class="media-heading mb-1">Você tem <span id="pending-access-message-count">0</span> <span id="pending-access-user-label">novos usuários</span> aguardando liberação</h6>
+						<div class="text-muted fs-10px">Pendentes</div>
 					</div>
 				</a>
 				<div class="dropdown-footer text-center">
-					<a href="javascript:;" class="text-decoration-none">View more</a>
+					<a href="{% url 'ColorAdminApp:auditCenter' %}" class="text-decoration-none fw-bold">Ver liberações pendentes <i class="fa fa-angle-right"></i></a>
 				</div>
 			</div>
+		</div>
+		{% endif %}
+		<div id="pending-access-toast" class="pending-access-toast d-none" role="status" aria-live="polite">
+			<div class="pending-access-toast-icon"><i class="fa fa-user-clock"></i></div>
+			<div class="pending-access-toast-copy"><strong id="pending-access-toast-title">Liberações aguardando análise</strong><span id="pending-access-toast-message">Há usuários aguardando a sua revisão.</span><a href="{% url 'ColorAdminApp:auditCenter' %}">Revisar agora <i class="fa fa-arrow-right"></i></a></div>
+			<button type="button" id="pending-access-toast-close" class="pending-access-toast-close" aria-label="Fechar alerta"><i class="fa fa-xmark"></i></button>
+		</div>
+		<div class="navbar-item">
+			<a href="javascript:;" class="navbar-link icon" id="header-theme-toggle" title="Ativar modo escuro" aria-label="Ativar modo escuro">
+				<i class="fa fa-moon" aria-hidden="true"></i>
+			</a>
 		</div>
 		{% if appHeaderLanguageBar %}
 			<div class="navbar-item dropdown">
@@ -122,12 +96,18 @@
 				</div>
 			</div>
 		{% endif %}
+		<div class="navbar-item">
+			<a href="{% url 'ColorAdminApp:logout' %}" class="navbar-link d-flex align-items-center gap-1" title="Sair do sistema" aria-label="Sair do sistema">
+				<i class="fa fa-right-from-bracket" aria-hidden="true"></i>
+				<span class="d-none d-sm-inline">Sair</span>
+			</a>
+		</div>
 		<div class="navbar-item navbar-user dropdown">
 			<a href="#" class="navbar-link dropdown-toggle d-flex align-items-center" data-bs-toggle="dropdown">
 				{% if request.session.user_profile.avatar_url %}
-				<img src="{{ request.session.user_profile.avatar_url }}" alt="" /> 
+				<img src="{{ request.session.user_profile.avatar_url }}" alt="" />
 				{% else %}
-				<img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png" alt="" /> 
+				<img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png" alt="" />
 				{% endif %}
 				<span>
 					<span class="d-none d-md-inline fw-bold">{{ request.session.user_profile.full_name|default:"Usuário" }}</span>
@@ -138,7 +118,7 @@
 				<a href="/extra/profile" class="dropdown-item">Editar Perfil</a>
 				<a href="/email/inbox" class="dropdown-item d-flex align-items-center">
 					Mensagens
-					<span class="badge bg-danger rounded-pill ms-auto pb-4px">0</span> 
+					<span class="badge bg-danger rounded-pill ms-auto pb-4px">0</span>
 				</a>
 				<a href="/calendar" class="dropdown-item">Calendário</a>
 				<a href="/extra/settings" class="dropdown-item">Configurações</a>
@@ -146,6 +126,7 @@
 				<a href="/logout/" class="dropdown-item">Sair do Sistema</a>
 			</div>
 		</div>
+
 		{% if appSidebarTwo %}
 			<div class="navbar-divider d-none d-md-block"></div>
 			<div class="navbar-item d-none d-md-block">

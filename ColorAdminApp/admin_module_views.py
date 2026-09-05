@@ -7,7 +7,7 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from .admin_views import _get_table, _headers, global_only
+from .admin_views import _get_table, _headers, _update_profile_via_rpc, global_only
 from .module_access import VALID_MODULES, invalidate_module_access
 from .views import log_audit
 
@@ -29,7 +29,7 @@ def administration_user_modules(request, user_id):
         profile_rows = _get_table("profiles", {"select": "user_id,sector", "user_id": f"eq.{user_id}", "limit": "1"})
         if not profile_rows:
             return JsonResponse({"error": "Usuário não encontrado."}, status=404)
-        
+
         # Determina o setor correspondente às pastas solicitadas
         if requested == set(VALID_MODULES):
             target_sector = "Global"
@@ -38,17 +38,9 @@ def administration_user_modules(request, user_id):
         else:
             target_sector = "Visitas"
 
-        # Sincroniza o setor no perfil do usuário
-        try:
-            requests.patch(
-                f"{settings.SUPABASE_URL}/rest/v1/profiles",
-                headers=_headers(),
-                params={"user_id": f"eq.{user_id}"},
-                json={"sector": target_sector},
-                timeout=10,
-            )
-        except requests.RequestException:
-            pass
+        # Sincroniza o setor pela ponte administrativa segura. Uma falha aqui não
+        # pode ser ocultada, pois deixaria o usuário salvo na pasta errada.
+        _update_profile_via_rpc(user_id, {"sector": target_sector})
 
         before = set()
         try:

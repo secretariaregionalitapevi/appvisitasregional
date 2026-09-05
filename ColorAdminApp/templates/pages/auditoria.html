@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Auditoria e Controle de Acesso{% endblock %}
+
+{% block css %}
+<style>
+.admin-kpi { min-height: 112px; overflow: hidden; }
+.admin-kpi .admin-kpi-icon { position:absolute; right:18px; bottom:-8px; font-size:64px; opacity:.12; }
+.admin-avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(0,172,172,.18); color:#00acac; font-weight:700; }
+.admin-table td { vertical-align:middle; }
+.admin-page.btn { border:1px solid transparent; border-radius:8px; padding:8px 14px; font-weight:600; color:#fff; opacity:1; }
+.admin-page-previous.btn { background:#1d4ed8; border-color:#1d4ed8; }
+.admin-page-next.btn { background:#0f766e; border-color:#0f766e; }
+.admin-page-previous.btn:hover:not(:disabled) { background:#1e40af; border-color:#1e40af; color:#fff; }
+.admin-page-next.btn:hover:not(:disabled) { background:#115e59; border-color:#115e59; color:#fff; }
+.admin-page.btn:focus-visible { outline:3px solid #2563eb; outline-offset:3px; box-shadow:none; }
+.admin-page-previous.btn:disabled { background:#dbeafe; border-color:#93c5fd; color:#1e40af; opacity:1; }
+.admin-page-next.btn:disabled { background:#ccfbf1; border-color:#5eead4; color:#115e59; opacity:1; }
+.admin-detail { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.origin-badge { background:rgba(73,182,214,.15); color:#49b6d6; border:1px solid rgba(73,182,214,.25); }
+.swal-modal.admin-feedback-success,.swal-modal.admin-feedback-error { padding:24px 28px 20px!important; overflow:hidden; }
+.swal-modal.admin-feedback-success::after,.swal-modal.admin-feedback-error::after { content:''; position:absolute; left:0; bottom:0; height:5px; width:100%; background:#00acac; transform-origin:left center; animation:admin-feedback-countdown 3s linear forwards; }
+.swal-modal.admin-feedback-error::after { background:#ff5b57; }
+@keyframes admin-feedback-countdown { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+.swal-modal.admin-feedback-success .swal-icon,.swal-modal.admin-feedback-error .swal-icon { margin:0 auto 14px!important; }
+.swal-modal.admin-feedback-success .swal-title,.swal-modal.admin-feedback-error .swal-title { padding:0!important; margin:0 0 8px!important; }
+.swal-modal.admin-feedback-success .swal-text,.swal-modal.admin-feedback-error .swal-text { margin:0 0 14px!important; padding:0!important; text-align:center; }
+.swal-modal.admin-feedback-success .swal-footer,.swal-modal.admin-feedback-error .swal-footer { margin:0!important; padding:0!important; text-align:center; }
+.swal-modal.admin-feedback-success .swal-button-container,.swal-modal.admin-feedback-error .swal-button-container { margin:0!important; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item active">Auditoria</li></ol>
+<h1 class="page-header">Auditoria <small>usuários, liberações, sessões e trilha detalhada</small></h1>
+
+<div id="admin-alert" class="alert d-none"></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1080;margin-top:55px">
+  <div id="admin-success-toast" class="toast border-0 shadow" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-header bg-success text-white border-0">
+      <i class="fa fa-circle-check me-2"></i><strong class="me-auto">Operação concluída</strong>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Fechar"></button>
+    </div>
+    <div class="toast-body bg-white" id="admin-success-toast-message">Usuário excluído com sucesso.</div>
+  </div>
+</div>
+<div class="row mb-3">
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-blue text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Usuários cadastrados</div><h2 id="kpi-users">0</h2><div class="small">todos os perfis</div><i class="fa fa-users admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-warning text-dark admin-kpi"><div class="card-body position-relative"><div class="text-dark text-opacity-75">Aguardando liberação</div><h2 id="kpi-pending">0</h2><div class="small">requerem análise</div><i class="fa fa-user-clock admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-teal text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Acessos registrados</div><h2 id="kpi-sessions">0</h2><div class="small">sessões de utilização</div><i class="fa fa-right-to-bracket admin-kpi-icon"></i></div></div></div>
+  <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-gray-800 text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Eventos auditados</div><h2 id="kpi-logs">0</h2><div class="small">últimos 500 eventos</div><i class="fa fa-clipboard-list admin-kpi-icon"></i></div></div></div>
+</div>
+
+<div class="panel panel-inverse">
+  <div class="panel-heading"><h4 class="panel-title"><i class="fa fa-shield-halved me-2"></i>Central de gerenciamento global</h4><button class="btn btn-xs btn-outline-light" id="refresh-admin"><i class="fa fa-rotate"></i> Atualizar</button></div>
+  <div class="panel-body">
+    <ul class="nav nav-tabs mb-3" id="admin-tabs">
+      <li class="nav-item"><a href="#pendentes" data-bs-toggle="tab" class="nav-link active"><i class="fa fa-user-check me-1"></i>Liberações <span class="badge bg-warning text-dark ms-1" id="pending-badge">0</span></a></li>
+      <li class="nav-item"><a href="#usuarios" data-bs-toggle="tab" class="nav-link"><i class="fa fa-users-gear me-1"></i>Usuários</a></li>
+      <li class="nav-item"><a href="#auditoria" data-bs-toggle="tab" class="nav-link"><i class="fa fa-list-check me-1"></i>Auditoria</a></li>
+      <li class="nav-item"><a href="#sessoes" data-bs-toggle="tab" class="nav-link"><i class="fa fa-clock-rotate-left me-1"></i>Sessões</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="pendentes"><div class="row" id="pending-users"></div></div>
+      <div class="tab-pane fade" id="usuarios">
+        <div class="row mb-3"><div class="col-md-7"><input class="form-control" id="user-search" placeholder="Pesquisar por nome, comum, município ou origem..."></div><div class="col-md-3"><select class="form-select" id="status-filter"><option value="">Todos os status</option><option value="approved">Aprovados</option><option value="pending">Pendentes</option><option value="rejected">Rejeitados</option></select></div></div>
+        <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Usuário</th><th>Escopo</th><th>Origem</th><th>Utilização</th><th>Status</th><th></th></tr></thead><tbody id="users-table"></tbody></table></div><div id="usuarios-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div>
+      </div>
+      <div class="tab-pane fade" id="auditoria">
+        <div class="row mb-3"><div class="col-md-5"><input class="form-control" id="log-search" placeholder="Pesquisar ação, módulo, usuário ou detalhe..."></div><div class="col-md-3"><select class="form-select" id="module-filter"><option value="">Todos os módulos</option></select></div><div class="col-md-2"><input type="date" class="form-control" id="log-date"></div></div>
+        <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th>Origem</th><th>Detalhes</th></tr></thead><tbody id="logs-table"></tbody></table></div><div id="auditoria-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div>
+      </div>
+      <div class="tab-pane fade" id="sessoes"><div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Início</th><th>Usuário</th><th>Status</th><th>Última atividade</th><th>Encerramento</th><th>Motivo</th></tr></thead><tbody id="sessions-table"></tbody></table></div><div id="sessoes-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="user-modal"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Revisar acesso do usuário</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+  <input type="hidden" id="edit-user-id"><div class="row g-3">
+    <div class="col-md-6"><label class="form-label">Nome</label><input class="form-control" id="edit-name"></div>
+    <div class="col-md-3"><label class="form-label">Nível de acesso</label><select class="form-select" id="edit-role"><option value="4">Local</option><option value="3">Municipal</option><option value="2">Regional</option><option value="1">Global</option></select></div>
+    <div class="col-md-3"><label class="form-label">Status</label><select class="form-select" id="edit-status"><option value="pending">Pendente</option><option value="approved">Aprovado</option><option value="rejected">Rejeitado</option></select></div>
+    <div class="col-md-3"><label class="form-label">Pasta principal</label><select class="form-select" id="edit-sector"><option value="Visitas">Visitas</option><option value="Musicalização">Musicalização</option><option value="Global">Global</option></select></div>
+    <div class="col-md-3"><label class="form-label">Comum congregação</label><input class="form-control" id="edit-comum"></div>
+    <div class="col-md-3"><label class="form-label">Município</label><input class="form-control" id="edit-municipio"></div>
+    <div class="col-md-3"><label class="form-label">Cargo/Função</label><input class="form-control" id="edit-cargo"></div>
+    <div class="col-12"><label class="form-label fw-bold">Pastas autorizadas</label><div class="d-flex gap-4 p-3 border rounded bg-light"><div class="form-check"><input class="form-check-input module-check" type="checkbox" value="visitas" id="module-visitas"><label class="form-check-label" for="module-visitas">Visitas</label></div><div class="form-check"><input class="form-check-input module-check" type="checkbox" value="musicalizacao" id="module-musicalizacao"><label class="form-check-label" for="module-musicalizacao">Musicalização</label></div></div><div class="form-text">O setor define a pasta principal. Qualquer segunda pasta exige autorização explícita de um usuário global.</div></div>
+    <div class="col-12"><div class="border rounded p-3 bg-light"><div class="row g-3">
+      <div class="col-12"><strong><i class="fa fa-envelope me-2" aria-hidden="true"></i>E-mail cadastrado</strong><div id="user-email" class="text-break"></div></div>
+      <div class="col-md-6"><strong>Cadastrado por</strong><div id="user-registered-by" class="text-break"></div><small id="user-created-at"></small></div>
+      <div class="col-md-6"><strong>&Uacute;ltima altera&ccedil;&atilde;o auditada por</strong><div id="user-updated-by" class="text-break"></div><small id="user-update-at"></small></div>
+      <div id="user-metadata-error" class="col-12 text-danger" role="status"></div>
+    </div></div></div>
+    <div class="col-12"><div class="alert alert-info mb-0"><strong>Origem:</strong> <span id="edit-origin"></span></div></div>
+  </div>
+</div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
+
+<div class="modal fade" id="audit-detail-modal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title">Detalhes do evento de auditoria</h5><small class="text-muted">Registro completo para investiga&ccedil;&atilde;o e rastreabilidade.</small></div><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="audit-detail-content"></div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Fechar</button></div></div></div></div>
+{% endblock %}
+
+{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/auditoria.js' %}?v=20260905-6"></script>{% endblock %}

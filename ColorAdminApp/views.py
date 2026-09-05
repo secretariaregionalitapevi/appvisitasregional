@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import unicodedata
+import uuid
 from urllib.parse import urlencode
 from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
 
@@ -258,29 +259,68 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 import json
 
+AUDIT_SENSITIVE_KEYS = {"password", "senha", "token", "access_token", "refresh_token", "authorization", "apikey", "secret", "cookie"}
+
+
+def _sanitize_audit_value(value, depth=0):
+    """Remove segredos e limita volume sem perder a rastreabilidade do evento."""
+    if depth > 5:
+        return "[limite de profundidade]"
+    if isinstance(value, dict):
+        clean = {}
+        for key, item in list(value.items())[:100]:
+            normalized = str(key).strip().lower()
+            clean[str(key)] = "[REMOVIDO]" if normalized in AUDIT_SENSITIVE_KEYS else _sanitize_audit_value(item, depth + 1)
+        return clean
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_audit_value(item, depth + 1) for item in list(value)[:100]]
+    if isinstance(value, str):
+        return value[:2000]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:2000]
+
+
 def log_audit(request, action, module='GLOBAL', details=None):
-    """Utility to log user actions to the audit_logs table in Supabase."""
+    """Registra evento estruturado e sanitizado na trilha imutavel do Supabase."""
     url = f"{settings.SUPABASE_URL}/rest/v1/audit_logs"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-
-    user_id = request.session.get('user_id')
+    profile = request.session.get('user_profile') or {}
+    request_id = request.META.get('HTTP_X_REQUEST_ID') or str(uuid.uuid4())
+    event_details = {
+        "schema_version": 2,
+        "request_id": request_id,
+        "actor": {
+            "user_id": request.session.get('user_id'),
+            "name": profile.get('full_name') or profile.get('username'),
+            "role_id": profile.get('role_id'),
+            "role": profile.get('role'),
+            "scope": profile.get('sector') or profile.get('setor'),
+        },
+        "request": {
+            "method": request.method,
+            "path": request.path,
+            "view": getattr(getattr(request, 'resolver_match', None), 'url_name', None),
+        },
+        **(details or {}),
+    }
     payload = {
-        "user_id": user_id,
-        "action": action,
-        "module": module,
-        "details": details or {},
+        "user_id": request.session.get('user_id'),
+        "action": str(action or 'UNKNOWN').upper()[:100],
+        "module": str(module or 'GLOBAL').upper()[:100],
+        "details": _sanitize_audit_value(event_details),
         "ip_address": request.META.get('REMOTE_ADDR'),
-        "user_agent": request.META.get('HTTP_USER_AGENT')
+        "user_agent": str(request.META.get('HTTP_USER_AGENT') or '')[:1000],
     }
-
     try:
-        requests.post(url, headers=headers, json=payload, timeout=5)
-    except Exception as e:
-        logger.warning("Failed to write audit log: %s", type(e).__name__)
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("Failed to write audit log: %s", type(exc).__name__)
 
 
 def update_profile_activity(profile, event):
@@ -625,7 +665,7 @@ def apiAuth(request):
                 # We just need to make sure level 7 is 'Usuário'.
 
                 log_audit(request, 'REGISTER', details={
-                    "email": data.get('email'), "user_id": user_id,
+                    "email": data.get('email'), "user_id": user_id, "target_user_id": user_id,
                     "comum": comum, "municipio": municipio, "role_id": 4,
                 })
                 return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
