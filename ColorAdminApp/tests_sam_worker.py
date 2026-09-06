@@ -52,3 +52,37 @@ class SamWorkerValidationTests(SimpleTestCase):
     def test_idle_discovery_interval_is_fast_but_rate_limited(self):
         self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 120)
         self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 60)
+
+    @patch("ColorAdminApp.management.commands.run_sam_sync_worker.requests.get")
+    def test_old_synced_histories_fill_remaining_batch(self, get):
+        first, old = Mock(), Mock()
+        first.json.return_value = [{"id": "pending"}]
+        old.json.return_value = [{"id": "old"}]
+        get.side_effect = [first, old]
+        self.assertEqual(Command()._pending(3), [{"id": "pending"}, {"id": "old"}])
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["sync_status"], "eq.synced")
+        self.assertEqual(params["limit"], 2)
+        self.assertIn("last_history_sync_at.lt.", params["or"])
+        self.assertEqual(params["aluno_id"], "not.is.null")
+        self.assertEqual(params["missing_since"], "is.null")
+
+    @patch("ColorAdminApp.management.commands.run_sam_sync_worker.requests.get")
+    def test_pending_histories_take_priority_over_periodic_refresh(self, get):
+        get.return_value.json.return_value = [{"id": "pending"}]
+        self.assertEqual(Command()._pending(1), [{"id": "pending"}])
+        self.assertEqual(get.call_count, 1)
+
+    def test_refresh_summary_counts_recent_updates_not_total_coverage(self):
+        from datetime import datetime, timezone, timedelta
+        from .gem_sync_admin import _history_refresh_summary
+        now = datetime.now(timezone.utc)
+        recent = (now - timedelta(hours=1)).isoformat()
+        result = _history_refresh_summary([
+            {"last_history_sync_at": recent},
+            {"last_history_sync_at": (now - timedelta(days=2)).isoformat()},
+            {"last_history_sync_at": None},
+            {"last_history_sync_at": "invalid"},
+        ])
+        self.assertEqual(result["refreshed_last_24h"], 1)
+        self.assertEqual(result["last_history_sync_at"], recent)

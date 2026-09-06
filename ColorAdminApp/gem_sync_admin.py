@@ -167,6 +167,23 @@ def _visible_rows(request):
     return [row for row in rows if can_access(scope, {"municipio": row.get("municipio"), "comum": row.get("comum_congregacao")})]
 
 
+def _history_refresh_summary(rows):
+    now = datetime.now(timezone.utc)
+    dates = []
+    for row in rows:
+        try:
+            value = datetime.fromisoformat(str(row.get("last_history_sync_at") or "").replace("Z", "+00:00"))
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            dates.append(value)
+        except ValueError:
+            continue
+    return {
+        "refreshed_last_24h": sum(0 <= (now - value).total_seconds() < 86400 for value in dates),
+        "last_history_sync_at": max(dates).isoformat() if dates else None,
+    }
+
+
 def api_dashboard(request):
     if not _admin_allowed(request):
         return _denied()
@@ -198,7 +215,7 @@ def api_dashboard(request):
                        "unresolved": syncs["unmatched"] + syncs["ambiguous"], "progress": round(synced / total * 100, 1) if total else 0,
                        "active": statuses["ATIVO"], "alerts": statuses["ALERTA"] + statuses["INATIVO"],
                        "inactive": statuses["INATIVO"], "exclude": sum(1 for row in rows if row.get("requires_review")),
-                       "no_history": statuses["SEM HISTORICO"]},
+                       "no_history": statuses["SEM HISTORICO"], **_history_refresh_summary(rows)},
             "control": runtime_control,
             "statuses": dict(statuses), "sync_statuses": dict(syncs),
             "municipalities": [{"municipio": city, **counts} for city, counts in sorted(cities.items())],

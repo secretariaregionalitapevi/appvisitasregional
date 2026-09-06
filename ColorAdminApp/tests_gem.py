@@ -2,6 +2,7 @@ import json
 from datetime import date
 from unittest.mock import Mock, patch
 
+from django.core.cache import cache
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
@@ -27,6 +28,7 @@ class GemTests(SimpleTestCase):
             ["VIOLINO", "VIOLA", "VIOLONCELO", "CLARINETE", "BARÍTONO DE PISTO"],
         )
     def setUp(self):
+        cache.clear()
         self.rows = [
             {"id": "1", "nome_aluno": "Ana", "nivel": "CANDIDATO(A)", "municipio": "ITAPEVI", "comum_congregacao": "CENTRAL", "instrumento": "VIOLINO", "programa_minimo_percentual": 25},
             {"id": "2", "nome_aluno": "Bia", "nivel": "RJM / OFICIALIZADO(A)", "municipio": "ITAPEVI", "comum_congregacao": "CENTRAL", "instrumento": "VIOLA", "programa_minimo_percentual": 100},
@@ -105,6 +107,35 @@ class GemTests(SimpleTestCase):
         self.assertEqual(payload["totals"]["formation"], 2)
         self.assertEqual(payload["totals"]["graduates"], 1)
         self.assertEqual(payload["totals"]["program_complete"], 1)
+
+    @patch("ColorAdminApp.gem.requests.get")
+    @patch("ColorAdminApp.gem._fetch_students")
+    def test_location_filter_round_trip_preserves_sam_accents(self, fetch_students, mock_get):
+        common = "BR-22-1706 - VIT\u00c1POLIS I"
+        city = "S\u00c3O PAULO"
+        student = dict(self.rows[0], comum_congregacao=common, municipio=city)
+        fetch_students.return_value = [student]
+        summary = json.loads(api_summary(request_with_profile(
+            "/gem/api/resumo/", self.regional,
+        )).content)
+        self.assertEqual(summary["commons"], [{"label": common, "value": 1}])
+        self.assertEqual(summary["municipalities"], [{"label": city, "value": 1}])
+
+        def database_get(*args, **kwargs):
+            params = kwargs["params"]
+            matches = (params.get("comum_congregacao") == "eq." + common
+                       and params.get("municipio") == "eq." + city)
+            return Mock(headers={"Content-Range": "0-0/1" if matches else "*/0"},
+                        json=Mock(return_value=[student] if matches else []))
+
+        mock_get.side_effect = database_get
+        response = api_students(request_with_profile("/gem/api/alunos/", self.regional, {
+            "situacao": "todos", "comum": summary["commons"][0]["label"],
+            "municipio": summary["municipalities"][0]["label"],
+        }))
+        payload = json.loads(response.content)
+        self.assertEqual([row["id"] for row in payload["items"]], [student["id"]])
+        self.assertEqual(payload["pagination"]["total"], 1)
 
     @patch("ColorAdminApp.gem.requests.get")
     def test_default_student_list_excludes_graduates(self, mock_get):

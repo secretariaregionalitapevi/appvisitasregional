@@ -4,7 +4,7 @@ import tempfile
 import time
 import ctypes
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -45,7 +45,24 @@ class Command(BaseCommand):
             }, timeout=30,
         )
         response.raise_for_status()
-        return response.json()
+        rows = response.json()
+        if len(rows) >= limit:
+            return rows
+        # Aulas novas nao alteram necessariamente o catalogo. Revisa os
+        # historicos antigos mesmo quando nome, instrumento e nivel nao mudam.
+        refresh_hours = max(1, int(os.getenv("SAM_HISTORY_REFRESH_HOURS", "24")))
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=refresh_hours)).isoformat()
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
+            headers=service_headers(), params={
+                "select": "id,source_key,source_name,aluno_id", "sync_status": "eq.synced",
+                "aluno_id": "not.is.null", "missing_since": "is.null",
+                "or": f"(last_history_sync_at.is.null,last_history_sync_at.lt.{cutoff})",
+                "order": "last_history_sync_at.asc.nullsfirst,id.asc", "limit": limit - len(rows),
+            }, timeout=30,
+        )
+        response.raise_for_status()
+        return rows + response.json()
 
     def _control(self):
         response = requests.get(
@@ -149,7 +166,7 @@ class Command(BaseCommand):
                 total_students = int(count_response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
             except ValueError:
                 total_students = len(pending)
-            self._heartbeat(total_students=total_students, last_message="Catálogo conciliado; processando históricos")
+            self._heartbeat(total_students=total_students, processed_students=0, current_student=None, last_message="Catálogo conciliado; processando históricos")
             self.stdout.write(f"Históricos pendentes selecionados neste ciclo: {len(pending)}")
             consecutive_failures = 0
             for index, state in enumerate(pending, 1):
@@ -248,7 +265,11 @@ class Command(BaseCommand):
                 try:
                     control = self._control()
                 except requests.RequestException as exc:
-                    raise CommandError("Aplique a migração 013 do controle SAM antes de iniciar o worker: " + str(exc)) from exc
+                    if options["once"]:
+                        raise CommandError("Falha ao consultar o controle SAM: " + str(exc)) from exc
+                    self.stderr.write("Controle SAM indisponivel; nova tentativa em 10 segundos.")
+                    time.sleep(10)
+                    continue
                 if control.get("desired_state") != "running":
                     self._heartbeat(current_student=None, worker_status="paused", last_error=None,
                                     last_message="Serviço online e pausado; aguardando comando Start")
@@ -265,7 +286,8 @@ class Command(BaseCommand):
                 started = time.monotonic()
                 processed = 0
                 try:
-                    self._heartbeat(worker_status="running", last_error=None, last_message="Sincronização em andamento")
+                    self._heartbeat(worker_status="running", current_student=None, processed_students=0,
+                                    cycle_started_at=datetime.now(timezone.utc).isoformat(), last_error=None, last_message="Sincronização em andamento")
                     processed = self._cycle(session, max(1, options["history_limit"]), refresh_catalog=refresh_catalog)
                 except Exception as exc:
                     self._heartbeat(worker_status="error", last_error=str(exc)[:1000], current_student=None,
@@ -294,7 +316,7 @@ class Command(BaseCommand):
                 remaining = wait
                 while remaining > 0:
                     self._heartbeat(current_student=None, worker_status="idle",
-                                    last_message=f"Serviço online; próximo ciclo em até {remaining} segundos")
+                                    last_message=f"Ciclo concluido ({processed} historicos processados). Nova verificacao em ate {remaining}s; vinculos nao conciliados exigem revisao.")
                     if self._control().get("desired_state") != "running":
                         if session:
                             session.close()

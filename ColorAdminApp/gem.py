@@ -265,7 +265,7 @@ def api_summary(request):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
         requested_scope = user_scope(request)
-        summary_key = f"gem:summary:v6:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
+        summary_key = f"gem:summary:v7:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
         cached_summary = cache.get(summary_key)
         if cached_summary is not None:
             return JsonResponse(cached_summary)
@@ -277,8 +277,9 @@ def api_summary(request):
 
         levels = Counter(_norm(row.get("nivel")) or "NÃO INFORMADO" for row in formation)
         instruments = Counter(_norm(row.get("instrumento")) or "A DEFINIR" for row in formation)
-        municipalities = Counter(_norm(row.get("municipio")) or "NÃO INFORMADO" for row in formation)
-        commons = Counter(_norm(row.get('comum_congregacao')) or 'NÃO INFORMADA' for row in formation)
+        # Filter labels must retain SAM spelling: queries use exact equality.
+        municipalities = Counter(row.get("municipio") or "NÃO INFORMADO" for row in formation)
+        commons = Counter(row.get('comum_congregacao') or 'NÃO INFORMADA' for row in formation)
         payload = {
             "scope": scope_details(scope),
             "totals": {

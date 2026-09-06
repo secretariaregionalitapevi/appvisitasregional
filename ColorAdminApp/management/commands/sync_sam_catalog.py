@@ -201,7 +201,8 @@ class Command(BaseCommand):
                         }, "return=minimal")
 
                 if options["commit"]:
-                    history_is_current = bool(state.get("last_history_sync_at")) and not is_changed
+                    history_is_current = (state.get("sync_status") == "synced"
+                                          and bool(state.get("last_history_sync_at")) and not is_changed)
                     sync_status = "synced" if target and history_is_current else "pending" if target else match_status
                     state_payload = {
                         "source_key": student["source_key"], "aluno_id": target_id,
