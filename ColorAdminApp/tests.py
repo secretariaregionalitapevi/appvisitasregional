@@ -1184,6 +1184,61 @@ class VisitTeamsTests(TestCase):
         get.assert_not_called()
         post.assert_not_called()
 
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_future_visit_cannot_be_marked_as_completed(self, get, post):
+        request = RequestFactory().post(
+            "/visitas/api/agenda/",
+            data={
+                "irmandade_id": "member-1",
+                "data_inicio": "2999-09-05T11:00:00-03:00",
+                "status": "Realizada",
+                "categoria": "GVI",
+                "equipe_responsavel": "Equipe 3",
+                "equipe_tipo": "LOCAL",
+            },
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("visita futura", json.loads(response.content)["error"])
+        get.assert_not_called()
+        post.assert_not_called()
+
+    @patch("ColorAdminApp.views.log_audit")
+    @patch("ColorAdminApp.views.requests.post")
+    @patch("ColorAdminApp.views.requests.get")
+    def test_rf_category_preserves_selected_local_team(self, get, post, _audit):
+        get.return_value = Mock(status_code=200)
+        get.return_value.json.return_value = []
+        post.return_value = Mock(status_code=201, text='[{"id":"visit-rf"}]')
+        post.return_value.json.return_value = [{"id": "visit-rf"}]
+        request = RequestFactory().post(
+            "/visitas/api/agenda/",
+            data={
+                "irmandade_id": "member-1",
+                "data_inicio": "2026-08-01T11:00:00-03:00",
+                "status": "Realizada",
+                "categoria": "RF",
+                "equipe_responsavel": "Equipe 3",
+                "equipe_tipo": "LOCAL",
+                "equipe_id": "team-3",
+            },
+            content_type="application/json",
+        )
+        request.session = {"user_id": "user-1", "user_profile": {"role_id": 1}}
+
+        response = apiVisitasAgenda(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["categoria"], "RF")
+        self.assertEqual(payload["equipe_responsavel"], "Equipe 3")
+        self.assertEqual(payload["equipe_tipo"], "LOCAL")
+        self.assertEqual(payload["equipe_id"], "team-3")
 
 class BrotherhoodUpdateTests(TestCase):
     @patch("ColorAdminApp.views.requests.get")

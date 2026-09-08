@@ -9,7 +9,7 @@ from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from .gem import (
     INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
-    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options,
+    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
 )
 
 
@@ -27,6 +27,16 @@ class GemTests(SimpleTestCase):
             ordered_instrument_options(values),
             ["VIOLINO", "VIOLA", "VIOLONCELO", "CLARINETE", "BARÍTONO DE PISTO"],
         )
+    def test_instrument_filter_orders_legacy_names_like_enr_catalog(self):
+        values = {
+            "EUPHONIUM", "FLAUTA", "SAX HORN", "SAXOFONE BAIXO",
+            "SAXOFONE SOPRANO CUR", "SAXOFONE SOPRANO RET", "VIOLINO CONTRALTO",
+        }
+        self.assertEqual(ordered_instrument_options(values), [
+            "VIOLINO CONTRALTO", "FLAUTA", "SAXOFONE SOPRANO RET",
+            "SAXOFONE SOPRANO CUR", "SAXOFONE BAIXO", "SAX HORN", "EUPHONIUM",
+        ])
+
     def setUp(self):
         cache.clear()
         self.rows = [
@@ -35,6 +45,14 @@ class GemTests(SimpleTestCase):
             {"id": "3", "nome_aluno": "Caio", "nivel": "CULTO OFICIAL", "municipio": "JANDIRA", "comum_congregacao": "JARDIM", "instrumento": "TROMPETE", "programa_minimo_percentual": 100},
         ]
         self.regional = {"role_id": 2, "sector": "Musicalização", "access_level": "regional"}
+
+    @patch("ColorAdminApp.gem._fetch_students")
+    def test_report_can_exclude_individual_students(self, fetch_students):
+        fetch_students.return_value = self.rows
+        request = request_with_profile("/gem/api/alunos/relatorio/", self.regional, {
+            "situacao": "todos", "excluir_aluno": ["1", "3"],
+        })
+        self.assertEqual([row["id"] for row in _report_rows(request)], ["2"])
 
     def test_officialized_composite_level_is_graduated(self):
         self.assertTrue(is_graduated({"nivel": "RJM / OFICIALIZADO(A)"}))
@@ -146,7 +164,7 @@ class GemTests(SimpleTestCase):
         response = api_students(request_with_profile("/gem/api/alunos/", self.regional))
         payload = json.loads(response.content)
         self.assertEqual([row["nome_aluno"] for row in payload["items"]], ["Ana", "Caio"])
-        self.assertEqual(mock_get.call_args.kwargs["params"]["nivel"], "not.ilike.*OFICIALIZAD*")
+        self.assertEqual(mock_get.call_args_list[0].kwargs["params"]["nivel"], "not.ilike.*OFICIALIZAD*")
 
     @patch('ColorAdminApp.gem.requests.post')
     def test_student_create_sends_approved_fields_with_scope_and_lgpd(self, mock_post):
@@ -187,7 +205,7 @@ class GemTests(SimpleTestCase):
         response = api_students(request_with_profile("/gem/api/alunos/", profile, {"situacao": "todos"}))
         payload = json.loads(response.content)
         self.assertEqual([row["nome_aluno"] for row in payload["items"]], ["Ana", "Bia"])
-        self.assertEqual(mock_get.call_args.kwargs["params"]["comum_congregacao"], "eq.CENTRAL")
+        self.assertEqual(mock_get.call_args_list[0].kwargs["params"]["comum_congregacao"], "eq.CENTRAL")
 
     @patch("ColorAdminApp.gem.requests.patch")
     @patch("ColorAdminApp.gem.requests.get")

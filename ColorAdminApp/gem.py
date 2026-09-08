@@ -27,6 +27,7 @@ from openpyxl.utils import get_column_letter
 
 
 TABLE = "musica_acompanhamento_aluno"
+STATUS_VIEW = "sam_mirror_student_status"
 SELECT_FIELDS = (
     "id,nome_aluno,status,comum_congregacao,cargo_ministerio,nivel,instrumento,"
     "municipio,programa_minimo_percentual,registro_msa,updated_at"
@@ -37,7 +38,24 @@ LEVEL_OPTIONS = [
     'CANDIDATO(A)', 'CULTO OFICIAL', 'ENSAIO', 'MEIA HORA', 'OFICIALIZADO(A)', 'RJM',
     'RJM / CULTO OFICIAL', 'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
 ]
-INSTRUMENT_OPTIONS = ['\u00d3RG\u00c3O', 'ACORDEON', 'VIOLINO', 'VIOLA', 'VIOLONCELO', 'FLAUTA TRANSVERSAL', 'OBO\u00c9', "OBO\u00c9 D'AMORE", 'CORNE INGL\u00caS', 'CLARINETE', 'CLARINETE ALTO', 'CLARINETE BAIXO (CLARONE)', 'FAGOTE', 'SAXOFONE SOPRANO (RETO)', 'SAXOFONE ALTO', 'SAXOFONE TENOR', 'SAXOFONE BAR\u00cdTONO', 'TROMPETE', 'CORNET', 'FLUGELHORN', 'TROMPA', 'TROMBONE', 'TROMBONITO', 'BAR\u00cdTONO (PISTO)', 'EUF\u00d4NIO', 'TUBA']
+INSTRUMENT_OPTIONS = [
+    '\u00d3RG\u00c3O', 'ACORDEON', 'VIOLINO', 'VIOLA', 'VIOLONCELO', 'FLAUTA', 'OBO\u00c9',
+    "OBO\u00c9 D'AMORE", 'CORNE INGL\u00caS', 'CLARINETE', 'CLARINETE ALTO',
+    'CLARINETE BAIXO (CLARONE)', 'CLARINETE CONTRA BAIXO', 'FAGOTE',
+    'SAXOFONE SOPRANO (RETO)', 'SAXOFONE SOPRANINO', 'SAXOFONE ALTO',
+    'SAXOFONE TENOR', 'SAXOFONE BAR\u00cdTONO', 'SAXOFONE BAIXO',
+    'SAX OCTA CONTRABAIXO', 'SAX HORN', 'TROMPA', 'TROMPETE', 'CORNET',
+    'FLUGELHORN', 'TROMBONE', 'TROMBONITO', 'EUF\u00d4NIO',
+    'BAR\u00cdTONO (PISTO)', 'TUBA',
+]
+INSTRUMENT_ORDER_ALIASES = {
+    'FLAUTA TRANSVERSAL': 'FLAUTA',
+    'VIOLINO CONTRALTO': 'VIOLA',
+    'SAXOFONE SOPRANO RET': 'SAXOFONE SOPRANO (RETO)',
+    'SAXOFONE SOPRANO CUR': 'SAXOFONE SOPRANINO',
+    'EUPHONIUM': 'EUF\u00d4NIO',
+    'BAR\u00cdTONO DE PISTO': 'BAR\u00cdTONO (PISTO)',
+}
 MINISTRY_OPTIONS = ['M\u00daSICO', 'ORGANISTA']
 TONALITY_OPTIONS = ['D\u00d3', 'F\u00c1', 'F\u00c1 / SI\u266d', 'L\u00c1', 'MI\u266d', 'SI\u266d']
 STUDENT_CREATE_FIELDS = {'nome_aluno', 'comum_congregacao', 'municipio', 'cargo_ministerio', 'nivel', 'instrumento', 'possui_instrumento', 'instrumento_proprio', 'tonalidade', 'data_inicio_gem', 'data_nascimento', 'estado_civil', 'telefone', 'nome_responsavel', 'grau_parentesco', 'consentimento_lgpd'}
@@ -51,10 +69,12 @@ def _norm(value):
 def ordered_instrument_options(values):
     """Mantém a ordem pedagógica do catálogo e envia valores legados ao final."""
     available = {_norm(value): str(value).strip() for value in values if _norm(value)}
-    ordered = [instrument for instrument in INSTRUMENT_OPTIONS if _norm(instrument) in available]
-    catalog = {_norm(instrument) for instrument in INSTRUMENT_OPTIONS}
-    ordered.extend(sorted(label for key, label in available.items() if key not in catalog))
-    return ordered
+    order = {_norm(instrument): index for index, instrument in enumerate(INSTRUMENT_OPTIONS)}
+    aliases = {_norm(alias): _norm(canonical) for alias, canonical in INSTRUMENT_ORDER_ALIASES.items()}
+    return [label for key, label in sorted(
+        available.items(),
+        key=lambda item: (order.get(aliases.get(item[0], item[0]), len(order)), _norm(item[1])),
+    )]
 
 def is_graduated(row):
     """Oficialização encerra a formação, inclusive em níveis compostos."""
@@ -77,7 +97,7 @@ def _program_progress(student, msa_rows):
 
 
 def _fetch_students():
-    cached = cache.get("gem:students:v5")
+    cached = cache.get("gem:students:v6")
     if cached is not None:
         return cached
 
@@ -107,8 +127,39 @@ def _fetch_students():
     with ThreadPoolExecutor(max_workers=min(10, max(1, len(offsets)))) as executor:
         pages = sorted(executor.map(fetch_page, offsets), key=lambda item: item[0])
     rows = [row for _, page in pages for row in page]
-    cache.set("gem:students:v5", rows, 300)
+    activity_dates = _fetch_last_activity_dates(row.get("id") for row in rows)
+    for row in rows:
+        row["last_activity_at"] = activity_dates.get(str(row.get("id")))
+    cache.set("gem:students:v6", rows, 300)
     return rows
+
+
+def _fetch_last_activity_dates(student_ids):
+    ids = sorted({str(student_id) for student_id in student_ids if student_id})
+    if not ids:
+        return {}
+
+    def fetch_chunk(chunk):
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/{STATUS_VIEW}",
+            headers=service_headers(),
+            params={
+                "select": "aluno_id,last_activity_at",
+                "aluno_id": "in.(" + ",".join(json.dumps(value) for value in chunk) + ")",
+                "limit": len(chunk),
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    chunks = [ids[index:index + 100] for index in range(0, len(ids), 100)]
+    with ThreadPoolExecutor(max_workers=min(10, len(chunks))) as executor:
+        pages = executor.map(fetch_chunk, chunks)
+    return {
+        str(row.get("aluno_id")): row.get("last_activity_at")
+        for page in pages for row in page if row.get("aluno_id")
+    }
 
 
 def _visible_students(request):
@@ -351,7 +402,7 @@ def api_students(request):
                 return _denied()
             saved = requests.post(f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers('return=representation'), json=payload, timeout=20)
             saved.raise_for_status()
-            cache.delete('gem:students:v5')
+            cache.delete('gem:students:v6')
             return JsonResponse({'item': saved.json()[0]}, status=201)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'JSON invalido.'}, status=400)
@@ -396,9 +447,12 @@ def api_students(request):
             headers=service_headers("count=exact"), params=params, timeout=15,
         )
         response.raise_for_status()
+        sources = response.json()
+        activity_dates = _fetch_last_activity_dates(source.get("id") for source in sources)
         rows = []
-        for source in response.json():
+        for source in sources:
             row = dict(source)
+            row["last_activity_at"] = activity_dates.get(str(row.get("id")))
             row["comum"] = row.get("comum_congregacao")
             row["cidade"] = row.get("municipio")
             row["situacao_academica"] = academic_status(row)
@@ -427,8 +481,11 @@ def _report_rows(request):
     category = request.GET.get('situacao', 'formacao')
     selected = {key: set(request.GET.getlist(key)) for key in ('nivel', 'municipio', 'comum', 'instrumento')}
     query = _norm(request.GET.get('q'))
+    excluded_students = set(request.GET.getlist('excluir_aluno'))
     result = []
     for row in rows:
+        if str(row.get('id')) in excluded_students:
+            continue
         if category == 'formacao' and is_graduated(row):
             continue
         if category == 'graduados' and not is_graduated(row):
@@ -466,7 +523,7 @@ def export_students_excel(request):
     cities = request.GET.getlist('municipio')
     commons = request.GET.getlist('comum')
     scope = f"Municipios: {', '.join(cities) if cities else 'Todos'} | Comuns: {', '.join(commons) if commons else 'Todas'}"
-    headers = ['Aluno', 'Registro MSA', 'Municipio', 'Comum congregacao', 'Cargo/Ministerio', 'Instrumento', 'Nivel', 'Programa minimo', 'Atualizacao']
+    headers = ['Aluno', 'Registro MSA', 'Municipio', 'Comum congregacao', 'Cargo/Ministerio', 'Instrumento', 'Nivel', 'Programa minimo', 'Ultimo lancamento']
     workbook = Workbook(); sheet = workbook.active; sheet.title = 'ALUNOS GEM'
     navy, pale = '1E4B7A', 'EAF2F8'; last = get_column_letter(len(headers)); thin = Side(style='thin', color='CCD5DD')
     for row_number, text_value, size in ((1, 'CONGREGAÇÃO CRISTÃ NO BRASIL', 15), (2, 'Regional Itapevi - São Paulo', 10), (3, 'GRUPO DE ESTUDOS MUSICAIS', 12)):
@@ -479,10 +536,10 @@ def export_students_excel(request):
     for column, label in enumerate(headers, 1):
         cell = sheet.cell(6, column, label); cell.font = Font(bold=True, color='FFFFFF'); cell.fill = PatternFill('solid', fgColor=navy); cell.alignment = Alignment(horizontal='center'); cell.border = Border(bottom=thin)
     for row_number, row in enumerate(rows, 7):
-        updated = str(row.get('updated_at') or '')
-        try: updated = datetime.fromisoformat(updated.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+        last_activity = str(row.get('last_activity_at') or '')
+        try: last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00')).strftime('%d/%m/%Y')
         except ValueError: pass
-        values = [row.get('nome_aluno'), row.get('registro_msa'), row.get('municipio'), row.get('comum_congregacao'), row.get('cargo_ministerio'), row.get('instrumento'), row.get('nivel'), f"{_percent(row.get('programa_minimo_percentual'))}%", updated]
+        values = [row.get('nome_aluno'), row.get('registro_msa'), row.get('municipio'), row.get('comum_congregacao'), row.get('cargo_ministerio'), row.get('instrumento'), row.get('nivel'), f"{_percent(row.get('programa_minimo_percentual'))}%", last_activity or 'Sem lançamento']
         for column, value in enumerate(values, 1):
             cell = sheet.cell(row_number, column, value or ''); cell.border = Border(bottom=thin); cell.alignment = Alignment(vertical='center', wrap_text=column in (1, 4))
             if row_number % 2 == 0: cell.fill = PatternFill('solid', fgColor='F4F6F8')
@@ -592,7 +649,7 @@ def api_student_detail(request, student_id):
             if milestone:
                 labels = {"ingresso_ensaio": "Ingresso no Ensaio", "ingresso_rjm": "Ingresso na RJM", "ingresso_culto": "Ingresso no Culto Oficial", "oficializacao": "Oficialização"}
                 requests.post(f"{settings.SUPABASE_URL}/rest/v1/{SOURCE_CONFIG['atividades'][0]}", headers=service_headers("return=minimal"), json={"aluno_id": str(student_id), "tipo_atividade": milestone, "titulo": labels[milestone], "descricao": "Marco registrado automaticamente pela alteração de nível.", "data_atividade": datetime.now().date().isoformat(), "comum_congregacao": candidate.get("comum_congregacao"), "municipio": candidate.get("municipio")}, timeout=15).raise_for_status()
-        cache.delete("gem:students:v5")
+        cache.delete("gem:students:v6")
         return JsonResponse({"item": saved.json()[0]})
     except json.JSONDecodeError:
         return JsonResponse({"error": "JSON inválido."}, status=400)

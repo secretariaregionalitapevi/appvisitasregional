@@ -2092,26 +2092,19 @@ def apiVisitasAgenda(request):
                     if current_times:
                         data['observacoes'] = merge_visit_time_metadata(data.get('observacoes'), current_times)
             candidate = {**(current[0] if current else {}), **data}
-            # RF e RE são grupos regionais fixos, sem membros próprios. Todo
-            # evento dessas categorias deve apontar para o respectivo grupo,
-            # independentemente da equipe escolhida no formulário.
-            category = str(candidate.get('categoria') or '').strip().upper()
-            fixed_group = {'RF': 'Grupo RF', 'RE': 'Grupo RE'}.get(category)
-            if fixed_group:
-                team_response = requests.get(
-                    settings.SUPABASE_URL + '/rest/v1/visitas_equipes',
-                    headers=headers,
-                    params=[('nome', f'eq.{fixed_group}'), ('tipo', 'eq.REGIONAL'), ('select', 'id,nome,tipo')],
-                    timeout=10,
-                )
-                if team_response.status_code == 200 and team_response.json():
-                    fixed_team = team_response.json()[0]
-                    data['equipe_responsavel'] = fixed_group
-                    data['equipe_tipo'] = 'REGIONAL'
-                    data['equipe_id'] = fixed_team.get('id')
-                    candidate.update({k: data[k] for k in ('equipe_responsavel', 'equipe_tipo', 'equipe_id')})
             if (id and not current) or not can_access(scope, candidate):
                 return JsonResponse({"error": "Agenda fora do seu escopo de acesso."}, status=403)
+
+            # A categoria (GVI, GVE, RF ou RE) nao define a equipe. Preserve a
+            # equipe realmente selecionada e impeça que uma agenda futura seja
+            # contabilizada como visita concluida antes do dia programado.
+            status_visita = str(candidate.get('status') or '').strip()
+            candidate_day = str(candidate.get('data_inicio') or '')[:10]
+            today_sao_paulo = datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()
+            if status_visita == 'Realizada' and candidate_day and candidate_day > today_sao_paulo:
+                return JsonResponse({
+                    "error": "Uma visita futura não pode ser marcada como realizada."
+                }, status=400)
 
             # Reserva territorial também para criações e edições manuais.
             # Esta regra também vale para lançamentos retroativos e é separada

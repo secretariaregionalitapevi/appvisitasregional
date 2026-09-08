@@ -1,157 +1,111 @@
 {% extends 'base.html' %}
-
 {% load static %}
 
 {% block title %}Cadastrar{% endblock %}
 
 {% block css %}
-<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
 <style>
-	.register-content .select2-container { width: 100% !important; }
-	.register-content .select2-selection--single { height: 36px !important; border-color: #d5dbe0 !important; }
-	.register-content .select2-selection__rendered { line-height: 34px !important; padding-left: 12px !important; }
-	.register-content .select2-selection__arrow { height: 34px !important; }
-	.select2-results__group { color: #0b6f78; font-weight: 700; background: #f1f8f8; }
-	.select2-results__options { max-height: 280px !important; }
+.register.register-with-news-feed .register-container{overflow-y:auto}
+.register-content{max-width:420px}
+.register-field{position:relative;display:flex;align-items:stretch;min-height:48px;margin-bottom:14px;border:1px solid #d5dbe0;border-radius:4px;background:#fff;transition:border-color .18s,box-shadow .18s}
+.register-field:focus-within{z-index:30;border-color:#348fe2;box-shadow:0 0 0 2px rgba(52,143,226,.12)}
+.register-icon{display:flex;flex:0 0 48px;align-items:center;justify-content:center;border-right:1px solid #d5dbe0;background:#f8f9fa;color:#1e5b91}
+.register-icon svg,.register-toggle svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.register-icon.is-solid svg{width:16px;height:18px;fill:currentColor;stroke:none}
+.register-field input{width:100%;min-width:0;height:46px;padding:0 14px;border:0!important;outline:0;background:transparent;color:#495057;font-size:13px}
+.register-field input::placeholder{color:#8294ad;opacity:1}
+.register-toggle{display:flex;flex:0 0 42px;align-items:center;justify-content:center;padding:0;border:0;background:transparent;color:#8294ad;cursor:pointer}
+.register-search{position:relative;flex:1;min-width:0}
+.register-results{position:absolute;z-index:100;top:calc(100% + 1px);left:-49px;right:-1px;max-height:300px;overflow-y:auto;border:1px solid #b8c6d8;border-radius:0 0 4px 4px;background:#fff;box-shadow:0 10px 22px rgba(0,0,0,.14)}
+.register-results-meta{position:sticky;z-index:2;top:0;padding:8px 12px;border-bottom:1px solid #e7edf4;background:#fff;color:#8294ad;font-size:12px;text-align:right}
+.register-result{display:block;width:100%;padding:11px 14px;border:0;border-bottom:1px solid #edf1f6;background:#fff;color:#123b65;cursor:pointer;text-align:left}
+.register-result strong{display:block;font-size:13px}.register-result small{display:block;margin-top:2px;color:#718096;font-size:11px}
+.register-result:hover,.register-result[aria-selected=true]{background:#edf6ff}.register-empty{margin:0;padding:16px;color:#718096;text-align:center}
+.register-search-help{margin:-7px 1px 14px;color:#8294ad;font-size:11px}
+.register-terms-box{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin:2px auto 18px;padding:11px 12px;border:1px solid #e1e7ee;border-radius:6px;background:#f8fafc;color:#53657a;font-size:12px;line-height:1.45;text-align:center;cursor:pointer}.register-terms-box input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:#348fe2}.register-terms-box a{color:#1674c7;font-weight:600;text-decoration:none}.register-terms-box a:hover{text-decoration:underline}.register-account{margin:22px 0 24px;padding:14px 12px;border-radius:6px;background:#f7f9fc;color:#65778d;font-size:12px;text-align:center}.register-account strong{display:block;margin-bottom:4px;color:#384b61;font-size:13px;font-weight:600}.register-account a{color:#1674c7;font-weight:700;text-decoration:none}.register-account a:hover{text-decoration:underline}.register-feedback{margin:8px 0;color:#dc3545;font-size:12px}.register-feedback:empty{display:none}
+.register-submit{height:45px}.register-submit svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:767.98px){.register-content{max-width:none}.register-results{left:-49px}}
 </style>
 {% endblock %}
 
 {% block outter_content %}
-<!-- BEGIN register -->
 <div class="register register-with-news-feed">
-	<!-- BEGIN news-feed -->
-	<div class="news-feed">
-		<div class="news-image" style="background-image: url({% static 'img/login-bg/CCB_Itapevi.jpg' %})"></div>
-		<div class="news-caption">
-			<h4 class="caption-title"><b>Regional Itapevi</b> Painel de Visitas</h4>
-			<p>
-				Sistema Regional de Visitas CCB. Cadastre-se para gerenciar visitas e indicadores.
-			</p>
-		</div>
-	</div>
-	<!-- END news-feed -->
-	
-	<!-- BEGIN register-container -->
-	<div class="register-container">
-		<!-- BEGIN register-header -->
-		<div class="register-header mb-25px h1">
-			<div class="mb-2 d-flex align-items-center">
-                <img src="{% static 'img/logo/ccb.png' %}" height="40" class="me-10px" alt="CCB Logo" />
-                <span class="mb-0">Cadastrar</span>
-            </div>
-			<small class="d-block fs-15px lh-16">Crie sua conta. Seu acesso será revisado por um administrador.</small>
-		</div>
-		<!-- END register-header -->
-		
-		<!-- BEGIN register-content -->
-		<div class="register-content">
-			<form id="register-form" class="fs-13px">
-				<div class="mb-3">
-					<label class="mb-2 fw-bold">Nome Completo <span class="text-danger">*</span></label>
-					<input type="text" class="form-control fs-13px" id="fullName" placeholder="Ex: João da Silva" required />
-				</div>
-				<div class="mb-3">
-					<label class="mb-2 fw-bold">Localidade (Comum) <span class="text-danger">*</span></label>
-					<select class="form-select fs-13px" id="comum" required>
-						<option value=""></option>
-						{% regroup register_comuns by cidade as comuns_por_municipio %}
-						{% for municipio in comuns_por_municipio %}
-						<optgroup label="{{ municipio.grouper|default:'MUNICÍPIO NÃO INFORMADO' }}">
-							{% for item in municipio.list %}<option value="{{ item.comum }}">{{ item.comum }}</option>{% endfor %}
-						</optgroup>
-						{% endfor %}
-					</select>
-					<div class="form-text">Pesquise pelo código ou nome da comum.</div>
-				</div>
-				<div class="mb-3">
-					<label class="mb-2 fw-bold">E-mail <span class="text-danger">*</span></label>
-					<input type="email" class="form-control fs-13px" id="emailAddress" placeholder="email@exemplo.com" required />
-				</div>
-				<div class="mb-4">
-					<label class="mb-2 fw-bold">Senha <span class="text-danger">*</span></label>
-					<input type="password" class="form-control fs-13px" id="password" placeholder="Mínimo 6 caracteres" required minlength="6" />
-				</div>
-				<div class="form-check mb-4">
-					<input class="form-check-input" type="checkbox" value="" id="agreementCheckbox" required />
-					<label class="form-check-label" for="agreementCheckbox">
-						Eu aceito os termos de uso e política de privacidade do sistema.
-					</label>
-				</div>
-				<div class="mb-4">
-					<button type="submit" class="btn btn-theme d-block w-100 btn-lg h-45px fs-13px fw-bold" id="btn-register">
-                        <i class="fa fa-save me-2"></i> Cadastrar
-                    </button>
-				</div>
-				<div class="mb-4 pb-5">
-					Já possui conta? Clique <a href="/user/login-v1">aqui</a> para entrar.
-				</div>
-				<hr class="bg-gray-600 opacity-2" />
-				<p class="text-center text-gray-600">
-					&copy; Regional Itapevi - Todos os direitos reservados 2026
-				</p>
-			</form>
-		</div>
-		<!-- END register-content -->
-	</div>
-	<!-- END register-container -->
+  <div class="news-feed">
+    <div class="news-image" style="background-image: url({% static 'img/login-bg/CCB_Itapevi.jpg' %})"></div>
+    <div class="news-caption">
+      <h4 class="caption-title"><b>Regional Itapevi</b></h4>
+      <p>Sistema de Administração Regional CCB. Cadastre-se para gerenciar visitas e indicadores.</p>
+    </div>
+  </div>
+  <div class="register-container">
+    <div class="register-header mb-25px h1">
+      <div class="mb-2 d-flex align-items-center">
+        <img src="{% static 'img/logo/ccb.png' %}" height="40" class="me-10px" alt="CCB Logo">
+        <span class="mb-0">Cadastrar</span>
+      </div>
+      <small class="d-block fs-15px lh-16">Crie sua conta. Seu acesso será revisado por um administrador.</small>
+    </div>
+    <div class="register-content">
+      <form id="register-form" class="fs-13px" novalidate>
+        <div class="register-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><input id="fullName" type="text" autocomplete="name" placeholder="Nome Completo" maxlength="100" required></div>
+        <div class="register-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m22 6-10 7L2 6"/></svg></span><input id="emailAddress" type="email" autocomplete="email" placeholder="Seu melhor e-mail" maxlength="254" required></div>
+        <div class="register-field"><span class="register-icon is-solid" aria-hidden="true"><svg viewBox="0 0 448 512"><path d="M144 144v48h192v-48a96 96 0 0 0-192 0zm-48 48v-48a144 144 0 0 1 288 0v48a64 64 0 0 1 64 64v192a64 64 0 0 1-64 64H64a64 64 0 0 1-64-64V256a64 64 0 0 1 64-64h32z"/></svg></span><input id="password" type="password" autocomplete="new-password" placeholder="Crie uma senha forte" minlength="6" required><button class="register-toggle" type="button" data-toggle="password" aria-label="Mostrar senha" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+        <div class="register-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirme sua senha" minlength="6" required><button class="register-toggle" type="button" data-toggle="confirmPassword" aria-label="Mostrar confirmação de senha" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+        <div class="register-field" id="comum-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span><div class="register-search"><input id="comumSearch" type="text" role="combobox" aria-autocomplete="list" aria-controls="comumResults" aria-expanded="false" autocomplete="off" placeholder="Pesquise sua Comum..." required><input id="comum" type="hidden"><div id="comumResults" class="register-results" role="listbox" hidden><div id="comumMeta" class="register-results-meta"></div><div id="comumList"></div></div></div></div>
+        <p class="register-search-help">Digite o código ou o nome da comum e selecione um resultado.</p>
+        <label class="register-terms-box"><input id="agreementCheckbox" type="checkbox" required><span>Li e aceito os <a href="/privacidade/" target="_blank" rel="noopener">Termos de Uso e a Política de Privacidade</a>.</span></label>
+        <p id="registerFeedback" class="register-feedback" role="alert" aria-live="polite"></p>
+        <button id="btn-register" type="submit" class="btn btn-theme d-flex align-items-center justify-content-center gap-2 w-100 fs-13px fw-bold register-submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg><span>CADASTRAR</span></button>
+        <div class="register-account"><strong>Já possui uma conta?</strong><span>Acesse com seus dados: <a href="/user/login-v1">entrar no sistema</a>.</span></div><hr class="bg-gray-600 opacity-2"><p class="text-center text-gray-600">&copy; Regional Itapevi - Todos os direitos reservados 2026</p>
+      </form>
+    </div>
+  </div>
 </div>
-<!-- END register -->
 
-<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
-<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
+{{ register_comuns|json_script:"register-comuns-data" }}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    $('#comum').select2({
-        width: '100%',
-        language: 'pt-BR',
-        placeholder: 'Pesquise e selecione sua comum...',
-        allowClear: true
-    });
-
-    document.getElementById('register-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const full_name = document.getElementById('fullName').value;
-        const comum = document.getElementById('comum').value;
-        const email = document.getElementById('emailAddress').value;
-        const password = document.getElementById('password').value;
-        const btn = document.getElementById('btn-register');
-
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> Processando...';
-
-        try {
-            const response = await fetch('/api/auth/?action=register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ full_name, comum, email, password })
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                Swal.fire({
-                    title: 'Solicitação Enviada!',
-                    text: result.message,
-                    icon: 'success',
-                    confirmButtonColor: '#348fe2'
-                }).then(() => {
-                    window.location.href = '/user/login-v1';
-                });
-            } else {
-                Swal.fire({
-                    title: 'Erro no Cadastro',
-                    text: result.error || 'Erro ao processar solicitação.',
-                    icon: 'error',
-                    confirmButtonColor: '#348fe2'
-                });
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa fa-save me-2"></i> Cadastrar';
-            }
-        } catch (err) {
-            Swal.fire('Erro', 'Falha na comunicação com o servidor.', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa fa-save me-2"></i> Cadastrar';
-        }
-    });
+(function(){
+  "use strict";
+  const form=document.getElementById("register-form"),search=document.getElementById("comumSearch"),value=document.getElementById("comum"),panel=document.getElementById("comumResults"),list=document.getElementById("comumList"),meta=document.getElementById("comumMeta"),feedback=document.getElementById("registerFeedback");
+  const raw=JSON.parse(document.getElementById("register-comuns-data").textContent||"[]");
+  const catalog=raw.map(item=>({comum:String(item.comum||"").trim(),cidade:String(item.cidade||"").trim()})).filter(item=>item.comum);
+  let filtered=[],active=-1;
+  const normalize=text=>String(text||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("pt-BR").trim();
+  const escapeHtml=text=>{const span=document.createElement("span");span.textContent=text;return span.innerHTML};
+  function close(){panel.hidden=true;search.setAttribute("aria-expanded","false");active=-1}
+  function render(query){
+    const term=normalize(query);
+    filtered=term?catalog.filter(item=>normalize(item.comum+" "+item.cidade).includes(term)):catalog.slice();
+    const shown=filtered.slice(0,50);
+    meta.textContent=term?filtered.length+" de "+catalog.length+" comuns":catalog.length+" comuns — digite para filtrar";
+    list.innerHTML=shown.length?shown.map((item,index)=>'<button type="button" class="register-result" role="option" data-index="'+index+'" aria-selected="false"><strong>'+escapeHtml(item.comum)+'</strong>'+(item.cidade?'<small>'+escapeHtml(item.cidade)+'</small>':'')+'</button>').join(""):'<p class="register-empty">Nenhuma comum encontrada.</p>';
+    panel.hidden=false;search.setAttribute("aria-expanded","true");active=-1;
+  }
+  function select(item){if(!item)return;search.value=item.comum;value.value=item.comum;search.setCustomValidity("");close()}
+  function setActive(index){const options=list.querySelectorAll(".register-result");if(!options.length)return;active=Math.max(0,Math.min(index,options.length-1));options.forEach((option,i)=>option.setAttribute("aria-selected",String(i===active)));options[active].scrollIntoView({block:"nearest"})}
+  search.placeholder="Pesquise sua comum...";
+  search.addEventListener("focus",()=>render(search.value));
+  search.addEventListener("input",()=>{value.value="";search.setCustomValidity("");render(search.value)});
+  search.addEventListener("keydown",event=>{if(event.key==="ArrowDown"){event.preventDefault();setActive(active+1)}else if(event.key==="ArrowUp"){event.preventDefault();setActive(active-1)}else if(event.key==="Enter"&&!panel.hidden){event.preventDefault();select(filtered[active<0?0:active])}else if(event.key==="Escape")close()});
+  list.addEventListener("mousedown",event=>{const option=event.target.closest(".register-result");if(option){event.preventDefault();select(filtered[Number(option.dataset.index)])}});
+  document.addEventListener("click",event=>{if(!event.target.closest("#comum-field"))close()});
+  const eyeOpen=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg>`,eyeClosed=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"/><path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.1 3.2"/><path d="M6.6 6.6C3.2 8.7 1 12 1 12s4 8 11 8a10.7 10.7 0 0 0 5.4-1.5"/></svg>`;
+  document.querySelectorAll("[data-toggle]").forEach(button=>button.addEventListener("click",()=>{const input=document.getElementById(button.dataset.toggle),reveal=input.type==="password";input.type=reveal?"text":"password";button.innerHTML=reveal?eyeClosed:eyeOpen;button.setAttribute("aria-label",reveal?"Ocultar senha":"Mostrar senha");button.setAttribute("aria-pressed",String(reveal));input.focus()}));
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();feedback.textContent="";
+    if(!value.value){search.setCustomValidity("Pesquise e selecione uma comum na lista.");search.reportValidity();search.focus();render(search.value);return}
+    if(document.getElementById("password").value!==document.getElementById("confirmPassword").value){feedback.textContent="As senhas não coincidem.";document.getElementById("confirmPassword").focus();return}
+    if(!form.checkValidity()){form.reportValidity();return}
+    const button=document.getElementById("btn-register"),label=button.querySelector("span");button.disabled=true;label.textContent="PROCESSANDO...";
+    try{
+      const response=await fetch("/api/auth/?action=register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:document.getElementById("fullName").value.trim(),comum:value.value,email:document.getElementById("emailAddress").value.trim().toLowerCase(),password:document.getElementById("password").value})});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||"Erro ao processar solicitação.");
+      await Swal.fire({title:"Solicitação Enviada!",text:result.message,icon:"success",confirmButtonColor:"#1e4f7f"});
+      location.href="/user/login-v1";
+    }catch(error){feedback.textContent=error.message;Swal.fire({title:"Erro no Cadastro",text:error.message,icon:"error",confirmButtonColor:"#1e4f7f"});button.disabled=false;label.textContent="CADASTRAR"}
+  });
+}());
 </script>
 {% endblock %}
