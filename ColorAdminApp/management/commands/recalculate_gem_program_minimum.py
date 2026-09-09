@@ -67,5 +67,5 @@ class Command(BaseCommand):
                     response.raise_for_status()
         except requests.RequestException as exc:
             raise CommandError(f"Falha ao gravar o Programa Mínimo: {exc}") from exc
-        cache.delete("gem:students:v5")
+        cache.delete("gem:students:v7")
         self.stdout.write(self.style.SUCCESS(f"Programa Mínimo atualizado em {sum(summary.values())} aluno(s)."))

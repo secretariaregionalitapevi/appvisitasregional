@@ -1,5 +1,6 @@
 """Painel gerencial de aulas e frequência alimentado pela sincronização incremental com o SAM."""
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import io
 import json
@@ -15,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .access_control import can_access, common_catalog, scope_details, service_headers, user_scope
-from .gem import can_open_module
+from .gem import STATUS_VIEW, can_open_module
 
 
 def page(request):
@@ -103,12 +104,31 @@ def api_student_attendance(request, student_id):
         if not calls:
             return JsonResponse({"error": "Nenhuma chamada de frequencia foi encontrada para este aluno."}, status=404)
 
-        students = _get(
-            "musica_acompanhamento_aluno",
-            select="id,nome_aluno,status,comum_congregacao,cargo_ministerio,nivel,instrumento,municipio,programa_minimo_percentual,registro_msa",
-            id=f"eq.{student_id}", limit=1,
-        )
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            student_future = executor.submit(
+                _get, "musica_acompanhamento_aluno",
+                select="id,nome_aluno,comum_congregacao,cargo_ministerio,nivel,instrumento,municipio,programa_minimo_percentual,registro_msa",
+                id=f"eq.{student_id}", limit=1,
+            )
+            status_future = executor.submit(
+                _get, STATUS_VIEW,
+                select="aluno_id,operational_status,requires_review,last_activity_at",
+                aluno_id=f"eq.{student_id}", limit=1,
+            )
+            exams_future = executor.submit(
+                _get, "musica_acompanhamento_provas", select="*", aluno_id=f"eq.{student_id}",
+                order="data_prova.desc", limit=1000,
+            )
+            students = student_future.result()
+            status_rows = status_future.result()
+            exams = exams_future.result()
         student_record = students[0] if students else {}
+        operational = status_rows[0] if status_rows else {}
+        operational_status = str(operational.get("operational_status") or "SEM HISTORICO").strip().upper()
+        if operational.get("requires_review") or operational_status == "EXCLUIR":
+            operational_status = "A EXCLUIR"
+        elif operational_status not in {"ATIVO", "ALERTA", "INATIVO", "SEM HISTORICO", "SEM HISTÓRICO"}:
+            operational_status = "SEM HISTORICO"
 
         lessons = []
         class_ids = list(dict.fromkeys(str(row["aula_id"]) for row in calls))
@@ -134,10 +154,6 @@ def api_student_attendance(request, student_id):
         if not calls:
             return JsonResponse({"error": "Aluno nao encontrado neste escopo."}, status=404)
 
-        exams = _get(
-            "musica_acompanhamento_provas", select="*", aluno_id=f"eq.{student_id}",
-            order="data_prova.desc", limit=1000,
-        )
         exam_rows = []
         for exam in exams:
             grade = _grade(exam.get("nota"))
@@ -207,7 +223,7 @@ def api_student_attendance(request, student_id):
                 "comum": student_record.get("comum_congregacao") or latest.get("congregacao_label"),
                 "municipio": student_record.get("municipio") or latest.get("municipio"),
                 "instrumento": student_record.get("instrumento"), "nivel": student_record.get("nivel"),
-                "cargo_ministerio": student_record.get("cargo_ministerio"), "status": student_record.get("status"),
+                "cargo_ministerio": student_record.get("cargo_ministerio"), "status": operational_status,
                 "registro_msa": student_record.get("registro_msa"),
                 "programa_minimo_percentual": student_record.get("programa_minimo_percentual"),
             },

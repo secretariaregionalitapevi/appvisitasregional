@@ -36,7 +36,9 @@ class GemAttendanceBulletinTests(SimpleTestCase):
                     {"aula_id": self.lesson_id, "aluno_id": str(self.student_id), "nome_aluno": "ANA", "presente": False, "source_member_id": 10},
                 ]
             if table == "musica_acompanhamento_aluno":
-                return [{"id": str(self.student_id), "nome_aluno": "ANA", "instrumento": "VIOLINO", "nivel": "CANDIDATA", "comum_congregacao": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI", "programa_minimo_percentual": 25}]
+                return [{"id": str(self.student_id), "nome_aluno": "ANA", "status": "CONCLUIDO", "instrumento": "VIOLINO", "nivel": "CANDIDATA", "comum_congregacao": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI", "programa_minimo_percentual": 25}]
+            if table == gem_classes.STATUS_VIEW:
+                return [{"aluno_id": str(self.student_id), "operational_status": "ALERTA", "requires_review": False}]
             if table == "musica_acompanhamento_provas":
                 return [
                     {"data_prova": "2026-08-10", "modulo": "Teoria", "nota": "82,5", "observacoes": "Bom aproveitamento"},
@@ -52,6 +54,7 @@ class GemAttendanceBulletinTests(SimpleTestCase):
         self.assertEqual(body["student"]["nome"], "ANA")
         self.assertEqual(body["student"]["comum"], "BR-22-0001 - CENTRAL")
         self.assertEqual(body["student"]["instrumento"], "VIOLINO")
+        self.assertEqual(body["student"]["status"], "ALERTA")
         self.assertEqual(body["totals"], {"aulas": 2, "presencas": 1, "ausencias": 1, "frequencia": 50})
         self.assertEqual(len(body["semesters"]), 4)
         self.assertEqual(body["projection"]["nivel"], "BAIXA")

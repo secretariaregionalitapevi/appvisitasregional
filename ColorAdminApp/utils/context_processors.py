@@ -61,6 +61,11 @@ def sidebar_menu(request):
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},
+	{ 'url': '/musica/', 'icon': 'fa fa-music', 'title': 'Música',
+		'children': [
+			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' }
+		]
+	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-building-shield', 'title': 'Administração', 'name': 'administration',
 		'children': [
 			{ 'url': '/administracao/congregacoes/', 'title': 'Congregações', 'name': 'operationalAdministration' },

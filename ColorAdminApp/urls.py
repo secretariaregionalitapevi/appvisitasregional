@@ -7,6 +7,7 @@ from . import musicalizacao
 from . import gem
 from . import gem_sync_admin
 from . import gem_classes
+from . import music_exams
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
@@ -77,6 +78,14 @@ urlpatterns = [
     path('gem/api/lancamentos/<str:source_name>/', gem.api_student_record, name='gemStudentRecordCreate'),
     path('gem/api/lancamentos/<str:source_name>/<uuid:record_id>/', gem.api_student_record, name='gemStudentRecord'),
     path('gem/api/documentos/<uuid:record_id>/', gem.activity_document, name='gemActivityDocument'),
+    path('musica/exames/', music_exams.page, name='musicExams'),
+    path('musica/exames/api/dashboard/', music_exams.api_dashboard, name='musicExamsDashboard'),
+    path('musica/exames/api/agenda/', music_exams.api_agenda, name='musicExamsAgenda'),
+    path('musica/exames/api/registros/', music_exams.api_record, name='musicExamsRecordCreate'),
+    path('musica/exames/api/importar/', music_exams.api_import, name='musicExamsImport'),
+    path('musica/exames/api/participantes/', music_exams.api_participants, name='musicExamsParticipants'),
+    path('musica/exames/documentos/<uuid:record_id>/', music_exams.document, name='musicExamsDocument'),
+    path('musica/exames/exportar-excel/', music_exams.export_excel, name='musicExamsExcel'),
     path('ai/chat/', views.aiChat, name='aiChat'),
     path('ai/image-generator/', views.aiImageGenerator, name='aiImageGenerator'),
     path('email/inbox/', views.emailInbox, name='emailInbox'),

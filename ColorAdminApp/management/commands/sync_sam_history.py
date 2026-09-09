@@ -193,7 +193,7 @@ class Command(BaseCommand):
                     json={"programa_minimo_percentual": program_minimum_progress(student_msa)}, timeout=30,
                 )
                 response.raise_for_status()
-            cache.delete("gem:students:v5")
+            cache.delete("gem:students:v7")
         except requests.RequestException as exc:
             raise CommandError(f"A importação foi interrompida: {exc}") from exc
         self.stdout.write(self.style.SUCCESS(f"Sincronização concluída: {stats['new_events']} evento(s) importado(s)."))

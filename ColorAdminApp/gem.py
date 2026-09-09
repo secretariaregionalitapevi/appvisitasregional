@@ -97,21 +97,22 @@ def _program_progress(student, msa_rows):
 
 
 def _fetch_students():
-    cached = cache.get("gem:students:v6")
+    cached = cache.get("gem:students:v7")
     if cached is not None:
         return cached
 
     page_size = 1000
     url = f"{settings.SUPABASE_URL}/rest/v1/{TABLE}"
-    count_response = requests.get(
+    first_response = requests.get(
         url, headers=service_headers("count=exact"),
-        params={"select": "id", "limit": 1}, timeout=15,
+        params={"select": SUMMARY_FIELDS, "offset": 0, "limit": page_size}, timeout=20,
     )
-    count_response.raise_for_status()
+    first_response.raise_for_status()
+    first_page = first_response.json()
     try:
-        total = int(count_response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
+        total = int(first_response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
     except ValueError:
-        total = 10000
+        total = len(first_page)
 
     def fetch_page(offset):
         response = requests.get(
@@ -123,14 +124,14 @@ def _fetch_students():
         response.raise_for_status()
         return offset, response.json()
 
-    offsets = list(range(0, total, page_size))
-    with ThreadPoolExecutor(max_workers=min(10, max(1, len(offsets)))) as executor:
-        pages = sorted(executor.map(fetch_page, offsets), key=lambda item: item[0])
-    rows = [row for _, page in pages for row in page]
-    activity_dates = _fetch_last_activity_dates(row.get("id") for row in rows)
-    for row in rows:
-        row["last_activity_at"] = activity_dates.get(str(row.get("id")))
-    cache.set("gem:students:v6", rows, 300)
+    offsets = list(range(page_size, total, page_size))
+    if offsets:
+        with ThreadPoolExecutor(max_workers=min(10, len(offsets))) as executor:
+            pages = sorted(executor.map(fetch_page, offsets), key=lambda item: item[0])
+    else:
+        pages = []
+    rows = list(first_page) + [row for _, page in pages for row in page]
+    cache.set("gem:students:v7", rows, 300)
     return rows
 
 
@@ -162,11 +163,16 @@ def _fetch_last_activity_dates(student_ids):
     }
 
 
-def _visible_students(request):
+def _visible_students(request, include_activity=False):
     scope = user_scope(request)
+    sources = _fetch_students()
+    activity_dates = _fetch_last_activity_dates(row.get("id") for row in sources) if include_activity else {}
     rows = []
-    for source in _fetch_students():
+    for source in sources:
         row = dict(source)
+        if include_activity:
+            row["last_activity_at"] = activity_dates.get(str(row.get("id")))
+            row.update(operational_activity_from_last_activity(row["last_activity_at"]))
         row["comum"] = row.get("comum_congregacao")
         row["cidade"] = row.get("municipio")
         row["situacao_academica"] = academic_status(row)
@@ -194,6 +200,25 @@ def operational_status_from_days(inactive_days):
     if inactive_days > 90:
         return "ALERTA"
     return "ATIVO"
+
+
+def operational_activity_from_last_activity(last_activity_at, today=None):
+    """Monta a classificação operacional a partir do último lançamento SAM."""
+    event_date = _event_date(last_activity_at)
+    try:
+        last_activity = datetime.fromisoformat(event_date).date()
+    except (TypeError, ValueError):
+        return {
+            "inactive_days": None,
+            "operational_status": "SEM HISTORICO",
+            "requires_review": False,
+        }
+    inactive_days = ((today or datetime.now().date()) - last_activity).days
+    return {
+        "inactive_days": inactive_days,
+        "operational_status": operational_status_from_days(inactive_days),
+        "requires_review": inactive_days > 365,
+    }
 
 
 def _operational_activity(datasets, today=None):
@@ -402,7 +427,7 @@ def api_students(request):
                 return _denied()
             saved = requests.post(f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers('return=representation'), json=payload, timeout=20)
             saved.raise_for_status()
-            cache.delete('gem:students:v6')
+            cache.delete('gem:students:v7')
             return JsonResponse({'item': saved.json()[0]}, status=201)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'JSON invalido.'}, status=400)
@@ -453,6 +478,7 @@ def api_students(request):
         for source in sources:
             row = dict(source)
             row["last_activity_at"] = activity_dates.get(str(row.get("id")))
+            row.update(operational_activity_from_last_activity(row["last_activity_at"]))
             row["comum"] = row.get("comum_congregacao")
             row["cidade"] = row.get("municipio")
             row["situacao_academica"] = academic_status(row)
@@ -477,7 +503,7 @@ def api_students(request):
 
 
 def _report_rows(request):
-    _scope, rows = _visible_students(request)
+    _scope, rows = _visible_students(request, include_activity=True)
     category = request.GET.get('situacao', 'formacao')
     selected = {key: set(request.GET.getlist(key)) for key in ('nivel', 'municipio', 'comum', 'instrumento')}
     query = _norm(request.GET.get('q'))
@@ -649,7 +675,7 @@ def api_student_detail(request, student_id):
             if milestone:
                 labels = {"ingresso_ensaio": "Ingresso no Ensaio", "ingresso_rjm": "Ingresso na RJM", "ingresso_culto": "Ingresso no Culto Oficial", "oficializacao": "Oficialização"}
                 requests.post(f"{settings.SUPABASE_URL}/rest/v1/{SOURCE_CONFIG['atividades'][0]}", headers=service_headers("return=minimal"), json={"aluno_id": str(student_id), "tipo_atividade": milestone, "titulo": labels[milestone], "descricao": "Marco registrado automaticamente pela alteração de nível.", "data_atividade": datetime.now().date().isoformat(), "comum_congregacao": candidate.get("comum_congregacao"), "municipio": candidate.get("municipio")}, timeout=15).raise_for_status()
-        cache.delete("gem:students:v6")
+        cache.delete("gem:students:v7")
         return JsonResponse({"item": saved.json()[0]})
     except json.JSONDecodeError:
         return JsonResponse({"error": "JSON inválido."}, status=400)

@@ -46,8 +46,9 @@ class GemTests(SimpleTestCase):
         ]
         self.regional = {"role_id": 2, "sector": "Musicalização", "access_level": "regional"}
 
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
     @patch("ColorAdminApp.gem._fetch_students")
-    def test_report_can_exclude_individual_students(self, fetch_students):
+    def test_report_can_exclude_individual_students(self, fetch_students, _activity_dates):
         fetch_students.return_value = self.rows
         request = request_with_profile("/gem/api/alunos/relatorio/", self.regional, {
             "situacao": "todos", "excluir_aluno": ["1", "3"],
@@ -117,14 +118,16 @@ class GemTests(SimpleTestCase):
         self.assertEqual(activity["operational_status"], "INATIVO")
         self.assertTrue(activity["requires_review"])
 
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates")
     @patch("ColorAdminApp.gem._fetch_students")
-    def test_summary_separates_formation_from_graduates(self, fetch_students):
+    def test_summary_separates_formation_from_graduates(self, fetch_students, activity_dates):
         fetch_students.return_value = self.rows
         response = api_summary(request_with_profile("/gem/api/resumo/", self.regional))
         payload = json.loads(response.content)
         self.assertEqual(payload["totals"]["formation"], 2)
         self.assertEqual(payload["totals"]["graduates"], 1)
         self.assertEqual(payload["totals"]["program_complete"], 1)
+        activity_dates.assert_not_called()
 
     @patch("ColorAdminApp.gem.requests.get")
     @patch("ColorAdminApp.gem._fetch_students")
