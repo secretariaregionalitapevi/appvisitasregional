@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.test import SimpleTestCase
 
 from .sam_catalog import match_local_common, match_target, parse_catalog
@@ -43,3 +45,12 @@ class SamCatalogTests(SimpleTestCase):
     def test_catalog_guard_rejects_abnormal_drop(self):
         self.assertTrue(Command._catalog_size_is_safe(4460, 4500))
         self.assertFalse(Command._catalog_size_is_safe(500, 4500))
+
+    def test_catalog_reconciliation_uses_sam_id_and_source_location_fallback(self):
+        command = Path(__file__).parent / "management" / "commands" / "sync_sam_catalog.py"
+        content = command.read_text(encoding="utf-8")
+
+        self.assertIn("targets_by_sam_id", content)
+        self.assertIn('target or targets_by_sam_id.get(str(student["source_key"]))', content)
+        self.assertIn('local_common["comum"] if local_common else student["common_name"]', content)
+        self.assertIn('local_common.get("cidade") if local_common else student["city"]', content)

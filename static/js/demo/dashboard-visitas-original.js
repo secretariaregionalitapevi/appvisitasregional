@@ -54,15 +54,20 @@
   function renderMainChart(grouped) {
     if (mainChart) mainChart.destroy();
     $('#visitors-line-chart').empty();
+    const gviTotals = grouped.map(group => group.rows.reduce((sum, row) => sum + catValue(row, categories[0]), 0));
+    const otherTotals = grouped.map((group, index) => Math.max(group.rows.reduce((sum, row) => sum + rowTotal(row), 0) - gviTotals[index], 0));
     mainChart = new ApexCharts(document.querySelector('#visitors-line-chart'), {
       chart: { type: 'area', height: 254, stacked: true, toolbar: { show: false }, foreColor: '#d3d8de', animations: { enabled: true, speed: 700 } },
-      series: categories.map(category => ({ name: category.label, data: grouped.map(group => group.rows.reduce((sum, row) => sum + catValue(row, category), 0)) })),
-      colors: categories.map(category => category.color), dataLabels: { enabled: false },
-      stroke: { curve: 'straight', width: 1.5 }, fill: { type: 'solid', opacity: .78 },
+      series: [
+        { name: 'Irmandade (GVI)', data: gviTotals },
+        { name: 'Outras modalidades', data: otherTotals }
+      ],
+      colors: ['#00acac', '#348fe2'], dataLabels: { enabled: false },
+      stroke: { curve: 'smooth', width: 2 }, fill: { type: 'solid', opacity: .82 },
       xaxis: { categories: grouped.map(group => group.month.format('MMM/YY')), axisBorder: { color: '#4b5560' }, axisTicks: { color: '#4b5560' } },
       yaxis: { labels: { formatter: value => Math.round(value) } },
       grid: { borderColor: '#4b5560', strokeDashArray: 0 },
-      legend: { position: 'top', horizontalAlign: 'right', labels: { colors: '#fff' } },
+      legend: { position: 'top', horizontalAlign: 'right', fontSize: '12px', markers: { size: 4 }, labels: { colors: '#fff' } },
       tooltip: { theme: 'dark', y: { formatter: value => `${fmt(value)} visitas` } }, noData: { text: 'Sem visitas no período' }
     });
     mainChart.render();
@@ -104,7 +109,7 @@
     if (!cityMap) {
       cityMap = new maplibregl.Map({
         container: 'visitors-map',
-        style: { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap' } }, layers: [{ id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': 0, 'raster-brightness-min': .08, 'raster-brightness-max': 1 } }] },
+        style: { version: 8, sources: { basemap: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '(c) Esri, HERE, Garmin, FAO, NOAA, USGS | (c) OpenStreetMap contributors' } }, layers: [{ id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-saturation': 0, 'raster-brightness-min': .08, 'raster-brightness-max': 1 } }] },
         center: [-46.93, -23.55], zoom: 9.4, minZoom: 8, maxZoom: 15, attributionControl: true
       });
       cityMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');

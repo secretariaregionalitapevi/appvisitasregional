@@ -8,6 +8,8 @@ from . import gem
 from . import gem_sync_admin
 from . import gem_classes
 from . import music_exams
+from . import gem_projection
+from . import gem_projection
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
@@ -26,6 +28,7 @@ urlpatterns = [
     path('administracao/api/operacional/<slug:section>/registros/<uuid:record_id>/', admin_views.operational_record, name='operationalRecord'),
     path('auditoria/', admin_views.audit_center, name='auditCenter'),
     path('administracao/api/dados/', admin_views.administration_data, name='administrationData'),
+    path('administracao/api/auditoria/exportar-excel/', admin_views.export_audit_excel, name='exportAuditExcel'),
     path('administracao/api/acessos-pendentes/', admin_views.pending_access_count, name='pendingAccessCount'),
     path('administracao/api/usuarios/<uuid:user_id>/', admin_views.administration_user, name='administrationUser'),
     path('administracao/api/usuarios/<uuid:user_id>/metadados/', admin_views.administration_user_metadata, name='administrationUserMetadata'),
@@ -57,6 +60,9 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
     path('gem/', gem.page, name='gemDashboard'),
+    path('gem/projecao/', gem_projection.page, name='gemProjection'),
+    path('gem/projecao/api/', gem_projection.api_dashboard, name='gemProjectionApi'),
+    path('gem/projecao/exportar-excel/', gem_projection.export_excel, name='gemProjectionExcel'),
     path('gem/sam/', gem_sync_admin.page, name='gemSyncAdmin'),
     path('gem/sam/api/dashboard/', gem_sync_admin.api_dashboard, name='gemSyncDashboard'),
     path('gem/sam/api/controle/', gem_sync_admin.api_control, name='gemSyncControl'),

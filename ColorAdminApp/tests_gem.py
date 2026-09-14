@@ -9,7 +9,7 @@ from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from .gem import (
     INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
-    api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
+    api_student_detail, api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
 )
 
 
@@ -21,6 +21,39 @@ def request_with_profile(path, profile, params=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class GemTests(SimpleTestCase):
+    @patch("ColorAdminApp.gem.requests.delete")
+    @patch("ColorAdminApp.gem.requests.get")
+    def test_manual_student_can_be_deleted_inside_user_scope(self, mock_get, mock_delete):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = [{
+            "id": "11111111-1111-1111-1111-111111111111", "nome_aluno": "ALUNO TESTE",
+            "registro_msa": None, "comum_congregacao": "CENTRAL", "municipio": "ITAPEVI",
+        }]
+        mock_delete.return_value.raise_for_status.return_value = None
+        request = RequestFactory().delete("/gem/api/alunos/11111111-1111-1111-1111-111111111111/")
+        request.session = {"authenticated": True, "user_profile": self.regional}
+
+        response = api_student_detail(request, "11111111-1111-1111-1111-111111111111")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_delete.call_args.kwargs["params"]["id"], "eq.11111111-1111-1111-1111-111111111111")
+
+    @patch("ColorAdminApp.gem.requests.delete")
+    @patch("ColorAdminApp.gem.requests.get")
+    def test_sam_student_cannot_be_deleted_and_recreated_by_sync(self, mock_get, mock_delete):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = [{
+            "id": "11111111-1111-1111-1111-111111111111", "nome_aluno": "ALUNO SAM",
+            "registro_msa": "503771", "comum_congregacao": "CENTRAL", "municipio": "ITAPEVI",
+        }]
+        request = RequestFactory().delete("/gem/api/alunos/11111111-1111-1111-1111-111111111111/")
+        request.session = {"authenticated": True, "user_profile": self.regional}
+
+        response = api_student_detail(request, "11111111-1111-1111-1111-111111111111")
+
+        self.assertEqual(response.status_code, 409)
+        mock_delete.assert_not_called()
+
     def test_instrument_filter_uses_pedagogical_order(self):
         values = {"CLARINETE", "VIOLONCELO", "VIOLINO", "VIOLA", "BARÍTONO DE PISTO"}
         self.assertEqual(

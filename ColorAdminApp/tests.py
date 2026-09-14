@@ -8,7 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import Resolver404, resolve
 
 from .access_control import can_access, filter_rows, user_scope
-from .admin_views import administration, administration_data, administration_user
+from .admin_views import administration, administration_data, administration_user, export_audit_excel
 from .middleware import SupabaseAuthMiddleware
 from .views import apiAuth, apiRoteiroBairros, apiStorageUpload, apiVisitas, apiVisitasAgenda, apiVisitasEquipes, apiVisitasIrmandade, apiVisitasRelatoriosEquipes, apply_actual_visit_times, format_display_name, normalize_team_name, normalize_visit_team, unique_member_for_orphan_visit, userRegisterV3, visitasAgenda, visitasCadastro, visitasMapa, visitasNavegar, visitasRelatoriosEquipes
 from .utils.routing import auto_dispatch_visits, clean_visit_address, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically, route_address_key, route_selection_origin, select_coherent_households, street_key
@@ -478,6 +478,29 @@ class GlobalAdministrationTests(TestCase):
         response = administration_data(self.request_with_profile(3, "/administracao/api/dados/"))
         self.assertEqual(response.status_code, 403)
 
+    @patch("ColorAdminApp.admin_views.log_audit")
+    @patch("ColorAdminApp.admin_views._get_table")
+    def test_audit_excel_uses_institutional_header_and_filtered_rows(self, get_table, audit):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        get_table.side_effect = [
+            [{"id": 1, "user_id": "actor-1", "action": "USER_APPROVAL_APPROVED", "module": "ADMIN", "created_at": "2026-09-11T15:04:58Z", "ip_address": "127.0.0.1", "details": {"reviewed_user_id": "target-1", "sector": "ebi", "status": "approved"}}],
+            [{"user_id": "actor-1", "full_name": "Responsavel Teste"}, {"user_id": "target-1", "full_name": "Pessoa Aprovada", "sector": "EBI", "comum": "CENTRAL"}],
+        ]
+        request = RequestFactory().get("/administracao/api/auditoria/exportar-excel/?module=ADMIN")
+        request.session = {"user_id": "actor-1", "user_profile": {"role_id": 1, "full_name": "Responsavel Teste"}}
+        response = export_audit_excel(request)
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content))
+        sheet = workbook["AUDITORIA"]
+        self.assertEqual(sheet["A1"].value, "CONGREGAÇÃO CRISTÃ NO BRASIL")
+        self.assertEqual(sheet["A2"].value, "Regional Itapevi - São Paulo")
+        self.assertEqual(sheet.freeze_panes, "A7")
+        self.assertEqual(sheet.page_setup.orientation, "landscape")
+        self.assertEqual(sheet["E7"].value, "Pessoa Aprovada")
+        self.assertEqual(sheet["G7"].value, "EBI")
+        audit.assert_called_once()
+
     @patch("ColorAdminApp.admin_views._get_table", return_value=[])
     def test_global_user_can_consult_admin_api(self, _get_table):
         response = administration_data(self.request_with_profile(1, "/administracao/api/dados/"))
@@ -485,13 +508,11 @@ class GlobalAdministrationTests(TestCase):
 
     @patch("ColorAdminApp.admin_views.log_audit")
     @patch("ColorAdminApp.admin_views.common_catalog", return_value=CATALOG)
-    @patch("ColorAdminApp.admin_views.requests.patch")
+    @patch("ColorAdminApp.admin_views._update_profile_via_rpc")
     @patch("ColorAdminApp.admin_views._get_table")
-    def test_local_approval_canonicalizes_common_and_municipality(self, get_table, patch_request, _catalog, _audit):
-        get_table.return_value = [{"user_id": "user-1", "role_id": 4, "comum": CATALOG[0]["comum"]}]
-        patch_request.return_value = Mock()
-        patch_request.return_value.raise_for_status.return_value = None
-        patch_request.return_value.json.return_value = [{"user_id": "user-1", "status": "approved"}]
+    def test_local_approval_canonicalizes_common_and_municipality(self, get_table, update_profile, _catalog, _audit):
+        get_table.return_value = [{"user_id": "user-1", "full_name": "Usuario Teste", "status": "pending", "role_id": 4, "comum": CATALOG[0]["comum"]}]
+        update_profile.return_value = {"user_id": "user-1", "full_name": "Usuario Teste", "status": "approved", "role_id": 4, "comum": CATALOG[0]["comum"], "municipio": "ITAPEVI", "cidade": "ITAPEVI"}
         request = RequestFactory().patch(
             "/administracao/api/usuarios/user-1/",
             data={"status": "approved", "role_id": 4, "comum": CATALOG[0]["comum"]},
@@ -500,10 +521,15 @@ class GlobalAdministrationTests(TestCase):
         request.session = {"user_profile": {"role_id": 1}}
         response = administration_user(request, "user-1")
         self.assertEqual(response.status_code, 200)
-        payload = patch_request.call_args.kwargs["json"]
+        payload = update_profile.call_args.args[1]
         self.assertEqual(payload["comum"], CATALOG[0]["comum"])
         self.assertEqual(payload["municipio"], "ITAPEVI")
         self.assertEqual(payload["cidade"], "ITAPEVI")
+        audit_action, audit_module, audit_details = _audit.call_args.args[1:]
+        self.assertEqual(audit_action, "USER_APPROVAL_APPROVED")
+        self.assertEqual(audit_module, "ADMIN")
+        self.assertEqual(audit_details["target_user_id"], "user-1")
+        self.assertEqual(audit_details["target"]["status_after"], "approved")
 
     @patch("ColorAdminApp.admin_views.log_audit")
     @patch("ColorAdminApp.admin_views.requests.patch")

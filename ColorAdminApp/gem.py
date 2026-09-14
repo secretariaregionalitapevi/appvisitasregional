@@ -643,7 +643,7 @@ def api_student_timeline(request, student_id):
 def api_student_detail(request, student_id):
     if not can_open_module(request):
         return _denied()
-    if request.method != "PATCH":
+    if request.method not in {"PATCH", "DELETE"}:
         return JsonResponse({"error": "Método não permitido."}, status=405)
     fields = {"nome_aluno", "registro_msa", "comum_congregacao", "cargo_ministerio", "nivel", "instrumento", "municipio"}
     try:
@@ -659,6 +659,18 @@ def api_student_detail(request, student_id):
         current_location = dict(current, comum=current.get("comum_congregacao"), cidade=current.get("municipio"))
         if not can_access(user_scope(request), current_location):
             return _denied()
+        if request.method == "DELETE":
+            if current.get("registro_msa"):
+                return JsonResponse({
+                    "error": "Este aluno está vinculado ao SAM e não pode ser excluído somente neste painel. Remova ou inative o cadastro no SAM para evitar que ele seja recriado na próxima sincronização."
+                }, status=409)
+            deleted = requests.delete(
+                f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers("return=minimal"),
+                params={"id": f"eq.{student_id}"}, timeout=15,
+            )
+            deleted.raise_for_status()
+            cache.delete("gem:students:v7")
+            return JsonResponse({"ok": True})
         raw = json.loads(request.body or "{}")
         payload = {key: raw.get(key) for key in fields if key in raw}
         candidate = dict(current, **payload, comum=payload.get("comum_congregacao", current.get("comum_congregacao")), cidade=payload.get("municipio", current.get("municipio")))

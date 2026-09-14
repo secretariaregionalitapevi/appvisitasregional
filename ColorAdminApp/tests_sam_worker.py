@@ -2,7 +2,9 @@ from django.test import SimpleTestCase
 from unittest.mock import Mock, patch
 
 from .management.commands.run_sam_sync_worker import (
+    DEFAULT_CLASSES_INTERVAL_SECONDS,
     DEFAULT_IDLE_INTERVAL_SECONDS,
+    MIN_CLASSES_INTERVAL_SECONDS,
     MIN_IDLE_INTERVAL_SECONDS,
     Command,
 )
@@ -52,6 +54,18 @@ class SamWorkerValidationTests(SimpleTestCase):
     def test_idle_discovery_interval_is_fast_but_rate_limited(self):
         self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 120)
         self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 60)
+        self.assertEqual(DEFAULT_CLASSES_INTERVAL_SECONDS, 300)
+        self.assertEqual(MIN_CLASSES_INTERVAL_SECONDS, 120)
+
+    @patch("ColorAdminApp.management.commands.run_sam_sync_worker.call_command")
+    def test_worker_runs_incremental_classes_with_short_lookback(self, call_command):
+        command = Command()
+        command._sync_classes("C:/scraper", 14)
+
+        call_command.assert_called_once_with(
+            "sync_sam_classes", scraper_dir="C:/scraper", lookback_days=14,
+            stdout=command.stdout, stderr=command.stderr,
+        )
 
     @patch("ColorAdminApp.management.commands.run_sam_sync_worker.requests.get")
     def test_old_synced_histories_fill_remaining_batch(self, get):

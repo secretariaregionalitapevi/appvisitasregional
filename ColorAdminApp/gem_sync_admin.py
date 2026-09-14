@@ -199,6 +199,8 @@ def api_dashboard(request):
         for row in rows:
             city = row.get("municipio") or "NÃO INFORMADO"
             cities[city]["total"] += 1
+            if row.get("sync_status") == "synced":
+                cities[city]["synced"] += 1
             cities[city][row.get("operational_status") or "SEM HISTORICO"] += 1
             if row.get("requires_review"):
                 cities[city]["EXCLUIR"] += 1

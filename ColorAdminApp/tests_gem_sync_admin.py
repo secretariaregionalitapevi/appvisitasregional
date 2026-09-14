@@ -18,6 +18,25 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIn(".mirror.offline-empty .connection-banner{min-height:0", content)
         self.assertIn("mirror.classList.toggle('offline-empty',!hasData)", content)
 
+    def test_municipality_report_has_real_coverage_and_readable_metrics(self):
+        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        content = template.read_text(encoding="utf-8")
+
+        self.assertIn("<th>Cobertura</th>", content)
+        self.assertIn("metric-badge", content)
+        self.assertIn("coverage-track", content)
+        self.assertIn("Number(x.synced||0)/Number(x.total)", content)
+        self.assertIn('class="column-badge active">Ativos</span>', content)
+        self.assertIn('class="column-badge status-alert">Alertas</span>', content)
+        self.assertIn('class="column-badge review">A revisar</span>', content)
+
+    def test_current_student_hides_internal_batch_count(self):
+        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        content = template.read_text(encoding="utf-8")
+
+        self.assertIn('`Processando: ${c.current_student}`', content)
+        self.assertNotIn("conclu\\u00eddos neste lote", content)
+
 
 class GemSyncAdminReportTests(SimpleTestCase):
     def test_report_dates_always_include_day_month_year_and_time(self):

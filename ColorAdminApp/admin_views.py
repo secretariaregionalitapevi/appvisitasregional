@@ -1,10 +1,14 @@
 import json
+import io
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from functools import wraps
 
 import requests
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -142,7 +146,8 @@ def _update_profile_via_rpc(user_id, changes):
 
 @global_only
 def audit_center(request):
-    return render(request, "pages/auditoria.html")
+    profile = request.session.get("user_profile") or {}
+    return render(request, "pages/auditoria.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
 
 
 @global_only
@@ -173,6 +178,110 @@ def administration_data(request):
     except requests.RequestException as exc:
         logger.exception("Falha ao consultar dados administrativos: %s", exc)
         return JsonResponse({"error": "Falha ao consultar os dados administrativos."}, status=502)
+
+
+@global_only
+@require_http_methods(["GET"])
+def export_audit_excel(request):
+    logs = _get_table("audit_logs", {"select": "*", "order": "created_at.desc", "limit": "1000"})
+    profiles = _get_table("profiles", {"select": "user_id,full_name,username,sector,comum,municipio,cidade"})
+    profile_map = {str(row.get("user_id")): row for row in profiles if row.get("user_id")}
+    module_filter = str(request.GET.get("module") or "").strip()
+    action_filter = str(request.GET.get("action") or "").strip()
+    date_from = str(request.GET.get("date_from") or request.GET.get("date") or "").strip()
+    date_to = str(request.GET.get("date_to") or request.GET.get("date") or "").strip()
+    event_id = str(request.GET.get("event_id") or "").strip()
+    search = str(request.GET.get("search") or "").strip().casefold()
+    action_labels = {
+        "USER_APPROVAL_APPROVED": "Aprovação de acesso", "USER_APPROVAL_REJECTED": "Rejeição de acesso",
+        "UPDATE_USER_ACCESS": "Permissões do usuário", "UPDATE_USER_MODULE_ACCESS": "Pastas autorizadas",
+        "VIEW_PAGE": "Navegação", "LOGIN": "Login", "LOGOUT": "Logout",
+    }
+    module_labels = {"ADMIN": "Usuários e acessos", "NAVIGATION": "Navegação", "AUTH": "Autenticação", "AUDITORIA": "Auditoria"}
+
+    def target(log):
+        details = log.get("details") or {}
+        snapshot = details.get("target") or {}
+        target_id = snapshot.get("user_id") or details.get("target_user_id") or details.get("reviewed_user_id")
+        target_profile = profile_map.get(str(target_id), {})
+        return target_id, snapshot, target_profile
+
+    def actor_name(log):
+        details = log.get("details") or {}
+        actor = details.get("actor") or {}
+        profile = profile_map.get(str(log.get("user_id")), {})
+        return profile.get("full_name") or actor.get("name") or log.get("user_id") or "Sistema"
+
+    def summary(log):
+        action = str(log.get("action") or "").upper()
+        target_id, snapshot, target_profile = target(log)
+        target_name = snapshot.get("name") or target_profile.get("full_name") or target_profile.get("username") or target_id
+        if action == "USER_APPROVAL_APPROVED":
+            return f"Aprovou o acesso de {target_name or 'usuário não identificado'}."
+        if action == "USER_APPROVAL_REJECTED":
+            return f"Rejeitou o acesso de {target_name or 'usuário não identificado'}."
+        return action_labels.get(action, action.replace("_", " ").title())
+
+    filtered = []
+    for log in logs:
+        if event_id and str(log.get("id")) != event_id:
+            continue
+        if module_filter and log.get("module") != module_filter:
+            continue
+        if action_filter and log.get("action") != action_filter:
+            continue
+        log_date = str(log.get("created_at") or "")[:10]
+        if date_from and log_date < date_from:
+            continue
+        if date_to and log_date > date_to:
+            continue
+        haystack = " ".join([str(log.get("action") or ""), str(log.get("module") or ""), actor_name(log), summary(log), json.dumps(log.get("details") or {}, ensure_ascii=False)]).casefold()
+        if search and search not in haystack:
+            continue
+        filtered.append(log)
+
+    profile = request.session.get("user_profile") or {}
+    report_user = profile.get("full_name") or profile.get("username") or "Usuário"
+    now = datetime.now()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "AUDITORIA"
+    headers = ["Data e hora", "Responsável", "Operação", "Módulo", "Usuário analisado", "Decisão", "Setor", "Comum", "IP de origem", "Resumo"]
+    last_column = get_column_letter(len(headers))
+    navy, pale, thin = "1E4B7A", "EAF2F8", Side(style="thin", color="CCD5DD")
+    for row, text, size, color, fill in [
+        (1, "CONGREGAÇÃO CRISTÃ NO BRASIL", 15, "FFFFFF", navy),
+        (2, "Regional Itapevi - São Paulo", 10, "FFFFFF", navy),
+        (3, "ADMINISTRAÇÃO · AUDITORIA E CONTROLE DE ACESSO", 12, navy, pale),
+    ]:
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=len(headers))
+        cell = sheet.cell(row, 1, text); cell.font = Font(size=size, bold=row != 2, color=color); cell.fill = PatternFill("solid", fgColor=fill); cell.alignment = Alignment(horizontal="center")
+    sheet.merge_cells("A4:E4"); sheet["A4"] = f"{'Evento individual' if event_id else 'Relatório de auditoria'} · {len(filtered)} evento(s) · Recorte: {module_filter or 'Todos os módulos'}"
+    sheet.merge_cells(f"F4:{last_column}4"); sheet["F4"] = f"Emissão: {now:%d/%m/%Y %H:%M} · Responsável: {report_user}"; sheet["F4"].alignment = Alignment(horizontal="right")
+    for cell in sheet[4]: cell.font = Font(size=9, bold=True, color="536A7D")
+    for column, label in enumerate(headers, 1):
+        cell = sheet.cell(6, column, label); cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=navy); cell.alignment = Alignment(horizontal="center", vertical="center"); cell.border = Border(bottom=thin)
+    status_names = {"approved": "Aprovado", "rejected": "Rejeitado", "pending": "Pendente"}
+    for row_index, log in enumerate(filtered, 7):
+        target_id, snapshot, target_profile = target(log)
+        action = str(log.get("action") or "").upper()
+        decision = snapshot.get("status_after") or ("approved" if action == "USER_APPROVAL_APPROVED" else "rejected" if action == "USER_APPROVAL_REJECTED" else "")
+        created = str(log.get("created_at") or "")
+        try: created = datetime.fromisoformat(created.replace("Z", "+00:00")).astimezone().strftime("%d/%m/%Y %H:%M")
+        except ValueError: pass
+        target_name = snapshot.get("name") or target_profile.get("full_name") or target_profile.get("username") or target_id or "—"
+        values = [created, actor_name(log), action_labels.get(action, action.replace("_", " ").title()), module_labels.get(log.get("module"), str(log.get("module") or "Global").replace("_", " ").title()), target_name, status_names.get(decision, decision or "—"), str(snapshot.get("sector") or target_profile.get("sector") or "—").upper(), snapshot.get("common") or target_profile.get("comum") or "—", log.get("ip_address") or "—", summary(log)]
+        for column, value in enumerate(values, 1):
+            cell = sheet.cell(row_index, column, value); cell.border = Border(bottom=thin); cell.alignment = Alignment(vertical="top", wrap_text=column == 10)
+            if row_index % 2 == 0: cell.fill = PatternFill("solid", fgColor="F4F6F8")
+    for index, width in enumerate([20, 28, 26, 23, 32, 16, 18, 42, 18, 48], 1): sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = "A7"; sheet.auto_filter.ref = f"A6:{last_column}{max(6, sheet.max_row)}"; sheet.sheet_view.showGridLines = False
+    sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True; sheet.print_title_rows = "1:6"
+    stream = io.BytesIO(); workbook.save(stream)
+    log_audit(request, "EXPORT", "AUDITORIA", {"format": "xlsx", "row_count": len(filtered), "event_id": event_id or None, "filters": {"module": module_filter or None, "action": action_filter or None, "date_from": date_from or None, "date_to": date_to or None, "search": search or None}, "outcome": "success"})
+    response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = f'attachment; filename="Relatorio_Auditoria_{now:%d-%m-%Y_%H-%M}.xlsx"'
+    return response
 
 
 @global_only
@@ -330,9 +439,38 @@ def administration_user(request, user_id):
                 }, status=400)
             municipality = str(common_row.get("cidade") or "").strip()
             changes.update({"comum": candidate_common, "municipio": municipality, "cidade": municipality})
+        previous = before[0]
         updated = _update_profile_via_rpc(user_id, changes)
-        log_audit(request, "UPDATE_USER_ACCESS", "ADMIN", {
-            "target_user_id": user_id, "before": before[0], "changes": changes,
+        previous_status = previous.get("status")
+        current_status = updated.get("status") or changes.get("status") or previous_status
+        if previous_status == "pending" and current_status == "approved":
+            audit_action = "USER_APPROVAL_APPROVED"
+        elif previous_status == "pending" and current_status == "rejected":
+            audit_action = "USER_APPROVAL_REJECTED"
+        else:
+            audit_action = "UPDATE_USER_ACCESS"
+        changed_fields = {
+            key: {"before": previous.get(key), "after": updated.get(key, value)}
+            for key, value in changes.items()
+            if previous.get(key) != updated.get(key, value)
+        }
+        log_audit(request, audit_action, "ADMIN", {
+            "target_user_id": str(user_id),
+            "target": {
+                "user_id": str(user_id),
+                "name": updated.get("full_name") or updated.get("username") or previous.get("full_name") or previous.get("username"),
+                "username": updated.get("username") or previous.get("username"),
+                "status_before": previous_status,
+                "status_after": current_status,
+                "role_id": updated.get("role_id", previous.get("role_id")),
+                "role": updated.get("role", previous.get("role")),
+                "sector": updated.get("sector", previous.get("sector")),
+                "municipality": updated.get("municipio", previous.get("municipio")),
+                "common": updated.get("comum", previous.get("comum")),
+            },
+            "decision": current_status if audit_action.startswith("USER_APPROVAL_") else None,
+            "changed_fields": changed_fields,
+            "outcome": "success",
         })
         return JsonResponse(updated)
     except ProfileUpdateConfigurationError as exc:

@@ -58,6 +58,7 @@ def sidebar_menu(request):
 		'children': [
 			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' },
 			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses' },
+			{ 'url': '/gem/projecao/', 'title': 'Projeção da Orquestra', 'name': 'gemProjection' },
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},

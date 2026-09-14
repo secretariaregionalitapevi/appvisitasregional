@@ -92,7 +92,7 @@ class Command(BaseCommand):
         try:
             targets = self._all(
                 "musica_acompanhamento_aluno",
-                "id,nome_aluno,comum_congregacao,municipio,instrumento,nivel,cargo_ministerio,status",
+                "id,nome_aluno,comum_congregacao,municipio,instrumento,nivel,cargo_ministerio,status,registro_msa",
             )
             states = self._all("sam_student_sync_state") if options["commit"] else []
             commons = common_catalog()
@@ -103,6 +103,7 @@ class Command(BaseCommand):
 
         state_by_key = {str(row.get("source_key")): row for row in states}
         target_by_id = {str(row.get("id")): row for row in targets}
+        targets_by_sam_id = {str(row.get("registro_msa")): row for row in targets if row.get("registro_msa")}
         targets_by_name = {}
         for row in targets:
             targets_by_name.setdefault(norm(row.get("nome_aluno")), []).append(row)
@@ -129,15 +130,15 @@ class Command(BaseCommand):
                 new_payloads = []
                 for student in students:
                     state = state_by_key.get(student["source_key"]) or {}
-                    if state.get("aluno_id") or targets_by_name.get(norm(student["name"])):
+                    if (state.get("aluno_id") or targets_by_sam_id.get(str(student["source_key"]))
+                            or targets_by_name.get(norm(student["name"]))):
                         continue
                     common_matches = commons_by_location.get((norm(student["common_name"]), norm(student["city"])), [])
-                    if len(common_matches) != 1:
-                        continue
-                    local_common = common_matches[0]
+                    local_common = common_matches[0] if len(common_matches) == 1 else None
                     new_payloads.append({
                         "nome_aluno": student["name"], "status": "Ativo", "registro_msa": student["source_key"],
-                        "comum_congregacao": local_common["comum"], "municipio": local_common.get("cidade"),
+                        "comum_congregacao": local_common["comum"] if local_common else student["common_name"],
+                        "municipio": local_common.get("cidade") if local_common else student["city"],
                         "cargo_ministerio": student["ministry"], "nivel": student["level"],
                         "instrumento": student["instrument"],
                     })
@@ -146,6 +147,8 @@ class Command(BaseCommand):
                     for target in created_rows:
                         targets.append(target)
                         target_by_id[str(target["id"])] = target
+                        if target.get("registro_msa"):
+                            targets_by_sam_id[str(target["registro_msa"])] = target
                         targets_by_name.setdefault(norm(target.get("nome_aluno")), []).append(target)
                 stats["new_students"] = len(new_payloads)
 
@@ -153,9 +156,15 @@ class Command(BaseCommand):
             for student in students:
                 state = state_by_key.get(student["source_key"]) or {}
                 target = target_by_id.get(str(state.get("aluno_id"))) if state.get("aluno_id") else None
+                target = target or targets_by_sam_id.get(str(student["source_key"]))
                 named = targets_by_name.get(norm(student["name"]), []) if not target else []
-                match_status = "linked" if target else "matched_name" if len(named) == 1 else "unmatched" if not named else "ambiguous"
-                target = target or (named[0] if len(named) == 1 else None)
+                contextual = [row for row in named if (
+                    (not student.get("city") or norm(row.get("municipio")) == norm(student["city"]))
+                    and (not student.get("instrument") or norm(row.get("instrumento")) == norm(student["instrument"]))
+                )]
+                match_status = ("linked" if target else "matched_context" if len(contextual) == 1
+                                else "matched_name" if len(named) == 1 else "unmatched" if not named else "ambiguous")
+                target = target or (contextual[0] if len(contextual) == 1 else named[0] if len(named) == 1 else None)
                 if target:
                     stats[match_status] += 1
                 common_matches = commons_by_location.get((norm(student["common_name"]), norm(student["city"])), [])

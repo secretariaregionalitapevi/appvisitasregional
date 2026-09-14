@@ -17,6 +17,10 @@
 .admin-page-previous.btn:disabled { background:#dbeafe; border-color:#93c5fd; color:#1e40af; opacity:1; }
 .admin-page-next.btn:disabled { background:#ccfbf1; border-color:#5eead4; color:#115e59; opacity:1; }
 .admin-detail { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.audit-toolbar-scroll { overflow-x:auto; }
+.audit-toolbar { display:grid; grid-template-columns:minmax(260px,1.5fr) minmax(170px,1fr) minmax(170px,1fr) minmax(155px,.8fr) minmax(155px,.8fr) auto auto auto auto; gap:8px; align-items:end; min-width:1370px; }
+.audit-toolbar-field label { display:block; margin-bottom:5px; font-size:10px; font-weight:700; color:#59636e; }
+.audit-toolbar .btn { white-space:nowrap; height:35px; }
 .origin-badge { background:rgba(73,182,214,.15); color:#49b6d6; border:1px solid rgba(73,182,214,.25); }
 .swal-modal.admin-feedback-success,.swal-modal.admin-feedback-error { padding:24px 28px 20px!important; overflow:hidden; }
 .swal-modal.admin-feedback-success::after,.swal-modal.admin-feedback-error::after { content:''; position:absolute; left:0; bottom:0; height:5px; width:100%; background:#00acac; transform-origin:left center; animation:admin-feedback-countdown 3s linear forwards; }
@@ -52,7 +56,7 @@
   <div class="col-xl-3 col-sm-6"><div class="card border-0 bg-gray-800 text-white admin-kpi"><div class="card-body position-relative"><div class="text-white text-opacity-75">Eventos auditados</div><h2 id="kpi-logs">0</h2><div class="small">últimos 500 eventos</div><i class="fa fa-clipboard-list admin-kpi-icon"></i></div></div></div>
 </div>
 
-<div class="panel panel-inverse">
+<div class="panel panel-inverse" id="audit-panel" data-report-user="{{ report_user|escape }}">
   <div class="panel-heading"><h4 class="panel-title"><i class="fa fa-shield-halved me-2"></i>Central de gerenciamento global</h4><button class="btn btn-xs btn-outline-light" id="refresh-admin"><i class="fa fa-rotate"></i> Atualizar</button></div>
   <div class="panel-body">
     <ul class="nav nav-tabs mb-3" id="admin-tabs">
@@ -68,7 +72,7 @@
         <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Usuário</th><th>Escopo</th><th>Origem</th><th>Utilização</th><th>Status</th><th></th></tr></thead><tbody id="users-table"></tbody></table></div><div id="usuarios-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div>
       </div>
       <div class="tab-pane fade" id="auditoria">
-        <div class="row mb-3"><div class="col-md-5"><input class="form-control" id="log-search" placeholder="Pesquisar ação, módulo, usuário ou detalhe..."></div><div class="col-md-3"><select class="form-select" id="module-filter"><option value="">Todos os módulos</option></select></div><div class="col-md-2"><input type="date" class="form-control" id="log-date"></div></div>
+        <div class="border rounded bg-light p-3 mb-3 audit-toolbar-scroll"><div class="audit-toolbar"><div class="audit-toolbar-field"><label for="log-search">PESQUISA</label><input class="form-control" id="log-search" placeholder="Ação, usuário ou detalhe..."></div><div class="audit-toolbar-field"><label for="module-filter">MÓDULO</label><select class="form-select" id="module-filter"><option value="">Todos os módulos</option></select></div><div class="audit-toolbar-field"><label for="action-filter">EVENTO</label><select class="form-select" id="action-filter"><option value="">Todos os eventos</option></select></div><div class="audit-toolbar-field"><label for="log-date-from">DE</label><input type="date" class="form-control" id="log-date-from"></div><div class="audit-toolbar-field"><label for="log-date-to">ATÉ</label><input type="date" class="form-control" id="log-date-to"></div><button class="btn btn-outline-primary" id="apply-audit-filters"><i class="fa fa-rotate me-1"></i>Atualizar</button><button class="btn btn-outline-success" id="export-audit-excel"><i class="fa fa-file-excel me-1"></i>Excel</button><button class="btn btn-outline-danger" id="export-audit-pdf"><i class="fa fa-file-pdf me-1"></i>PDF</button><button class="btn btn-outline-secondary" id="clear-audit-filters"><i class="fa fa-eraser me-1"></i>Limpar</button></div></div>
         <div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th>Origem</th><th>Detalhes</th></tr></thead><tbody id="logs-table"></tbody></table></div><div id="auditoria-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div>
       </div>
       <div class="tab-pane fade" id="sessoes"><div class="table-responsive"><table class="table table-hover admin-table"><thead><tr><th>Início</th><th>Usuário</th><th>Status</th><th>Última atividade</th><th>Encerramento</th><th>Motivo</th></tr></thead><tbody id="sessions-table"></tbody></table></div><div id="sessoes-pagination" class="d-flex justify-content-between align-items-center my-3" aria-live="polite"></div></div>
@@ -96,7 +100,7 @@
   </div>
 </div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-theme" id="save-user"><i class="fa fa-save me-1"></i>Salvar autorização</button></div></div></div></div>
 
-<div class="modal fade" id="audit-detail-modal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title">Detalhes do evento de auditoria</h5><small class="text-muted">Registro completo para investiga&ccedil;&atilde;o e rastreabilidade.</small></div><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="audit-detail-content"></div><div class="modal-footer"><button class="btn btn-white" data-bs-dismiss="modal">Fechar</button></div></div></div></div>
+<div class="modal fade" id="audit-detail-modal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title">Detalhes do evento de auditoria</h5><small class="text-muted">Registro completo para investigação e rastreabilidade.</small></div><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="audit-detail-content"></div><div class="modal-footer"><div class="me-auto d-flex gap-2"><button class="btn btn-outline-success" id="export-single-audit-excel"><i class="fa fa-file-excel me-1"></i>Excel deste evento</button><button class="btn btn-outline-danger" id="export-single-audit-pdf"><i class="fa fa-file-pdf me-1"></i>PDF deste evento</button></div><button class="btn btn-white" data-bs-dismiss="modal">Fechar</button></div></div></div></div>
 {% endblock %}
 
-{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'js/admin/auditoria.js' %}?v=20260908-7"></script>{% endblock %}
+{% block js %}<script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script><script src="{% static 'plugins/pdfmake/build/pdfmake.min.js' %}"></script><script src="{% static 'plugins/pdfmake/build/vfs_fonts.js' %}"></script><script src="{% static 'js/admin/auditoria.js' %}?v=20260911-4"></script>{% endblock %}

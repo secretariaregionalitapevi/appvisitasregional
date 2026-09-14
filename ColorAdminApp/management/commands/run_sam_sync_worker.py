@@ -18,6 +18,8 @@ from ColorAdminApp.sam_portal_history import portal_report_to_export
 
 DEFAULT_IDLE_INTERVAL_SECONDS = 120
 MIN_IDLE_INTERVAL_SECONDS = 60
+DEFAULT_CLASSES_INTERVAL_SECONDS = 300
+MIN_CLASSES_INTERVAL_SECONDS = 120
 
 
 class Command(BaseCommand):
@@ -32,6 +34,8 @@ class Command(BaseCommand):
             help="Intervalo ocioso entre consultas do catálogo; padrão: 120 segundos.",
         )
         parser.add_argument("--history-limit", type=int, default=int(os.getenv("SAM_SYNC_HISTORY_LIMIT", "100")))
+        parser.add_argument("--classes-interval", type=int, default=int(os.getenv("SAM_CLASSES_SYNC_INTERVAL_SECONDS", str(DEFAULT_CLASSES_INTERVAL_SECONDS))))
+        parser.add_argument("--classes-lookback-days", type=int, default=int(os.getenv("SAM_CLASSES_LOOKBACK_DAYS", "14")))
         parser.add_argument("--visible", action="store_true", help="Exibe o navegador somente para diagnóstico")
         parser.add_argument("--once", action="store_true")
 
@@ -102,6 +106,13 @@ class Command(BaseCommand):
             json=payload, timeout=30,
         )
         response.raise_for_status()
+
+    def _sync_classes(self, scraper_dir, lookback_days):
+        self.stdout.write("Verificando aulas e chamadas novas no SAM...")
+        call_command(
+            "sync_sam_classes", scraper_dir=scraper_dir,
+            lookback_days=max(7, lookback_days), stdout=self.stdout, stderr=self.stderr,
+        )
 
     @staticmethod
     def _validate_history(report, document, import_report=None):
@@ -235,6 +246,7 @@ class Command(BaseCommand):
         if not scraper_dir or not (scraper_dir / "web_scraper.py").is_file():
             raise CommandError("Configure SAM_SCRAPER_DIR ou informe --scraper-dir.")
         interval = max(MIN_IDLE_INTERVAL_SECONDS, options["interval"])
+        classes_interval = max(MIN_CLASSES_INTERVAL_SECONDS, options["classes_interval"])
         lock_path = Path(tempfile.gettempdir()) / "app_visitas_sam_sync.lock"
         if lock_path.exists():
             try:
@@ -251,6 +263,7 @@ class Command(BaseCommand):
             raise CommandError("Já existe outro worker SAM em execução.") from exc
         session = None
         refresh_catalog = True
+        last_classes_sync = None
         heartbeat_stop = threading.Event()
         def pulse():
             while not heartbeat_stop.wait(10):
@@ -277,6 +290,18 @@ class Command(BaseCommand):
                         break
                     time.sleep(10)
                     continue
+                if last_classes_sync is None or time.monotonic() - last_classes_sync >= classes_interval:
+                    if session:
+                        session.close()
+                        session = None
+                    self._heartbeat(worker_status="running", current_student=None,
+                                    last_message="Verificando aulas e chamadas novas no SAM")
+                    try:
+                        self._sync_classes(scraper_dir, options["classes_lookback_days"])
+                    except Exception as exc:
+                        self.stderr.write(self.style.ERROR(f"Sincronização incremental de aulas falhou: {exc}"))
+                    finally:
+                        last_classes_sync = time.monotonic()
                 if session is None:
                     self._heartbeat(worker_status="starting", last_error=None,
                                     cycle_started_at=datetime.now(timezone.utc).isoformat(),
