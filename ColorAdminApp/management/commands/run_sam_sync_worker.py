@@ -17,8 +17,10 @@ from ColorAdminApp.sam_live_session import SamLiveSession
 from ColorAdminApp.sam_portal_history import portal_report_to_export
 
 DEFAULT_IDLE_INTERVAL_SECONDS = 120
+DEFAULT_HISTORY_LIMIT = 250
 MIN_IDLE_INTERVAL_SECONDS = 60
 DEFAULT_CLASSES_INTERVAL_SECONDS = 300
+DEFAULT_HISTORY_REFRESH_HOURS = 24 * 30
 MIN_CLASSES_INTERVAL_SECONDS = 120
 
 
@@ -33,13 +35,14 @@ class Command(BaseCommand):
             default=int(os.getenv("SAM_SYNC_INTERVAL_SECONDS", str(DEFAULT_IDLE_INTERVAL_SECONDS))),
             help="Intervalo ocioso entre consultas do catálogo; padrão: 120 segundos.",
         )
-        parser.add_argument("--history-limit", type=int, default=int(os.getenv("SAM_SYNC_HISTORY_LIMIT", "100")))
+        parser.add_argument("--history-limit", type=int, default=int(os.getenv("SAM_SYNC_HISTORY_LIMIT", str(DEFAULT_HISTORY_LIMIT))))
+        parser.add_argument("--history-refresh-hours", type=int, default=int(os.getenv("SAM_HISTORY_REFRESH_HOURS", str(DEFAULT_HISTORY_REFRESH_HOURS))), help="Prazo para auditoria completa de um histórico já sincronizado; padrão: 30 dias.")
         parser.add_argument("--classes-interval", type=int, default=int(os.getenv("SAM_CLASSES_SYNC_INTERVAL_SECONDS", str(DEFAULT_CLASSES_INTERVAL_SECONDS))))
         parser.add_argument("--classes-lookback-days", type=int, default=int(os.getenv("SAM_CLASSES_LOOKBACK_DAYS", "14")))
         parser.add_argument("--visible", action="store_true", help="Exibe o navegador somente para diagnóstico")
         parser.add_argument("--once", action="store_true")
 
-    def _pending(self, limit):
+    def _pending(self, limit, refresh_hours=None):
         response = requests.get(
             f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
             headers=service_headers(), params={
@@ -54,7 +57,7 @@ class Command(BaseCommand):
             return rows
         # Aulas novas nao alteram necessariamente o catalogo. Revisa os
         # historicos antigos mesmo quando nome, instrumento e nivel nao mudam.
-        refresh_hours = max(1, int(os.getenv("SAM_HISTORY_REFRESH_HOURS", "24")))
+        refresh_hours = max(1, int(refresh_hours or os.getenv("SAM_HISTORY_REFRESH_HOURS", str(DEFAULT_HISTORY_REFRESH_HOURS))))
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=refresh_hours)).isoformat()
         response = requests.get(
             f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
@@ -166,18 +169,8 @@ class Command(BaseCommand):
                 catalog.write_text(json.dumps(session.catalog(), ensure_ascii=False), encoding="utf-8")
                 call_command("sync_sam_catalog", catalog, commit=True, report=report, stdout=self.stdout, stderr=self.stderr)
 
-            pending = self._pending(history_limit)
-            count_response = requests.get(
-                f"{settings.SUPABASE_URL}/rest/v1/sam_student_sync_state",
-                headers=service_headers("count=exact"),
-                params={"select": "id", "missing_since": "is.null", "limit": 1}, timeout=20,
-            )
-            count_response.raise_for_status()
-            try:
-                total_students = int(count_response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
-            except ValueError:
-                total_students = len(pending)
-            self._heartbeat(total_students=total_students, processed_students=0, current_student=None, last_message="Catálogo conciliado; processando históricos")
+            pending = self._pending(history_limit, self.history_refresh_hours)
+            self._heartbeat(total_students=len(pending), processed_students=0, current_student=None, last_message="Fila calculada; processando históricos")
             self.stdout.write(f"Históricos pendentes selecionados neste ciclo: {len(pending)}")
             consecutive_failures = 0
             for index, state in enumerate(pending, 1):
@@ -245,6 +238,7 @@ class Command(BaseCommand):
         scraper_dir = Path(options["scraper_dir"]).resolve() if options.get("scraper_dir") else None
         if not scraper_dir or not (scraper_dir / "web_scraper.py").is_file():
             raise CommandError("Configure SAM_SCRAPER_DIR ou informe --scraper-dir.")
+        self.history_refresh_hours = max(1, options["history_refresh_hours"])
         interval = max(MIN_IDLE_INTERVAL_SECONDS, options["interval"])
         classes_interval = max(MIN_CLASSES_INTERVAL_SECONDS, options["classes_interval"])
         lock_path = Path(tempfile.gettempdir()) / "app_visitas_sam_sync.lock"
@@ -312,7 +306,7 @@ class Command(BaseCommand):
                 processed = 0
                 try:
                     self._heartbeat(worker_status="running", current_student=None, processed_students=0,
-                                    cycle_started_at=datetime.now(timezone.utc).isoformat(), last_error=None, last_message="Sincronização em andamento")
+                                    last_error=None, last_message="Sincronização em andamento")
                     processed = self._cycle(session, max(1, options["history_limit"]), refresh_catalog=refresh_catalog)
                 except Exception as exc:
                     self._heartbeat(worker_status="error", last_error=str(exc)[:1000], current_student=None,

@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.core.cache import cache
@@ -9,7 +10,7 @@ from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from .gem import (
     INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
-    api_student_detail, api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
+    advancement_permission, api_student_detail, api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
 )
 
 
@@ -21,6 +22,25 @@ def request_with_profile(path, profile, params=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class GemTests(SimpleTestCase):
+    @patch("ColorAdminApp.gem.assess_program")
+    def test_advancement_requires_next_stage_and_complete_program(self, assessment):
+        assessment.return_value = {"target": "rjm", "target_label": "Reunião de Jovens e Menores", "eligible": False, "requirements": [{"area": "MSA", "status": "missing"}, {"area": "Método", "status": "ok"}, {"area": "Hinário", "status": "missing"}]}
+        allowed, reason = advancement_permission({}, {}, "ingresso_rjm")
+        self.assertFalse(allowed)
+        self.assertIn("MSA, Hinário", reason)
+
+        assessment.return_value = {"target": "rjm", "eligible": True, "completion_percent": 100}
+        self.assertEqual(advancement_permission({}, {}, "ingresso_rjm"), (True, ""))
+        allowed, reason = advancement_permission({}, {}, "ingresso_culto")
+        self.assertFalse(allowed)
+        self.assertIn("próxima etapa", reason)
+    def test_student_panel_restores_filter_options_before_loading_rows(self):
+        template = Path(__file__).with_name("templates").joinpath("pages", "gem.html").read_text(encoding="utf-8")
+
+        self.assertIn("if(all){try{await loadSummary()}", template)
+        self.assertIn("try{await loadStudents()}", template)
+        self.assertNotIn("Promise.allSettled([loadSummary(),loadStudents()])", template)
+
     @patch("ColorAdminApp.gem.requests.delete")
     @patch("ColorAdminApp.gem.requests.get")
     def test_manual_student_can_be_deleted_inside_user_scope(self, mock_get, mock_delete):

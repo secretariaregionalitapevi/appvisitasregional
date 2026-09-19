@@ -10,7 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from ColorAdminApp.access_control import service_headers
 from ColorAdminApp.sam_class_mirror import (
-    BASE_URL, fetch_class_page, fetch_text, fingerprint, norm, parse_attendance, parse_class_detail, parse_class_row,
+    BASE_URL, fetch_class_page, fetch_group_page, fetch_text, fingerprint, norm, parse_attendance, parse_class_detail, parse_class_row, parse_group_row,
 )
 from ColorAdminApp.sam_live_session import SamLiveSession
 
@@ -78,6 +78,22 @@ class Command(BaseCommand):
             if not session.scraper.login():
                 raise CommandError("Não foi possível autenticar no SAM.")
             page = session.scraper.page
+            page.goto(f"{BASE_URL}/turmas", wait_until="domcontentloaded", timeout=60000)
+            group_start, group_length, group_rows = 0, 5000, []
+            while True:
+                group_page = fetch_group_page(page, group_start, group_length)
+                group_batch = [parsed for row in (group_page.get("data") or []) if (parsed := parse_group_row(row))]
+                group_rows.extend(group_batch)
+                group_start += len(group_page.get("data") or [])
+                if not group_page.get("data") or group_start >= int(group_page.get("recordsFiltered") or 0):
+                    break
+            now = datetime.now(timezone.utc).isoformat()
+            for group in group_rows:
+                group.update({"source_payload": dict(group), "last_seen_at": now, "synced_at": now})
+            for start_index in range(0, len(group_rows), 1000):
+                self._upsert("sam_gem_groups", group_rows[start_index:start_index + 1000], "source_id")
+            self.stdout.write(f"Turmas sincronizadas do SAM: {len(group_rows)}.")
+
             page.goto(f"{BASE_URL}/aulas_abertas", wait_until="domcontentloaded", timeout=60000)
             start, length, candidates = 0, 2000, []
             while True:
@@ -102,8 +118,9 @@ class Command(BaseCommand):
             completed_class_ids = {
                 str(row.get("aula_id")) for row in self._get_all("sam_gem_attendance", "aula_id")
             }
-            student_states = self._get_all("sam_student_sync_state", "source_key,source_name,aluno_id", aluno_id="not.is.null")
-            by_key = {str(row.get("source_key")): row.get("aluno_id") for row in student_states}
+            student_states = self._get_all("sam_student_sync_state", "source_key,source_name,source_common,source_instrument,aluno_id", aluno_id="not.is.null")
+            by_source_key = {str(row.get("source_key")): row for row in student_states}
+            by_key = {key: row.get("aluno_id") for key, row in by_source_key.items()}
             by_name = {}
             for row in student_states:
                 by_name.setdefault(norm(row.get("source_name")), []).append(row.get("aluno_id"))
@@ -117,7 +134,17 @@ class Command(BaseCommand):
                 if not item.get("turma_source_id"):
                     continue
                 detail = parse_class_detail(fetch_text(page, f"{BASE_URL}/aulas_abertas/visualizar_aula/{item['source_id']}"))
-                class_payload = {**item, **detail, "source_payload": {**item, **detail}, "last_seen_at": datetime.now(timezone.utc).isoformat(), "synced_at": datetime.now(timezone.utc).isoformat()}
+                now = datetime.now(timezone.utc).isoformat()
+                group_payload = {
+                    "source_id": int(item["turma_source_id"]), "congregacao": item.get("congregacao"),
+                    "curso": item.get("curso"), "turma": item.get("turma"), "ativo": True,
+                    "source_payload": {"source_id": item.get("turma_source_id"), "congregacao": item.get("congregacao"),
+                                       "curso": item.get("curso"), "turma": item.get("turma")},
+                    "last_seen_at": now, "synced_at": now,
+                }
+                group_payload["source_hash"] = fingerprint({key: value for key, value in group_payload.items() if key not in {"last_seen_at", "synced_at", "source_hash"}})
+                saved_group = self._upsert("sam_gem_groups", [group_payload], "source_id")[0]
+                class_payload = {**item, **detail, "turma_id": saved_group["id"], "source_payload": {**item, **detail}, "last_seen_at": now, "synced_at": now}
                 class_payload["source_hash"] = fingerprint({key: value for key, value in class_payload.items() if key not in {"last_seen_at", "synced_at", "source_hash"}})
                 previous = existing.get(item["source_id"])
                 saved = self._upsert("sam_gem_classes", [class_payload], "source_id")[0]
@@ -135,17 +162,34 @@ class Command(BaseCommand):
                         continue
                     member_id = member_match.group(0)
                     named = by_name.get(norm(record["nome_aluno"])) or []
+                    source_state = by_source_key.get(member_id) or {}
                     record.update({
                         "source_member_id": int(member_id),
                         "source_frequency_id": int(frequency_match.group(0)) if frequency_match else None,
                         "aula_id": saved["id"],
-                        "aluno_id": by_key.get(member_id) or (named[0] if len(named) == 1 else None),
-                        "last_seen_at": datetime.now(timezone.utc).isoformat(),
-                        "synced_at": datetime.now(timezone.utc).isoformat(),
+                        "aluno_id": source_state.get("aluno_id") or (named[0] if len(named) == 1 else None),
+                        "last_seen_at": now,
+                        "synced_at": now,
                     })
                     if old_hashes.get(member_id) != record["source_hash"]:
                         updates.append(record)
                 self._upsert("sam_gem_attendance", updates, "aula_id,source_member_id")
+                enrollments = []
+                for record in attendance:
+                    member_id = str(record.get("source_member_id") or "")
+                    if not member_id.isdigit():
+                        continue
+                    source_state = by_source_key.get(member_id) or {}
+                    enrollment = {
+                        "turma_id": saved_group["id"], "source_member_id": int(member_id),
+                        "aluno_id": record.get("aluno_id"), "nome_aluno": record.get("nome_aluno"),
+                        "congregacao": source_state.get("source_common") or item.get("congregacao"),
+                        "instrumento": source_state.get("source_instrument"), "ativo": True,
+                        "last_seen_at": now, "synced_at": now,
+                    }
+                    enrollment["source_hash"] = fingerprint({key: value for key, value in enrollment.items() if key not in {"last_seen_at", "synced_at", "source_hash"}})
+                    enrollments.append(enrollment)
+                self._upsert("sam_gem_enrollments", enrollments, "turma_id,source_member_id")
                 changed_attendance += len(updates)
                 processed += 1
                 self.stdout.write(f"Aula {item['source_id']}: {len(attendance)} chamada(s), {len(updates)} alteração(ões).")

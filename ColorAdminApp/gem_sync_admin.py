@@ -3,7 +3,7 @@ import io
 import re
 import unicodedata
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from django.conf import settings
@@ -184,6 +184,51 @@ def _history_refresh_summary(rows):
     }
 
 
+def _execution_summary(rows, control, refresh_hours=24 * 30):
+    now = datetime.now(timezone.utc)
+    cutoff = now.timestamp() - max(1, refresh_hours) * 3600
+    started = None
+    try:
+        started = datetime.fromisoformat(str(control.get("cycle_started_at") or "").replace("Z", "+00:00"))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+
+    processed = 0
+    remaining = 0
+    for row in rows:
+        status = row.get("sync_status") or "pending"
+        if status in {"unmatched", "ambiguous"}:
+            continue
+        synced_at = None
+        try:
+            synced_at = datetime.fromisoformat(str(row.get("last_history_sync_at") or "").replace("Z", "+00:00"))
+            if synced_at.tzinfo is None:
+                synced_at = synced_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+        if started and synced_at and synced_at >= started:
+            processed += 1
+        if status in {"pending", "failed"} or (status == "synced" and (not synced_at or synced_at.timestamp() < cutoff)):
+            remaining += 1
+
+    queue_total = processed + remaining
+    elapsed = max(0, int((now - started).total_seconds())) if started else 0
+    average = elapsed / processed if processed else None
+    eta_seconds = round(remaining * average) if average is not None else None
+    return {
+        "started_at": started.isoformat() if started else None,
+        "processed": processed, "remaining": remaining, "total": queue_total,
+        "progress": round(processed / queue_total * 100, 1) if queue_total else 100,
+        "average_seconds_per_student": round(average, 1) if average is not None else None,
+        "eta_seconds": eta_seconds,
+        "estimated_finish_at": (now + timedelta(seconds=eta_seconds)).isoformat() if eta_seconds is not None else None,
+        "batch_processed": int(control.get("processed_students") or 0),
+        "batch_total": int(control.get("total_students") or 0),
+    }
+
+
 def api_dashboard(request):
     if not _admin_allowed(request):
         return _denied()
@@ -212,13 +257,17 @@ def api_dashboard(request):
         runtime_control = _runtime_control(control)
         total = len(rows)
         synced = syncs["synced"]
+        unresolved = syncs["unmatched"] + syncs["ambiguous"]
+        processable = max(0, total - unresolved)
+        execution = _execution_summary(rows, control)
         payload = {
             "totals": {"students": total, "synced": synced, "pending": syncs["pending"], "failed": syncs["failed"],
-                       "unresolved": syncs["unmatched"] + syncs["ambiguous"], "progress": round(synced / total * 100, 1) if total else 0,
+                       "unresolved": unresolved, "progress": round(synced / total * 100, 1) if total else 0,
+                       "processable": processable, "processable_progress": round(synced / processable * 100, 1) if processable else 100,
                        "active": statuses["ATIVO"], "alerts": statuses["ALERTA"] + statuses["INATIVO"],
                        "inactive": statuses["INATIVO"], "exclude": sum(1 for row in rows if row.get("requires_review")),
                        "no_history": statuses["SEM HISTORICO"], **_history_refresh_summary(rows)},
-            "control": runtime_control,
+            "control": runtime_control, "execution": execution,
             "statuses": dict(statuses), "sync_statuses": dict(syncs),
             "municipalities": [{"municipio": city, **counts} for city, counts in sorted(cities.items())],
             "runs": runs, "changes": changes,

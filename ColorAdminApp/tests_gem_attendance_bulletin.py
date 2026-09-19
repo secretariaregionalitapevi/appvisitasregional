@@ -39,6 +39,10 @@ class GemAttendanceBulletinTests(SimpleTestCase):
                 return [{"id": str(self.student_id), "nome_aluno": "ANA", "status": "CONCLUIDO", "instrumento": "VIOLINO", "nivel": "CANDIDATA", "comum_congregacao": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI", "programa_minimo_percentual": 25}]
             if table == gem_classes.STATUS_VIEW:
                 return [{"aluno_id": str(self.student_id), "operational_status": "ALERTA", "requires_review": False}]
+            if table == "sam_gem_enrollments":
+                return [{"turma_id": "turma-1", "source_member_id": 10, "nome_aluno": "ANA", "ativo": True}]
+            if table == "sam_gem_student_evolution":
+                return [{"event_date": "2026-08-20", "event_type": "FREQUENCIA", "title": "Presença · A"}]
             if table == "musica_acompanhamento_provas":
                 return [
                     {"data_prova": "2026-08-10", "modulo": "Teoria", "nota": "82,5", "observacoes": "Bom aproveitamento"},
@@ -61,6 +65,8 @@ class GemAttendanceBulletinTests(SimpleTestCase):
         self.assertEqual(body["exam_summary"], {"quantidade": 2, "media": 7.1, "aprovadas": 1, "reprovadas": 1, "nota_minima": 7})
         self.assertEqual(body["semesters"][0]["media_provas"], 7.1)
         self.assertEqual(body["exams"][0]["situacao"], "Aprovado")
+        self.assertEqual(body["enrollments"][0]["turma_id"], "turma-1")
+        self.assertEqual(body["evolution"][0]["event_type"], "FREQUENCIA")
 
     def test_grade_scale_accepts_seven_point_five(self):
         self.assertEqual(gem_classes._grade("7,5"), 7.5)
@@ -86,12 +92,14 @@ class GemAttendanceBulletinTests(SimpleTestCase):
             "projection": {"nivel": "BAIXA", "mensagem": "Requer plano de recuperacao.", "meta_frequencia": 75},
             "semesters": [{"semestre": number, "aulas": 2 if number == 1 else 0, "presencas": 1 if number == 1 else 0, "ausencias": 1 if number == 1 else 0, "aproveitamento": 50 if number == 1 else None, "situacao": "Em atencao" if number == 1 else "A cursar"} for number in range(1, 5)],
             "lessons": [{"data_aula": "2026-08-20", "congregacao_label": "BR-22-0001 - CENTRAL", "turma": "A", "curso": "VIOLINO", "instrutor_aula": "JOAO", "presente": True}],
+            "enrollments": [{"nome_aluno": "ANA", "congregacao": "CENTRAL", "instrumento": "VIOLINO", "ativo": True, "last_seen_at": "2026-08-21T10:00:00Z"}],
+            "evolution": [{"event_date": "2026-08-20", "event_type": "FREQUENCIA", "title": "Presenca - Turma A", "details": {"presente": True}, "source_table": "sam_gem_attendance"}],
         }
         with patch("ColorAdminApp.gem_classes.api_student_attendance", return_value=JsonResponse(payload)):
             response = gem_classes.export_student_attendance_excel(self.request, self.student_id)
         self.assertRegex(response["Content-Disposition"], r"Boletim_GEM_ANA_\d{2}_\d{2}_\d{4}\.xlsx")
         workbook = load_workbook(BytesIO(response.content))
-        self.assertEqual(workbook.sheetnames, ["BOLETIM", "CHAMADAS"])
+        self.assertEqual(workbook.sheetnames, ["BOLETIM", "CHAMADAS", "TURMAS", "EVOLUCAO"])
         for sheet in workbook.worksheets:
             self.assertEqual(sheet["A1"].value, "CONGREGAÇÃO CRISTÃ NO BRASIL")
             self.assertEqual(sheet.freeze_panes, "A7")
@@ -101,3 +109,5 @@ class GemAttendanceBulletinTests(SimpleTestCase):
             metadata = " | ".join(str(cell.value or "") for cell in sheet[4])
             self.assertIn("Impresso por: Gestor Teste", metadata)
         self.assertEqual(workbook["CHAMADAS"]["A7"].value, "20/08/2026")
+        self.assertEqual(workbook["TURMAS"]["E7"].value, "21/08/2026")
+        self.assertEqual(workbook["EVOLUCAO"]["A7"].value, "20/08/2026")

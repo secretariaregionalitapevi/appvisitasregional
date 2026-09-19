@@ -6,10 +6,40 @@ from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve
 from openpyxl import load_workbook
 
-from .gem_sync_admin import _report_date, _report_datetime, export_log_report, export_report
+from .gem_sync_admin import _execution_summary, _report_date, _report_datetime, export_log_report, export_report
 
 
 class GemSyncAdminLayoutTests(SimpleTestCase):
+    def test_execution_summary_separates_queue_from_unresolved_students(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        started = (now - timedelta(minutes=10)).isoformat()
+        rows = [
+            {"sync_status": "synced", "last_history_sync_at": (now - timedelta(minutes=8)).isoformat()},
+            {"sync_status": "pending", "last_history_sync_at": None},
+            {"sync_status": "failed", "last_history_sync_at": None},
+            {"sync_status": "unmatched", "last_history_sync_at": None},
+        ]
+
+        result = _execution_summary(rows, {"cycle_started_at": started, "processed_students": 1, "total_students": 3})
+
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["remaining"], 2)
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(result["batch_processed"], 1)
+        self.assertEqual(result["batch_total"], 3)
+        self.assertIsNotNone(result["eta_seconds"])
+
+    def test_dashboard_displays_global_queue_speed_and_eta(self):
+        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        content = template.read_text(encoding="utf-8")
+
+        self.assertIn("Execução atual:", content)
+        self.assertIn("e.average_seconds_per_student", content)
+        self.assertIn("e.eta_seconds", content)
+        self.assertIn("Processados nesta execução", content)
+        self.assertIn("Cobertura processável", content)
+
     def test_empty_offline_state_hides_control_card_and_keeps_banner_compact(self):
         template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
@@ -30,12 +60,12 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIn('class="column-badge status-alert">Alertas</span>', content)
         self.assertIn('class="column-badge review">A revisar</span>', content)
 
-    def test_current_student_hides_internal_batch_count(self):
+    def test_current_student_shows_current_batch_position(self):
         template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
 
-        self.assertIn('`Processando: ${c.current_student}`', content)
-        self.assertNotIn("conclu\\u00eddos neste lote", content)
+        self.assertIn('`Processando: ${c.current_student} · lote ${fmt(e.batch_processed)} de ${fmt(e.batch_total)}`', content)
+        self.assertIn("e.batch_processed", content)
 
 
 class GemSyncAdminReportTests(SimpleTestCase):

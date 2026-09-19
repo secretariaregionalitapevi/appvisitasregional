@@ -46,6 +46,48 @@ def fetch_text(page, url, method="GET", payload=None):
     )
 
 
+def fetch_group_page(page, start=0, length=5000):
+    payload = {
+        "draw": "1", "start": str(start), "length": str(length), "search[value]": "",
+        "order[0][column]": "2", "order[0][dir]": "asc",
+    }
+    return json.loads(fetch_text(page, f"{BASE_URL}/turmas/listagem", "POST", payload))
+
+
+def parse_group_row(cells):
+    cells = list(cells or [])
+    source_markup = " ".join(str(value or "") for value in (cells[:1] + cells[-1:]))
+    match = re.search(r"(?:value|data-id|turma|editar|excluir)[^\d]{0,20}(\d+)", source_markup, re.I)
+    if not match:
+        numbers = re.findall(r"\d+", str(cells[0] if cells else ""))
+        match_value = numbers[0] if numbers else None
+    else:
+        match_value = match.group(1)
+    if not match_value:
+        return None
+    offset = 1 if len(cells) >= 9 else 0
+    enrolled_match = re.search(r"\d+", str(cells[offset + 3] if len(cells) > offset + 3 else ""))
+    row = {
+        "source_id": str(match_value),
+        "congregacao": BeautifulSoup(str(cells[offset] or ""), "html.parser").get_text(" ", strip=True),
+        "curso": BeautifulSoup(str(cells[offset + 1] or ""), "html.parser").get_text(" ", strip=True),
+        "turma": BeautifulSoup(str(cells[offset + 2] or ""), "html.parser").get_text(" ", strip=True),
+        "matriculados": int(enrolled_match.group(0)) if enrolled_match else 0,
+        "data_inicio": _slash_date(cells[offset + 4] if len(cells) > offset + 4 else None),
+        "data_termino": _slash_date(cells[offset + 5] if len(cells) > offset + 5 else None),
+        "dia_horario": BeautifulSoup(str(cells[offset + 6] or ""), "html.parser").get_text(" ", strip=True),
+        "ativo": "check" in str(cells[offset + 7] if len(cells) > offset + 7 else "").lower(),
+    }
+    row["source_hash"] = fingerprint(row)
+    return row
+
+
+def _slash_date(value):
+    try:
+        return datetime.strptime(BeautifulSoup(str(value or ""), "html.parser").get_text(" ", strip=True), "%d/%m/%Y").date().isoformat()
+    except ValueError:
+        return None
+
 def fetch_class_page(page, start=0, length=2000):
     payload = {
         "draw": "1", "start": str(start), "length": str(length), "search[value]": "",

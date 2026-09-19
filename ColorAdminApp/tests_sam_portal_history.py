@@ -38,3 +38,16 @@ class SamPortalHistoryTests(SimpleTestCase):
         }]}}}
         history = portal_report_to_export(report)["students"][0]["history"]
         self.assertEqual(history["hinario"], [])
+
+    def test_group_hymnal_range_is_imported_for_student(self):
+        report = {"student": "Aluno", "tabs": {"Hinário": {"tables": [{
+            "headers": ["Hinos", "Observações", "Data da Lição"],
+            "rows": [["Hino(s): de 431 até 480; Voz(es): Soprano", "Revisão coletiva", "08/06/2026"]],
+        }]}}}
+
+        event = portal_report_to_export(report)["students"][0]["history"]["hinario"][0]
+
+        self.assertEqual(event["data"], "2026-06-08")
+        self.assertEqual(event["hino"], "431 - 480")
+        self.assertEqual(event["voz"], "Soprano")
+        self.assertIn("Hinário em Grupo", event["observacoes"])

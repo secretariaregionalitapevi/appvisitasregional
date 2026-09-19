@@ -26,6 +26,21 @@ def _clave(details):
     return match.group(1).strip() if match else None
 
 
+def _first(row, *labels):
+    return next((row.get(label) for label in labels if row.get(label)), None)
+
+
+def _hymn_range(value):
+    text = str(value or "").strip()
+    match = re.search(r"Hino\(s\):\s*de\s*(\d+)\s*at[eé]\s*(\d+)", text, re.I)
+    return f"{match.group(1)} - {match.group(2)}" if match else text or None
+
+
+def _group_voice(value):
+    match = re.search(r"Voz(?:es|\(es\))?:\s*([^;\n]+)", str(value or ""), re.I)
+    return match.group(1).strip() if match else None
+
+
 def portal_report_to_export(report):
     history = {key: [] for key in ("msa", "metodo", "hinario", "provas", "escalas", "atividades")}
     tabs = report.get("tabs") or {}
@@ -63,6 +78,15 @@ def portal_report_to_export(report):
                     continue
                 row = dict(zip(headers, cells))
                 event = {target: row.get(origin) or None for target, origin in mapping.items()}
+                if source == "hinario":
+                    raw_hymn = _first(row, "hino", "hinos")
+                    details = raw_hymn or " ".join(str(value or "") for value in row.values())
+                    is_group = "hino(s):" in _norm(details)
+                    event["data"] = _first(row, "data da aula", "data da licao", "data")
+                    event["hino"] = _hymn_range(details) if raw_hymn or is_group else None
+                    event["voz"] = _first(row, "voz", "vozes") or _group_voice(details)
+                    if is_group or "hinos" in row:
+                        event["observacoes"] = " — ".join(filter(None, [event.get("observacoes"), "Hinário em Grupo"]))
                 for field in ("data", "data_inicio", "data_prova"):
                     if field in event:
                         event[field] = _date(event[field])

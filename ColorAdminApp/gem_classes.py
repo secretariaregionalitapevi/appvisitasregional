@@ -104,7 +104,7 @@ def api_student_attendance(request, student_id):
         if not calls:
             return JsonResponse({"error": "Nenhuma chamada de frequencia foi encontrada para este aluno."}, status=404)
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             student_future = executor.submit(
                 _get, "musica_acompanhamento_aluno",
                 select="id,nome_aluno,comum_congregacao,cargo_ministerio,nivel,instrumento,municipio,programa_minimo_percentual,registro_msa",
@@ -119,9 +119,19 @@ def api_student_attendance(request, student_id):
                 _get, "musica_acompanhamento_provas", select="*", aluno_id=f"eq.{student_id}",
                 order="data_prova.desc", limit=1000,
             )
+            enrollments_future = executor.submit(
+                _get, "sam_gem_enrollments", select="id,turma_id,source_member_id,nome_aluno,congregacao,instrumento,ativo,last_seen_at",
+                aluno_id=f"eq.{student_id}", order="last_seen_at.desc", limit=1000,
+            )
+            evolution_future = executor.submit(
+                _get, "sam_gem_student_evolution", select="event_date,event_type,title,details,source_table,source_id",
+                aluno_id=f"eq.{student_id}", order="event_date.desc", limit=10000,
+            )
             students = student_future.result()
             status_rows = status_future.result()
             exams = exams_future.result()
+            enrollments = enrollments_future.result()
+            evolution = evolution_future.result()
         student_record = students[0] if students else {}
         operational = status_rows[0] if status_rows else {}
         operational_status = str(operational.get("operational_status") or "SEM HISTORICO").strip().upper()
@@ -232,6 +242,8 @@ def api_student_attendance(request, student_id):
             "projection": {"nivel": projection[0], "mensagem": projection[1], "meta_frequencia": 75},
             "exams": exam_rows,
             "exam_summary": exam_summary,
+            "enrollments": enrollments,
+            "evolution": evolution,
             "months": [{"periodo": key, "aulas": len(monthly[key]), "frequencia": _rate(monthly[key])} for key in sorted(monthly)],
             "lessons": rows,
         })
@@ -246,6 +258,20 @@ def export_student_attendance_excel(request, student_id):
     if dashboard.status_code != 200:
         return dashboard
     data = json.loads(dashboard.content)
+    filters = {key: str(request.GET.get(key) or "").strip() for key in ("year", "month", "from", "to", "turma")}
+    def selected(event_date, turma=None):
+        value = str(event_date or "")[:10]
+        return ((not filters["year"] or value[:4] == filters["year"])
+                and (not filters["month"] or value[5:7] == filters["month"])
+                and (not filters["from"] or value >= filters["from"])
+                and (not filters["to"] or value <= filters["to"])
+                and (not filters["turma"] or str(turma or "") == filters["turma"]))
+    data["lessons"] = [row for row in data.get("lessons") or [] if selected(row.get("data_aula"), row.get("turma"))]
+    data["evolution"] = [row for row in data.get("evolution") or [] if row.get("event_type") != "FREQUENCIA" or selected(row.get("event_date"), (row.get("details") or {}).get("turma"))]
+    present = sum(row.get("presente") is True for row in data["lessons"])
+    data["totals"] = {**data["totals"], "aulas": len(data["lessons"]), "presencas": present,
+                      "ausencias": len(data["lessons"]) - present,
+                      "frequencia": round(present * 100 / len(data["lessons"])) if data["lessons"] else 0}
     student, totals = data["student"], data["totals"]
     profile = request.session.get("user_profile") or {}
     actor = profile.get("full_name") or profile.get("nome") or profile.get("name") or profile.get("email") or "Usuario"
@@ -327,10 +353,10 @@ def export_student_attendance_excel(request, student_id):
     calls_sheet = workbook.create_sheet("CHAMADAS")
     call_headers = ["Data", "Semestre", "Comum / Turma", "Modalidade", "Instrutor", "Situação"]
     call_last = prepare(calls_sheet, "HISTORICO INDIVIDUAL DE CHAMADAS", call_headers)
-    first_date = datetime.fromisoformat(data["lessons"][-1]["data_aula"][:10]).date()
+    first_date = datetime.fromisoformat(data["lessons"][-1]["data_aula"][:10]).date() if data["lessons"] else None
     for row_index, row in enumerate(data.get("lessons") or [], 7):
         lesson_date = datetime.fromisoformat(row["data_aula"][:10]).date()
-        semester = min(4, max(1, ((lesson_date.year - first_date.year) * 12 + lesson_date.month - first_date.month) // 6 + 1))
+        semester = min(4, max(1, ((lesson_date.year - first_date.year) * 12 + lesson_date.month - first_date.month) // 6 + 1)) if first_date else 1
         values = [lesson_date.strftime("%d/%m/%Y"), f"{semester}o", f"{row.get('congregacao_label') or row.get('congregacao') or '-'} | {row.get('turma') or '-'}",
                   row.get("curso") or "Nao informado", row.get("instrutor_aula") or "Nao informado", "Presente" if row.get("presente") else "Ausente"]
         for column, value in enumerate(values, 1):
@@ -343,6 +369,49 @@ def export_student_attendance_excel(request, student_id):
     for index, width in enumerate([14, 12, 43, 24, 34, 16], 1):
         calls_sheet.column_dimensions[get_column_letter(index)].width = width
 
+    enrollments_sheet = workbook.create_sheet("TURMAS")
+    enrollment_headers = ["Aluno", "Congregacao", "Instrumento", "Situacao", "Ultima confirmacao"]
+    enrollment_last = prepare(enrollments_sheet, "TURMAS E MATRICULAS DO GEM", enrollment_headers)
+    for row_index, row in enumerate(data.get("enrollments") or [], 7):
+        seen = str(row.get("last_seen_at") or "")[:10]
+        try:
+            seen = datetime.fromisoformat(seen).strftime("%d/%m/%Y")
+        except ValueError:
+            seen = "Nao informada"
+        values = [row.get("nome_aluno") or student.get("nome"), row.get("congregacao") or "Nao informada",
+                  row.get("instrumento") or student.get("instrumento") or "Nao informado",
+                  "Ativa" if row.get("ativo") else "Inativa", seen]
+        for column, value in enumerate(values, 1):
+            cell = enrollments_sheet.cell(row_index, column, value)
+            cell.border = Border(bottom=thin)
+            if row_index % 2 == 0:
+                cell.fill = PatternFill("solid", fgColor=alternate)
+    enrollments_sheet.auto_filter.ref = f"A6:{enrollment_last}{max(6, enrollments_sheet.max_row)}"
+    for index, width in enumerate([34, 34, 24, 14, 20], 1):
+        enrollments_sheet.column_dimensions[get_column_letter(index)].width = width
+
+    evolution_sheet = workbook.create_sheet("EVOLUCAO")
+    evolution_headers = ["Data", "Tipo", "Titulo", "Detalhes", "Origem"]
+    evolution_last = prepare(evolution_sheet, "EVOLUCAO SINCRONIZADA DO ALUNO", evolution_headers)
+    for row_index, row in enumerate(data.get("evolution") or [], 7):
+        event_date = str(row.get("event_date") or "")[:10]
+        try:
+            event_date = datetime.fromisoformat(event_date).strftime("%d/%m/%Y")
+        except ValueError:
+            event_date = "Nao informada"
+        details = row.get("details") or {}
+        detail_text = " | ".join(f"{key}: {value}" for key, value in details.items() if value not in (None, ""))
+        values = [event_date, row.get("event_type") or "Evento", row.get("title") or "-",
+                  detail_text or "Sem detalhes", row.get("source_table") or "SAM"]
+        for column, value in enumerate(values, 1):
+            cell = evolution_sheet.cell(row_index, column, value)
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(vertical="top", wrap_text=column in (3, 4))
+            if row_index % 2 == 0:
+                cell.fill = PatternFill("solid", fgColor=alternate)
+    evolution_sheet.auto_filter.ref = f"A6:{evolution_last}{max(6, evolution_sheet.max_row)}"
+    for index, width in enumerate([15, 17, 38, 72, 30], 1):
+        evolution_sheet.column_dimensions[get_column_letter(index)].width = width
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)

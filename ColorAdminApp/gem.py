@@ -33,6 +33,41 @@ SELECT_FIELDS = (
     "municipio,programa_minimo_percentual,registro_msa,updated_at"
 )
 SUMMARY_FIELDS = "id,nome_aluno,status,nivel,instrumento,municipio,comum_congregacao,cargo_ministerio,registro_msa,programa_minimo_percentual,updated_at"
+
+ADVANCEMENT_MILESTONES = {
+    "ingresso_rjm": "rjm",
+    "ingresso_culto": "culto",
+    "oficializacao": "oficializacao",
+}
+
+
+def advancement_permission(student, records, milestone):
+    """Libera somente a próxima etapa e apenas com todo o programa documentado."""
+    required_target = ADVANCEMENT_MILESTONES.get(milestone)
+    if not required_target:
+        return True, ""
+    assessment = assess_program(student, records)
+    if assessment.get("target") != required_target:
+        return False, "Este marco não corresponde à próxima etapa de formação do aluno."
+    if not assessment.get("eligible"):
+        pending = [item.get("area") for item in assessment.get("requirements", []) if item.get("status") != "ok"]
+        pending_text = ", ".join(filter(None, pending)) or "critérios pedagógicos da etapa"
+        target_label = assessment.get("target_label") or "próxima etapa"
+        return False, f"Critérios para {target_label} ainda não atendidos: {pending_text}."
+    return True, ""
+
+
+def _fetch_program_records(student_id):
+    sources = {"msa": "musica_acompanhamento_msa", "metodo": "musica_acompanhamento_metodo", "hinario": "musica_acompanhamento_hinario"}
+    records = {}
+    for name, table in sources.items():
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers(),
+            params={"select": "*", "aluno_id": f"eq.{student_id}"}, timeout=15,
+        )
+        response.raise_for_status()
+        records[name] = response.json()
+    return records
 GRADUATION_TOKEN = "OFICIALIZAD"
 LEVEL_OPTIONS = [
     'CANDIDATO(A)', 'CULTO OFICIAL', 'ENSAIO', 'MEIA HORA', 'OFICIALIZADO(A)', 'RJM',
@@ -676,14 +711,20 @@ def api_student_detail(request, student_id):
         candidate = dict(current, **payload, comum=payload.get("comum_congregacao", current.get("comum_congregacao")), cidade=payload.get("municipio", current.get("municipio")))
         if not payload or not can_access(user_scope(request), candidate):
             return _denied()
+        milestone = None
+        if payload.get("nivel") and payload["nivel"] != current.get("nivel"):
+            normalized = _norm(payload["nivel"])
+            milestone = ("oficializacao" if "OFICIALIZAD" in normalized else "ingresso_culto" if "CULTO OFICIAL" in normalized else "ingresso_rjm" if "RJM" in normalized or "MEIA HORA" in normalized else "ingresso_ensaio" if "ENSAIO" in normalized else None)
+            if milestone in ADVANCEMENT_MILESTONES:
+                allowed, reason = advancement_permission(current, _fetch_program_records(student_id), milestone)
+                if not allowed:
+                    return JsonResponse({"error": reason}, status=409)
         saved = requests.patch(
             f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers("return=representation"),
             params={"id": f"eq.{student_id}"}, json=payload, timeout=15,
         )
         saved.raise_for_status()
         if payload.get("nivel") and payload["nivel"] != current.get("nivel"):
-            normalized = _norm(payload["nivel"])
-            milestone = ("oficializacao" if "OFICIALIZAD" in normalized else "ingresso_culto" if "CULTO OFICIAL" in normalized else "ingresso_rjm" if "RJM" in normalized or "MEIA HORA" in normalized else "ingresso_ensaio" if "ENSAIO" in normalized else None)
             if milestone:
                 labels = {"ingresso_ensaio": "Ingresso no Ensaio", "ingresso_rjm": "Ingresso na RJM", "ingresso_culto": "Ingresso no Culto Oficial", "oficializacao": "Oficialização"}
                 requests.post(f"{settings.SUPABASE_URL}/rest/v1/{SOURCE_CONFIG['atividades'][0]}", headers=service_headers("return=minimal"), json={"aluno_id": str(student_id), "tipo_atividade": milestone, "titulo": labels[milestone], "descricao": "Marco registrado automaticamente pela alteração de nível.", "data_atividade": datetime.now().date().isoformat(), "comum_congregacao": candidate.get("comum_congregacao"), "municipio": candidate.get("municipio")}, timeout=15).raise_for_status()
@@ -731,7 +772,7 @@ def api_student_record(request, source_name, record_id=None):
             return JsonResponse({"error": "Aluno não informado."}, status=400)
         student_response = requests.get(
             f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers(),
-            params={"select": "id,comum_congregacao,municipio", "id": f"eq.{student_id}", "limit": 1}, timeout=15,
+            params={"select": "id,nivel,instrumento,cargo_ministerio,comum_congregacao,municipio", "id": f"eq.{student_id}", "limit": 1}, timeout=15,
         )
         student_response.raise_for_status()
         students = student_response.json()
@@ -744,6 +785,11 @@ def api_student_record(request, source_name, record_id=None):
             return JsonResponse({"item": record})
         if request.method in {"POST", "PATCH"}:
             payload = {key: raw.get(key) for key in editable_fields if key in raw}
+            milestone = payload.get("tipo_atividade") if source_name == "atividades" else None
+            if request.method == "POST" and milestone in ADVANCEMENT_MILESTONES:
+                allowed, reason = advancement_permission(student, _fetch_program_records(student_id), milestone)
+                if not allowed:
+                    return JsonResponse({"error": reason}, status=409)
             document = uploaded_files.get("documento") if multipart and source_name == "atividades" else None
             remove_document = source_name == "atividades" and str(raw.get("remover_documento", "")).lower() in {"1", "true", "yes"}
             if document:

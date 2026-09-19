@@ -12,7 +12,8 @@ def mark_active_link(menu, current_path_name, current_path=''):
         raw_item_url = str(item.get('url') or '')
         item_url = raw_item_url.split('#', 1)[0]
         exact_path = '#' not in raw_item_url and item_url.startswith('/') and item_url.rstrip('/') == current_path.rstrip('/')
-        item['is_active'] = exact_path or (
+        prefix_path = any(current_path.startswith(prefix) for prefix in item.get('active_prefixes', []))
+        item['is_active'] = exact_path or prefix_path or (
             not item_url.startswith('/') and item.get('name', '') == current_path_name
         )
 
@@ -57,7 +58,7 @@ def sidebar_menu(request):
 	{ 'url': '/gem/', 'icon': 'fa fa-graduation-cap', 'title': 'GEM', 'name': 'gemDashboard',
 		'children': [
 			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' },
-			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses' },
+			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses', 'active_prefixes': ['/gem/aulas/'] },
 			{ 'url': '/gem/projecao/', 'title': 'Projeção da Orquestra', 'name': 'gemProjection' },
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]

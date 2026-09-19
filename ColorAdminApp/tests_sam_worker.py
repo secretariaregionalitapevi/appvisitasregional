@@ -4,6 +4,8 @@ from unittest.mock import Mock, patch
 from .management.commands.run_sam_sync_worker import (
     DEFAULT_CLASSES_INTERVAL_SECONDS,
     DEFAULT_IDLE_INTERVAL_SECONDS,
+    DEFAULT_HISTORY_LIMIT,
+    DEFAULT_HISTORY_REFRESH_HOURS,
     MIN_CLASSES_INTERVAL_SECONDS,
     MIN_IDLE_INTERVAL_SECONDS,
     Command,
@@ -53,6 +55,8 @@ class SamWorkerValidationTests(SimpleTestCase):
 
     def test_idle_discovery_interval_is_fast_but_rate_limited(self):
         self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 120)
+        self.assertEqual(DEFAULT_HISTORY_LIMIT, 250)
+        self.assertEqual(DEFAULT_HISTORY_REFRESH_HOURS, 720)
         self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 60)
         self.assertEqual(DEFAULT_CLASSES_INTERVAL_SECONDS, 300)
         self.assertEqual(MIN_CLASSES_INTERVAL_SECONDS, 120)
