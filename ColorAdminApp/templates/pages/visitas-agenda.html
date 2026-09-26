@@ -6,6 +6,11 @@
 {% block css %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
+    #modal-import-agenda .modal-content { max-height: calc(100dvh - 3.5rem); overflow: hidden; }
+    #form-import-agenda { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    #form-import-agenda .modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    #form-import-agenda .modal-footer { flex-shrink: 0; }
+    #agenda-import-preview { overflow-y: visible; }
     .calendar .fc-header-toolbar {
         margin-bottom: 18px !important;
     }
@@ -417,6 +422,7 @@
 
         const updateAttendantRequirement = () => {
             const requiresAttendant = ['RF', 'RE'].includes($('#event-categoria-modal').val());
+            $('#event-equipe').prop('required', !requiresAttendant);
             $('#event-responsavel-atendimento').prop('required', requiresAttendant);
             $('#event-responsavel-label').html(
                 `RESPONSÁVEL PELO ATENDIMENTO${requiresAttendant ? ' <span class="text-danger">*</span>' : ''}`
@@ -668,8 +674,17 @@
             openNewVisitModal();
         });
 
+        let savingVisit = false;
         $('#form-event').on('submit', async function (e) {
             e.preventDefault();
+            if (savingVisit) return;
+            savingVisit = true;
+            const saveButton = $('#btn-save-event');
+            const originalSaveLabel = saveButton.html();
+            saveButton.prop('disabled', true).attr('aria-busy', 'true').html(
+                '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span><span role="status">Salvando…</span>'
+            );
+            try {
             const id = $('#event-id').val();
             let irmandade_id = $('#event-member-select').val();
             const typedName = $('#event-titulo').val();
@@ -753,9 +768,100 @@
                     confirmButtonColor: '#348fe2'
                 });
             }
+            } catch (error) {
+                Swal.fire('Erro ao salvar', 'Não foi possível confirmar o salvamento. Verifique sua conexão e confira a agenda antes de tentar novamente.', 'error');
+            } finally {
+                savingVisit = false;
+                saveButton.prop('disabled', false).removeAttr('aria-busy').html(originalSaveLabel);
+            }
         });
 
         $('#btn-delete-event').on('click',async function(){const id=$('#event-id').val(),button=$(this),memberName=String($('#event-titulo').val()||'esta pessoa').trim();if(!id)return;const confirmed=await AppFeedback.confirm({title:`Excluir agendamento de ${memberName}?`,message:'O agendamento será removido definitivamente do calendário.',confirmText:'Sim, excluir'});if(!confirmed)return;button.prop('disabled',true);const notice=AppFeedback.show({type:'loading',flow:'delete',title:'Excluindo agendamento',message:'Aguarde, o agendamento está sendo removido.'});try{const res=await fetch(`/visitas/api/agenda/?id=${encodeURIComponent(id)}`,{method:'DELETE',headers:{'X-CSRFToken':'{{ csrf_token }}'}}),result=await res.json().catch(()=>({}));if(!res.ok)throw new Error(result.error||result.details||'Não foi possível excluir o agendamento.');notice.close();$('#modal-event').modal('hide');calendar.refetchEvents();showAgendaSuccess('Agendamento excluído',`O agendamento de ${memberName} foi excluído com sucesso.`)}catch(error){notice.close();AppFeedback.show({type:'error',title:'Não foi possível excluir',message:error.message})}finally{button.prop('disabled',false)}});
+
+        let agendaImportToken = '';
+        const escapeImportHtml = value => $('<div>').text(value == null ? '' : String(value)).html();
+
+        $('#btn-import-agenda').on('click', function () {
+            const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
+            if (!selectedCommon) {
+                AppFeedback.show({type: 'warning', title: 'Selecione a comum', message: 'Escolha a comum congregação antes de importar a agenda.'});
+                return;
+            }
+            agendaImportToken = '';
+            $('#form-import-agenda')[0].reset();
+            $('#agenda-import-summary, #agenda-import-preview, #btn-apply-agenda').addClass('d-none');
+            $('#agenda-import-preview tbody').empty();
+            $('#btn-read-agenda').removeClass('d-none').prop('disabled', false);
+            $('#modal-import-agenda').modal('show');
+        });
+
+        $('#form-import-agenda').on('submit', async function (event) {
+            event.preventDefault();
+            const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
+            const file = document.getElementById('agenda-import-file').files[0];
+            if (!file || !selectedCommon) return;
+            const button = $('#btn-read-agenda').prop('disabled', true);
+            agendaImportToken = '';
+            $('#btn-apply-agenda').addClass('d-none');
+            const notice = AppFeedback.show({type: 'loading', title: 'Lendo o documento', message: 'Conferindo datas, nomes, tipos e responsáveis com o cadastro.'});
+            try {
+                const body = new FormData();
+                body.append('action', 'preview');
+                body.append('comum', selectedCommon);
+                body.append('documento', file);
+                const response = await fetch('/visitas/api/agenda/importar/', {
+                    method: 'POST', headers: {'X-CSRFToken': '{{ csrf_token }}'}, body
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Não foi possível analisar o documento.');
+                agendaImportToken = result.token;
+                const summary = result.summary;
+                $('#agenda-import-summary').removeClass('d-none').html(
+                    `<span class="badge bg-primary me-2">${summary.total} linhas</span>` +
+                    `<span class="badge bg-success me-2">${summary.ready} prontas</span>` +
+                    `<span class="badge bg-secondary me-2">${summary.duplicates} já existentes</span>` +
+                    `<span class="badge bg-danger">${summary.errors} para revisar</span>`
+                );
+                const badges = {ready: ['success', 'Pronto'], duplicate: ['secondary', 'Já existe'], error: ['danger', 'Revisar']};
+                $('#agenda-import-preview tbody').html(result.rows.map(row => {
+                    const badge = row.create_member && row.state === 'ready' ? ['info', 'Novo cadastro'] : (badges[row.state] || badges.error);
+                    return `<tr><td><span class="badge bg-${badge[0]}">${badge[1]}</span><div class="small text-muted mt-1">${escapeImportHtml(row.message)}</div></td>` +
+                        `<td>${escapeImportHtml(row.date)} ${escapeImportHtml(row.time)}</td>` +
+                        `<td>${escapeImportHtml(row.category)}</td><td><strong>${escapeImportHtml(row.matched_name || row.host)}</strong></td>` +
+                        `<td>${escapeImportHtml(row.address)}</td><td>${escapeImportHtml(row.attendant)}</td></tr>`;
+                }).join(''));
+                $('#agenda-import-preview').removeClass('d-none');
+                $('#btn-apply-agenda').toggleClass('d-none', summary.ready === 0);
+            } catch (error) {
+                AppFeedback.show({type: 'error', title: 'Falha na leitura', message: error.message});
+            } finally {
+                notice.close();
+                button.prop('disabled', false);
+            }
+        });
+
+        $('#btn-apply-agenda').on('click', async function () {
+            if (!agendaImportToken) return;
+            const button = $(this).prop('disabled', true);
+            const notice = AppFeedback.show({type: 'loading', title: 'Importando agenda', message: 'Gravando apenas os compromissos que ainda não existem.'});
+            try {
+                const response = await fetch('/visitas/api/agenda/importar/', {
+                    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+                    body: JSON.stringify({action: 'apply', token: agendaImportToken})
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Não foi possível importar a agenda.');
+                notice.close();
+                $('#modal-import-agenda').modal('hide');
+                calendar.refetchEvents();
+                showAgendaSuccess('Agenda importada', `${result.created} evento(s) criado(s); ${result.duplicates} duplicado(s) ignorado(s).`);
+            } catch (error) {
+                notice.close();
+                AppFeedback.show({type: 'error', title: 'Falha na importação', message: error.message});
+            } finally {
+                button.prop('disabled', false);
+            }
+        });
 
         $('#event-status').on('change', function() {
             if($(this).val() === 'Cancelada' || $(this).val() === 'Não realizada') $('#cancel-reason-container').show();
@@ -808,8 +914,8 @@
         <button type="button" id="btn-new-visit" class="btn btn-primary w-100 fw-bold btn-floating-add mb-3">
             <i class="fa fa-plus me-1"></i> Nova Visita
         </button>
-        <button class="btn btn-warning w-100 fw-bold mb-3 shadow-sm" onclick="$('#modal-roteiro').modal('show');">
-            <i class="fa fa-route me-1"></i> Gerar Roteiro Otimizado
+        <button type="button" id="btn-import-agenda" class="btn btn-warning w-100 fw-bold mb-3 shadow-sm">
+            <i class="fa fa-file-import me-1"></i> Importar Agenda
         </button>
 
         <div id="external-events" class="fc-event-list">
@@ -923,31 +1029,35 @@
     </div>
 </div>
 
-<!-- Modal Roteiro -->
-<div class="modal fade" id="modal-roteiro" tabindex="-1">
-    <div class="modal-dialog">
+<!-- Importação exclusiva do Calendário de Visitas; não altera o cadastro da irmandade. -->
+<div class="modal fade" id="modal-import-agenda" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-warning border-0 text-dark">
-                <h5 class="modal-title fw-bold"><i class="fa fa-route me-2"></i>Gerar Roteiro Otimizado</h5>
+                <h5 class="modal-title fw-bold"><i class="fa fa-file-import me-2"></i>Importar Agenda de Visitas</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form action="{% url 'ColorAdminApp:visitasRoteiro' %}" method="GET" target="_blank">
+            <form id="form-import-agenda">
                 <div class="modal-body p-4 text-dark">
-                    <p class="small text-muted mb-4">O sistema calculará automaticamente a melhor rota (menor distância) a partir da Comum Congregação para as visitas selecionadas.</p>
-                    
+                    <p class="small text-muted mb-3">Envie uma imagem, PDF ou Excel. Antes de gravar, o sistema confere cada nome com o cadastro da irmandade e mostra os itens novos, duplicados e os que precisam de revisão.</p>
+                    <div class="alert alert-info py-2 small"><i class="fa fa-info-circle me-1"></i>Ao confirmar, pessoas não encontradas com nome e endereço preenchidos serão cadastradas na irmandade da comum selecionada. Confira os itens “Novo cadastro”. Itens pendentes serão ignorados sem impedir a importação dos demais. RF e RE não recebem equipe.</div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted">EQUIPE</label>
-                        <select name="equipe" id="route-team" class="form-select" required><option value="">Carregando equipes...</option></select>
+                        <label class="form-label fw-bold small text-muted">DOCUMENTO DA AGENDA</label>
+                        <input type="file" id="agenda-import-file" class="form-control" accept=".xlsx,.xlsm,.pdf,.png,.jpg,.jpeg,.webp" required>
+                        <div class="form-text">Formatos: Excel, PDF, PNG, JPG ou WEBP; limite de 15 MB.</div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted">DATA DAS VISITAS</label>
-                        <input type="date" name="data" class="form-control" required>
+                    <div id="agenda-import-summary" class="d-none mb-3"></div>
+                    <div id="agenda-import-preview" class="table-responsive d-none">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead><tr><th>Situação</th><th>Data</th><th>Tipo</th><th>Pessoa conciliada</th><th>Endereço</th><th>Responsável</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light">
-                    <button type="button" class="btn btn-white fw-bold px-4" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-warning fw-bold px-4 text-dark"><i class="fa fa-print me-1"></i> Gerar e Imprimir</button>
+                    <button type="button" class="btn btn-white fw-bold px-4" data-bs-dismiss="modal">Fechar</button>
+                    <button type="submit" id="btn-read-agenda" class="btn btn-warning fw-bold px-4 text-dark"><i class="fa fa-search me-1"></i>Analisar documento</button>
+                    <button type="button" id="btn-apply-agenda" class="btn btn-success fw-bold px-4 d-none"><i class="fa fa-check me-1"></i>Importar itens prontos</button>
                 </div>
             </form>
         </div>

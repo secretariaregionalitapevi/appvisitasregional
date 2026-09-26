@@ -1920,6 +1920,161 @@ def visitasRoteiro(request):
         logger.exception("Printed route generation failed: %s", e)
         return render(request, 'pages/visitas-roteiro-impresso.html', {'error': 'Não foi possível gerar o roteiro.'})
 
+def apiVisitasAgendaImport(request):
+    """Pré-visualiza e confirma documentos importados no Calendário de Visitas."""
+    from django.core import signing
+    from django.core.signing import BadSignature, SignatureExpired
+    from .agenda_import import parse_document, prepare_rows, row_payload, normalize
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método não permitido.'}, status=405)
+
+    scope = user_scope(request)
+    headers = {
+        'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+    base = f"{settings.SUPABASE_URL}/rest/v1/"
+    member_url = base + settings.SUPABASE_TABLE_VISITAS_IRMANDADE
+    team_url = base + settings.SUPABASE_TABLE_VISITAS_EQUIPES
+    agenda_url = base + settings.SUPABASE_TABLE_VISITAS_AGENDA
+
+    def fetch_all(url, params):
+        result = []
+        for offset in range(0, 100000, 1000):
+            response = requests.get(
+                url, headers={**headers, 'Range': f'{offset}-{offset + 999}'},
+                params=params, timeout=30,
+            )
+            if response.status_code not in {200, 206}:
+                response.raise_for_status()
+            page = response.json()
+            result.extend(page)
+            if len(page) < 1000:
+                break
+        return result
+
+    try:
+        content_type = request.content_type or ''
+        data = json.loads(request.body or b'{}') if content_type.startswith('application/json') else request.POST
+        action = str(data.get('action') or 'preview')
+
+        if action == 'apply':
+            try:
+                signed = signing.loads(data.get('token') or '', salt='visitas-agenda-import', max_age=3600)
+            except (BadSignature, SignatureExpired):
+                return JsonResponse({'error': 'A prévia expirou. Leia o documento novamente.'}, status=400)
+            common = str(signed.get('common') or '').strip()
+            if not can_access(scope, {'comum': common}):
+                return JsonResponse({'error': 'Comum fora do seu escopo de acesso.'}, status=403)
+            rows = [row for row in signed.get('rows', []) if row.get('state') == 'ready']
+            if not rows:
+                return JsonResponse({'created': 0, 'duplicates': 0, 'message': 'Nenhum item novo para importar.'})
+
+            # Reconfere cadastros e compromissos criados após a prévia.
+            members = fetch_all(member_url, [('select', 'id,nome,comum,endereco,setor'), ('comum', f'ilike.{common}%')])
+            members = [m for m in members if normalize(m.get('comum')) == normalize(common)]
+            current = fetch_all(agenda_url, [('select', '*'),
+                ('data_inicio', f"gte.{min(r['date'] for r in rows)}T00:00:00-03:00"),
+                ('data_inicio', f"lte.{max(r['date'] for r in rows)}T23:59:59-03:00")])
+            checked = prepare_rows([{k: r.get(k) for k in ('date', 'time', 'host', 'address', 'category', 'attendant')} for r in rows], common, members, [], current)
+            rows = [r for r in checked if r['state'] == 'ready']
+            if not rows:
+                return JsonResponse({'created': 0, 'duplicates': sum(r['state'] == 'duplicate' for r in checked)})
+            for row in rows:
+                if row.get('create_member'):
+                    member_payload = {'id': row['member_id'], 'nome': row['matched_name'],
+                                      'comum': common, 'endereco': row['address'],
+                                      'setor': row['sector'], 'status': 'Ativo'}
+                    member_response = requests.post(member_url,
+                        headers={**headers, 'Prefer': 'resolution=ignore-duplicates,return=representation'},
+                        params={'on_conflict': 'id'}, json=member_payload, timeout=30)
+                    member_response.raise_for_status()
+                    log_audit(request, 'CREATE', 'VISITAS_IRMANDADE', {'origem': 'importacao_agenda', 'novo': member_payload})
+            keys = [row['import_key'] for row in rows]
+            existing = fetch_all(agenda_url, [
+                ('select', 'id,import_key'), ('import_key', f"in.({','.join(keys)})"),
+            ])
+            existing_keys = {item.get('import_key') for item in existing}
+            pending = [row for row in rows if row['import_key'] not in existing_keys]
+            payload = [row_payload(row, signed['source_name'], signed['source_hash']) for row in pending]
+            created = 0
+            if payload:
+                response = requests.post(
+                    agenda_url, headers={
+                        **headers, 'Prefer': 'resolution=ignore-duplicates,return=representation',
+                    }, params={'on_conflict': 'import_key'}, json=payload, timeout=45,
+                )
+                if response.status_code not in {200, 201}:
+                    body = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
+                    if body.get('code') in {'PGRST204', '42703'} or 'import_key' in str(body):
+                        return JsonResponse({
+                            'error': 'A estrutura de importação ainda não foi aplicada no banco.',
+                            'migration': 'scripts/migrations/025_visitas_agenda_import_idempotency.sql',
+                        }, status=503)
+                    response.raise_for_status()
+                created = len(response.json()) if response.content else len(payload)
+            duplicate_count = len(rows) - created
+            log_audit(request, 'IMPORT', 'VISITAS_AGENDA', {
+                'scope': scope_details(scope), 'arquivo': signed['source_name'],
+                'hash': signed['source_hash'], 'criados': created, 'duplicados': duplicate_count,
+            })
+            return JsonResponse({'created': created, 'duplicates': duplicate_count})
+
+        common = str(data.get('comum') or '').strip()
+        visible = visible_commons(scope)
+        if not common or common not in {str(item.get('comum') or '').strip() for item in visible}:
+            return JsonResponse({'error': 'Selecione uma comum válida antes de importar.'}, status=403)
+        upload = request.FILES.get('documento')
+        if not upload:
+            return JsonResponse({'error': 'Selecione um arquivo para importar.'}, status=400)
+        raw_rows, source_hash, source_name = parse_document(upload)
+        members = fetch_all(member_url, [
+            ('select', 'id,nome,comum,endereco,setor,equipe_id,equipe_visita'),
+            ('comum', f'ilike.{common}%'), ('order', 'nome.asc'),
+        ])
+        members = [m for m in members if normalize(m.get('comum')) == normalize(common)]
+        teams = []
+        dates = sorted(str(row.get('date') or '')[:10] for row in raw_rows if row.get('date'))
+        existing_params = [('select', 'id,irmandade_id,titulo,data_inicio,categoria,status,endereco_visitado,import_key')]
+        if dates:
+            existing_params.extend([
+                ('data_inicio', f'gte.{dates[0]}T00:00:00-03:00'),
+                ('data_inicio', f'lte.{dates[-1]}T23:59:59-03:00'),
+            ])
+        try:
+            existing = fetch_all(agenda_url, existing_params)
+        except requests.HTTPError as exc:
+            if exc.response is not None and 'import_key' in exc.response.text:
+                return JsonResponse({
+                    'error': 'A estrutura de importação ainda não foi aplicada no banco.',
+                    'migration': 'scripts/migrations/025_visitas_agenda_import_idempotency.sql',
+                }, status=503)
+            raise
+        rows = prepare_rows(raw_rows, common, members, teams, existing)
+        token = signing.dumps({
+            'common': common, 'source_hash': source_hash, 'source_name': source_name,
+            'rows': rows,
+        }, salt='visitas-agenda-import', compress=True)
+        return JsonResponse({
+            'rows': rows, 'token': token,
+            'summary': {
+                'total': len(rows), 'ready': sum(row['state'] == 'ready' for row in rows),
+                'duplicates': sum(row['state'] == 'duplicate' for row in rows),
+                'errors': sum(row['state'] == 'error' for row in rows),
+            },
+        })
+    except (ValueError, RuntimeError) as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except requests.RequestException as exc:
+        logger.exception('Agenda import failed: %s', exc)
+        return JsonResponse({'error': 'Não foi possível consultar ou gravar a agenda.'}, status=502)
+    except Exception as exc:
+        logger.exception('Unexpected agenda import failure: %s', exc)
+        return JsonResponse({'error': 'Ocorreu um erro interno durante a importação.'}, status=500)
+
+
 def apiVisitasAgenda(request):
     scope = user_scope(request)
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
@@ -2113,7 +2268,7 @@ def apiVisitasAgenda(request):
                 candidate.get('equipe_responsavel'),
                 candidate.get('equipe_tipo'),
             )
-            if not candidate_team:
+            if not candidate_team and candidate.get('categoria') not in {'RF', 'RE'}:
                 return JsonResponse({
                     "error": "Selecione a equipe responsável pela visita."
                 }, status=400)

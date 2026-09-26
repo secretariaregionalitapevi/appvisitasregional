@@ -50,6 +50,7 @@ urlpatterns = [
     path('visitas/api/irmandade/', views.apiVisitasIrmandade, name='apiVisitasIrmandade'),
     path('visitas/api/comuns/', views.apiVisitasComuns, name='apiVisitasComuns'),
     path('visitas/api/agenda/', views.apiVisitasAgenda, name='apiVisitasAgenda'),
+    path('visitas/api/agenda/importar/', views.apiVisitasAgendaImport, name='apiVisitasAgendaImport'),
     path('visitas/api/upload/', views.apiStorageUpload, name='apiStorageUpload'),
     path('visitas/api/foto/<str:file_name>/', views.apiStoragePhoto, name='apiStoragePhoto'),
     path('visitas/api/geocode/', views.apiGeocode, name='apiGeocode'),
