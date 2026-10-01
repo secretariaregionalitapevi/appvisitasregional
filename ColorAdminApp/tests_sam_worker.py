@@ -66,8 +66,13 @@ class SamWorkerValidationTests(SimpleTestCase):
         command = Command()
         command._sync_classes("C:/scraper", 14)
 
-        call_command.assert_called_once_with(
+        self.assertEqual(call_command.call_count, 2)
+        call_command.assert_any_call(
             "sync_sam_classes", scraper_dir="C:/scraper", lookback_days=14,
+            stdout=command.stdout, stderr=command.stderr,
+        )
+        call_command.assert_any_call(
+            "sync_sam_audit", scraper_dir="C:/scraper",
             stdout=command.stdout, stderr=command.stderr,
         )
 

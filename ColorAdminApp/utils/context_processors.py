@@ -1,4 +1,4 @@
-import unicodedata
+﻿import unicodedata
 
 from django.urls import Resolver404, resolve
 
@@ -60,6 +60,7 @@ def sidebar_menu(request):
 			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' },
 			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses', 'active_prefixes': ['/gem/aulas/'] },
 			{ 'url': '/gem/projecao/', 'title': 'Projeção da Orquestra', 'name': 'gemProjection' },
+			{ 'url': '/gem/sam/historico/', 'title': 'Histórico SAM', 'name': 'samAudit', 'active_prefixes': ['/gem/sam/historico/'] },
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},
@@ -257,8 +258,8 @@ def sidebar_menu(request):
 	try:
 		current_path_name = resolve(request.path_info).url_name
 	except Resolver404:
-		# O contexto também é executado ao renderizar uma resposta 404.
-		# Nesse estágio o CommonMiddleware ainda pode normalizar a URL.
+		# O contexto tambÃ©m Ã© executado ao renderizar uma resposta 404.
+		# Nesse estÃ¡gio o CommonMiddleware ainda pode normalizar a URL.
 		current_path_name = ''
 	
 	# O menu usa a mesma autorizacao aplicada pelo servidor nas URLs e APIs.
@@ -284,3 +285,4 @@ def sidebar_menu(request):
 	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)
 
 	return {'sidebar_menu': sidebar_menu}
+

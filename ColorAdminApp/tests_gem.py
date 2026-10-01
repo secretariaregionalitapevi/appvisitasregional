@@ -40,6 +40,9 @@ class GemTests(SimpleTestCase):
         self.assertIn("if(all){try{await loadSummary()}", template)
         self.assertIn("try{await loadStudents()}", template)
         self.assertNotIn("Promise.allSettled([loadSummary(),loadStudents()])", template)
+        self.assertIn("window.gemCommonsByMunicipality=data.commons_by_municipality||{}", template)
+        self.assertIn("municipality.addEventListener('change', updateCommonOptions, true)", template)
+        self.assertIn("window.addEventListener('gem-common-options-ready', updateCommonOptions)", template)
 
     @patch("ColorAdminApp.gem.requests.delete")
     @patch("ColorAdminApp.gem.requests.get")
@@ -180,6 +183,9 @@ class GemTests(SimpleTestCase):
         self.assertEqual(payload["totals"]["formation"], 2)
         self.assertEqual(payload["totals"]["graduates"], 1)
         self.assertEqual(payload["totals"]["program_complete"], 1)
+        self.assertEqual(payload["commons_by_municipality"], {
+            "ITAPEVI": ["CENTRAL"], "JANDIRA": ["JARDIM"],
+        })
         activity_dates.assert_not_called()
 
     @patch("ColorAdminApp.gem.requests.get")

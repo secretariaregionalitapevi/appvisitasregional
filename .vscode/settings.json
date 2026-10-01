@@ -15,5 +15,6 @@
     "https://localhost:*": "default",
     "http://127.0.0.1:*": "default",
     "https://127.0.0.1:*": "default"
-  }
+  },
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

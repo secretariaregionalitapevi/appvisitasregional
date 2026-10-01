@@ -116,6 +116,11 @@ class Command(BaseCommand):
             "sync_sam_classes", scraper_dir=scraper_dir,
             lookback_days=max(7, lookback_days), stdout=self.stdout, stderr=self.stderr,
         )
+        self.stdout.write("Preservando a trilha operacional do SAM...")
+        call_command(
+            "sync_sam_audit", scraper_dir=scraper_dir,
+            stdout=self.stdout, stderr=self.stderr,
+        )
 
     @staticmethod
     def _validate_history(report, document, import_report=None):

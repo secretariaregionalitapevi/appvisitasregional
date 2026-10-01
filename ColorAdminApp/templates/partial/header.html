@@ -48,7 +48,8 @@
 				</div>
 			</form>
 		</div>
-		{% if request.session.user_profile.role_id == 1 or request.session.user_profile.role == 'Master' or request.session.user_profile.role == 'MASTER' or request.session.user_profile.role == 'Global' or request.session.user_profile.role == 'GLOBAL' %}
+		{% with user_role=request.session.user_profile.role|default:'Membro' %}
+		{% if request.session.user_profile.role_id == 1 or user_role|upper == 'MASTER' or user_role|upper == 'GLOBAL' %}
 		<div class="navbar-item dropdown" id="pending-access-notifications" data-pending-url="{% url 'ColorAdminApp:pendingAccessCount' %}">
 			<a href="#" data-bs-toggle="dropdown" class="navbar-link dropdown-toggle icon">
 				<i class="fa fa-bell" aria-hidden="true"></i>
@@ -70,6 +71,7 @@
 			</div>
 		</div>
 		{% endif %}
+		{% endwith %}
 		<div id="pending-access-toast" class="pending-access-toast d-none" role="status" aria-live="polite">
 			<div class="pending-access-toast-icon"><i class="fa fa-user-clock"></i></div>
 			<div class="pending-access-toast-copy"><strong id="pending-access-toast-title">Liberações aguardando análise</strong><span id="pending-access-toast-message">Há usuários aguardando a sua revisão.</span><a href="{% url 'ColorAdminApp:auditCenter' %}">Revisar agora <i class="fa fa-arrow-right"></i></a></div>

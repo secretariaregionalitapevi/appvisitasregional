@@ -59,7 +59,14 @@ class SupabaseAuthMiddleware:
                             # Mudancas de nivel, pasta, municipio ou comum passam a
                             # valer na sessao ativa sem exigir novo login.
                             current_profile = request.session.get('user_profile') or {}
-                            request.session['user_profile'] = {**current_profile, **profiles[0]}
+                            merged = {**current_profile, **profiles[0]}
+                            if not merged.get('role'):
+                                merged['role'] = merged.get('role_name') or merged.get('cargo') or 'Membro'
+                            if not merged.get('cargo'):
+                                merged['cargo'] = merged.get('role') or 'Membro'
+                            if not merged.get('role_name'):
+                                merged['role_name'] = merged.get('role') or 'Membro'
+                            request.session['user_profile'] = merged
                 except (requests.RequestException, ValueError):
                     # Falha de rede não deve expulsar todos os usuários ativos.
                     pass

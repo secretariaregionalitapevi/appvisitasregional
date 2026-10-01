@@ -376,7 +376,7 @@ def api_summary(request):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
         requested_scope = user_scope(request)
-        summary_key = f"gem:summary:v7:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
+        summary_key = f"gem:summary:v8:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
         cached_summary = cache.get(summary_key)
         if cached_summary is not None:
             return JsonResponse(cached_summary)
@@ -391,6 +391,12 @@ def api_summary(request):
         # Filter labels must retain SAM spelling: queries use exact equality.
         municipalities = Counter(row.get("municipio") or "NÃO INFORMADO" for row in formation)
         commons = Counter(row.get('comum_congregacao') or 'NÃO INFORMADA' for row in formation)
+        commons_by_municipality = {}
+        for row in formation:
+            municipality = str(row.get("municipio") or "").strip()
+            common = str(row.get("comum_congregacao") or "").strip()
+            if municipality and common:
+                commons_by_municipality.setdefault(municipality, set()).add(common)
         payload = {
             "scope": scope_details(scope),
             "totals": {
@@ -406,6 +412,9 @@ def api_summary(request):
             "instrument_options": ordered_instrument_options(instruments),
             "municipalities": [{"label": label, "value": value} for label, value in municipalities.most_common()],
             'commons': [{'label': label, 'value': value} for label, value in commons.most_common()],
+            "commons_by_municipality": {
+                municipality: sorted(values) for municipality, values in commons_by_municipality.items()
+            },
             'catalogs': {'instruments': INSTRUMENT_OPTIONS, 'levels': LEVEL_OPTIONS, 'ministries': MINISTRY_OPTIONS, 'tonalities': TONALITY_OPTIONS},
         }
         cache.set(summary_key, payload, 300)

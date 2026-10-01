@@ -1,0 +1,648 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Histórico SAM | GEM{% endblock %}
+
+{% block css %}
+<style>
+.samlog{--navy:#123f67;--blue:#2f8de4;--teal:#12a594;--amber:#f39c12;--red:#e64b55;--ink:#17354e;color:var(--ink);padding:2px 10px 30px}
+.samlog-hero{position:relative;overflow:hidden;padding:30px 36px 54px;border-radius:22px;background:linear-gradient(120deg,#123f67,#176883 56%,#12a594);color:#fff;box-shadow:0 16px 36px rgba(18,63,103,.18)}
+.samlog-hero:after{content:"";position:absolute;width:290px;height:290px;border:45px solid rgba(255,255,255,.08);border-radius:50%;right:-55px;top:-155px}
+.eyebrow{font-size:10px;letter-spacing:2px;font-weight:850;color:#adf2e7;text-transform:uppercase}
+.archive-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid rgba(255,255,255,.2);border-radius:30px;background:rgba(255,255,255,.08)}
+.archive-pill i{color:#6af0bd}
+.executive-bar{position:relative;z-index:3;margin:-30px 20px 28px;padding:16px 20px;background:#fff;border:1px solid #e5edf3;border-radius:17px;box-shadow:0 14px 32px rgba(25,55,79,.13)}
+.filter-bar{display:grid;grid-template-columns:minmax(180px,2fr) repeat(5,minmax(100px,1fr));align-items:end;gap:10px;width:100%}
+.filter-field{display:flex;flex-direction:column}
+.filter-field{min-width:0}
+.filter-field label{display:block;margin:0 0 5px;font-size:9px;font-weight:850;letter-spacing:.8px;color:#61798b;text-transform:uppercase}
+.filter-actions{grid-column:1/-1;display:flex;align-items:flex-end;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.filter-bar .form-control,.filter-bar .form-select{min-height:38px;height:38px;border-radius:6px;font-size:12px}
+.filter-actions .btn{min-height:38px;height:38px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap;display:inline-flex;align-items:center;border-radius:8px}
+.searchbox{position:relative;width:100%}.searchbox i{position:absolute;left:13px;top:12px;color:#8496a5}.searchbox input{padding-left:36px}
+.gem-filter-native{display:none!important}
+.gem-check-filter{position:relative;min-width:0;height:38px}
+.gem-check-toggle{position:relative;width:100%;height:38px;padding:0 34px 0 13px;border:1px solid #d5dbe0;border-radius:6px;background:#fff;color:#243746;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.gem-check-toggle:after{content:'';position:absolute;right:13px;top:16px;border:4px solid transparent;border-top-color:#33495c}
+.gem-check-filter.open .gem-check-toggle{border-color:#6ea8df;box-shadow:0 0 0 3px rgba(47,141,228,.13)}
+.gem-check-menu{display:none;position:absolute;z-index:1060;left:0;top:calc(100% + 4px);width:max(100%,240px);max-width:min(360px,calc(100vw - 32px));border:1px solid #cfd7df;border-radius:6px;background:#fff;box-shadow:0 10px 28px rgba(31,58,81,.18);overflow:hidden}
+.gem-check-filter.open .gem-check-menu{display:block}
+.gem-check-search{padding:8px;border-bottom:1px solid #e5e9ed}
+.gem-check-search input{width:100%;height:34px;border:1px solid #b8c4cf;border-radius:5px;padding:0 10px;font-size:12px;outline:0}
+.gem-check-search input:focus{border-color:#2f8de4;box-shadow:0 0 0 2px rgba(47,141,228,.12)}
+.gem-check-options{max-height:245px;overflow-y:auto;padding:4px 0;overscroll-behavior:contain}
+.gem-check-option{display:flex;align-items:center;gap:8px;width:100%;border:0;background:#fff;padding:8px 11px;text-align:left;font-size:12px;color:#30465a}
+.gem-check-option:hover,.gem-check-option:focus{background:#eef5fb}
+.gem-check-option.selected{color:#156db5;font-weight:700}
+.gem-check-mark{width:14px;color:#15956f;flex:0 0 14px}
+.gem-check-empty{padding:13px;color:#8091a1;font-size:12px;text-align:center}
+.sam-kpis{min-height:132px}.sam-kpis .loading{min-height:132px;display:flex;align-items:center;justify-content:center}
+.table-responsive{height:auto;min-height:0;max-height:none;overflow-x:auto;overflow-y:visible}
+.panel,.kpi{background:#fff;border:1px solid #e5edf3;border-radius:17px;box-shadow:0 12px 30px rgba(25,55,79,.08)}
+.kpi{padding:19px 21px;height:100%;position:relative;overflow:hidden}
+.kpi:after{content:"";position:absolute;width:95px;height:95px;border-radius:50%;right:-34px;top:-38px;background:var(--tint)}
+.kpi-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--tint);color:var(--accent)}
+.kpi strong{display:block;font-size:27px;line-height:1;margin-top:13px}
+.kpi small{display:block;color:#728797;margin-top:6px}
+.panel-head{padding:18px 21px;border-bottom:1px solid #edf1f5;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.panel-title{font-size:15px;font-weight:850;margin:0}
+.log-table th{padding:11px;background:#f2f6f9;color:#647b8d;font-size:9px;letter-spacing:.55px;text-transform:uppercase;white-space:nowrap}
+.log-table td{padding:13px 11px;font-size:11px;vertical-align:top;border-color:#e4ebf0}
+.log-table tbody tr:hover>*{background:#f8fbfd}
+.actor,.entity-name{font-weight:850;color:#173f5b}
+.entity-name{font-size:12px}
+.sub{color:#8193a1;font-size:10px;margin-top:3px}
+.action-text{font-weight:650;max-width:540px}
+.type{display:inline-flex;padding:5px 8px;border-radius:20px;background:#eaf4ff;color:#2175b9;font-size:9px;font-weight:850;text-transform:uppercase}
+.type.acesso{background:#eaf4ff;color:#1766a3}
+.type.presenca{background:#e5f8f1;color:#13875f}
+.type.licao{background:#f0edff;color:#5e48a8}
+.type.aula{background:#e2f5f4;color:#087b75}
+.type.turma{background:#fff3df;color:#a76500}
+.type.tarefa{background:#fff0e7;color:#a64b20}
+.type.aluno{background:#e8f0ff;color:#315c9b}
+.type.usuario{background:#f0edff;color:#674ac7}
+.type.ata{background:#fbeaf1;color:#a13d70}
+.type.fase{background:#e9f5e8;color:#367342}
+.type.outro{background:#edf2f5;color:#657b8c}
+.ref{display:inline-flex;gap:5px;align-items:center;padding:4px 7px;border:1px solid #dce6ed;border-radius:7px;margin:4px 3px 0 0;color:#708493;background:#fff;font-size:9px}
+.empty{padding:42px!important;text-align:center;color:#7d919f}
+.pager{display:flex;align-items:center;gap:9px}
+.pager .btn{border-radius:9px}
+.pagination-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-top:1px solid #edf1f5;background:#fff}
+.pagination-range{font-size:11px;color:#718596}
+.toggle{width:32px;height:32px;padding:0;display:inline-grid;place-items:center;border-radius:6px}
+.toggle i{font-size:11px}
+.sync-note{font-size:10px;color:#7c909f}
+.detail-row td{background:#f8fafc!important}
+.detail-box{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;padding:5px}
+.detail-item{padding:10px;border:1px solid #e3eaf0;border-radius:10px;background:#fff}
+.detail-item b{display:block;font-size:9px;text-transform:uppercase;color:#7b8e9d;margin-bottom:4px}
+@media(max-width:1199px){.filter-bar{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767px){.samlog{padding-left:0;padding-right:0}.samlog-hero{padding:25px 25px 52px}.executive-bar{margin-left:8px;margin-right:8px}.filter-bar{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-search,.filter-actions{grid-column:1/-1}.filter-actions{justify-content:flex-start}.detail-box{grid-template-columns:1fr 1fr}}
+@media(max-width:479px){.filter-bar{grid-template-columns:minmax(0,1fr)}.filter-search,.filter-actions{grid-column:auto}.filter-actions .btn{flex:1 1 auto;justify-content:center}.pagination-footer{align-items:flex-start;flex-direction:column}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="samlog">
+  <section class="samlog-hero mb-4">
+    <div class="row align-items-center position-relative g-3" style="z-index:1">
+      <div class="col-lg">
+        <div class="eyebrow">CONGREGAÇÃO CRISTÃ NO BRASIL · ARQUIVO OPERACIONAL</div>
+        <h1 class="fw-bold mt-2 mb-2">Histórico SAM</h1>
+        <p class="mb-0 text-white-50">Investigue aulas, presenças, lições, turmas, tarefas e usuários sem perder o contexto quando um cadastro é excluído na origem.</p>
+      </div>
+      <div class="col-lg-auto text-lg-end">
+        <div class="archive-pill"><i class="fa fa-box-archive"></i><strong>Preservação permanente</strong></div>
+        <div class="small text-white-50 mt-2" id="sync">Consultando última captura…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="executive-bar">
+    <div class="filter-bar">
+      <div class="filter-field filter-search">
+        <label>Pesquisa</label>
+        <div class="searchbox"><i class="fa fa-search"></i><input class="form-control" id="q" placeholder="Aluno, responsável, turma, matrícula, ID ou ação"></div>
+      </div>
+      <div class="filter-field filter-action">
+        <label>Ação</label>
+        <select class="form-select" id="action">
+          <option value="">Todas</option>
+          <option value="presenca">Presenças</option>
+          <option value="licao">Lições</option>
+          <option value="aula">Aulas</option>
+          <option value="turma">Turmas</option>
+          <option value="tarefa">Tarefas</option>
+          <option value="aluno">Alunos</option>
+          <option value="usuario">Usuários</option>
+          <option value="ata">Atas</option>
+          <option value="acesso">Acessos</option>
+          <option value="outro">Outras</option>
+        </select>
+      </div>
+      <div class="filter-field filter-location">
+        <label>Município</label>
+        <select class="form-select" id="municipio" multiple data-placeholder="Todos os municípios" data-search="Pesquisar município…"></select>
+      </div>
+      <div class="filter-field filter-location">
+        <label>Comum</label>
+        <select class="form-select" id="comum" multiple data-placeholder="Todas as comuns" data-search="Pesquisar comum…"></select>
+      </div>
+      <div class="filter-field filter-date">
+        <label>Data inicial</label>
+        <input type="date" class="form-control" id="start">
+      </div>
+      <div class="filter-field filter-date">
+        <label>Data final</label>
+        <input type="date" class="form-control" id="end">
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-outline-primary" id="refresh"><i class="fa fa-rotate me-1"></i>Atualizar</button>
+        <button class="btn btn-outline-success" id="excel"><i class="fa fa-file-excel me-1"></i>Excel</button>
+        <button class="btn btn-outline-danger" id="pdf"><i class="fa fa-file-pdf me-1"></i>PDF</button>
+        <button class="btn btn-outline-secondary" id="clear"><i class="fa fa-eraser me-1"></i>Limpar</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="row g-3 mb-4 sam-kpis" id="kpis">
+    <div class="col-12"><div class="panel loading"><i class="fa fa-spinner fa-spin me-2"></i>Organizando a trilha histórica…</div></div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title"><i class="fa fa-clock-rotate-left text-primary me-2"></i>Linha do tempo operacional</h2>
+        <div class="sync-note mt-1" id="result-note"></div>
+      </div>
+      <div class="pager">
+        <button class="btn btn-outline-primary btn-sm" id="prev"><i class="fa fa-chevron-left"></i></button>
+        <span class="small fw-bold" id="page"></span>
+        <button class="btn btn-outline-primary btn-sm" id="next"><i class="fa fa-chevron-right"></i></button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table log-table mb-0">
+        <thead>
+          <tr>
+            <th>Data e hora</th>
+            <th>Responsável preservado</th>
+            <th>Ação original do SAM</th>
+            <th>Aluno / turma identificada</th>
+            <th>Origem</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="events">
+          <tr><td colspan="6" class="empty"><i class="fa fa-spinner fa-spin me-2"></i>Carregando eventos…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination-footer">
+      <span class="pagination-range" id="range-note">0-0 de 0</span>
+      <div class="pager">
+        <button class="btn btn-outline-primary btn-sm" id="prev-bottom" type="button" aria-label="Página anterior"><i class="fa fa-chevron-left"></i></button>
+        <span class="small fw-bold" id="page-bottom">1 / 1</span>
+        <button class="btn btn-outline-primary btn-sm" id="next-bottom" type="button" aria-label="Próxima página"><i class="fa fa-chevron-right"></i></button>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block js %}
+<script>
+(() => {
+  const $ = (selector) => document.querySelector(selector);
+  const esc = (value) => String(value ?? '').replace(/[&<>\"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const fmt = (value) => Number(value || 0).toLocaleString('pt-BR');
+  const state = { page: 1, size: 50, total: 0, loadController: null, locationCommons: [] };
+
+  const actionLabels = {
+    presenca: 'Presença',
+    licao: 'Lição',
+    aula: 'Aula',
+    turma: 'Turma',
+    tarefa: 'Tarefa',
+    aluno: 'Aluno',
+    usuario: 'Usuário',
+    ata: 'Ata',
+    acesso: 'Acesso',
+    fase: 'Fase',
+    outro: 'Outro'
+  };
+
+  function selectedValues(selector) {
+    const element = $(selector);
+    if (!element) return [];
+    return [...element.selectedOptions].map((option) => option.value).filter(Boolean);
+  }
+
+  function filterParams() {
+    const params = new URLSearchParams();
+    ['q', 'action', 'start', 'end'].forEach((id) => {
+      const element = $('#' + id);
+      if (element && element.value.trim()) params.set(id, element.value.trim());
+    });
+    ['municipio', 'comum'].forEach((key) => {
+      selectedValues('#' + key).forEach((value) => params.append(key, value));
+    });
+    return params;
+  }
+
+  function params() {
+    const p = filterParams();
+    p.set('page', state.page);
+    p.set('page_size', state.size);
+    return p;
+  }
+
+  function updateCommonOptions() {
+    const municipalities = new Set(selectedValues('#municipio'));
+    const selectedCommons = new Set(selectedValues('#comum'));
+    const options = state.locationCommons.filter((item) =>
+      !municipalities.size || municipalities.has(item.municipality)
+    );
+    const select = $('#comum');
+    select.replaceChildren(...options.map((item) => {
+      const option = new Option(item.label, item.value);
+      option.selected = selectedCommons.has(item.value);
+      return option;
+    }));
+    select.nextElementSibling?._sync?.();
+  }
+
+  function setupGemFilter(selector) {
+    const element = $(selector);
+    if (!element) return;
+    let wrapper = element.nextElementSibling;
+    if (!wrapper || !wrapper.classList.contains('gem-check-filter')) {
+      wrapper = document.createElement('div');
+      wrapper.className = 'gem-check-filter';
+      wrapper.innerHTML = '<button type="button" class="gem-check-toggle"></button><div class="gem-check-menu"><div class="gem-check-search"><input type="search"></div><div class="gem-check-options"></div></div>';
+      element.insertAdjacentElement('afterend', wrapper);
+      element.classList.add('gem-filter-native');
+    }
+
+    const toggle = wrapper.querySelector('.gem-check-toggle');
+    const search = wrapper.querySelector('input');
+    const optionsBox = wrapper.querySelector('.gem-check-options');
+    const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    search.placeholder = element.dataset.search || 'Pesquisar…';
+    toggle.onclick = (event) => {
+      event.stopPropagation();
+      document.querySelectorAll('.gem-check-filter.open').forEach((item) => {
+        if (item !== wrapper) item.classList.remove('open');
+      });
+      wrapper.classList.toggle('open');
+      if (wrapper.classList.contains('open')) {
+        search.value = '';
+        wrapper._render('');
+        setTimeout(() => search.focus(), 0);
+      }
+    };
+    search.onclick = (event) => event.stopPropagation();
+    search.oninput = () => wrapper._render(search.value);
+      wrapper.querySelector('.gem-check-menu').onclick = (event) => event.stopPropagation();
+
+    wrapper._sync = () => {
+      const labels = [...element.selectedOptions].filter((option) => option.value).map((option) => option.textContent.trim());
+        const display = labels.length ? labels.join(', ') : element.dataset.placeholder;
+      toggle.textContent = display;
+        toggle.title = display;
+      wrapper._render(search.value);
+    };
+    wrapper._render = (query) => {
+      optionsBox.innerHTML = '';
+      const term = normalize(query);
+      const selected = [...element.selectedOptions].some((option) => option.value);
+      const available = [...element.options].filter((option) => option.value && (!term || normalize(option.textContent).includes(term)));
+      if (!term) {
+        const all = document.createElement('button');
+        all.type = 'button';
+        all.className = `gem-check-option ${selected ? '' : 'selected'}`;
+        all.innerHTML = `<span class="gem-check-mark">${selected ? '' : '✓'}</span><span></span>`;
+        all.lastElementChild.textContent = element.dataset.placeholder;
+        all.onclick = () => {
+          [...element.options].forEach((option) => { option.selected = false; });
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          wrapper._sync();
+        };
+        optionsBox.appendChild(all);
+      }
+      available.forEach((option) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `gem-check-option ${option.selected ? 'selected' : ''}`;
+        item.innerHTML = `<span class="gem-check-mark">${option.selected ? '✓' : ''}</span><span></span>`;
+        item.lastElementChild.textContent = option.textContent;
+        item.onclick = () => {
+          option.selected = !option.selected;
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          wrapper._sync();
+        };
+        optionsBox.appendChild(item);
+      });
+      if (!available.length) {
+        const empty = document.createElement('div');
+        empty.className = 'gem-check-empty';
+        empty.textContent = 'Nenhum resultado encontrado';
+        optionsBox.appendChild(empty);
+      }
+    };
+    element.addEventListener('change', wrapper._sync);
+    wrapper._sync();
+
+    if (!window.gemFilterOutsideBound) {
+      document.addEventListener('click', () => document.querySelectorAll('.gem-check-filter.open').forEach((item) => item.classList.remove('open')));
+      window.gemFilterOutsideBound = true;
+    }
+  }
+
+  async function loadFilters() {
+    const response = await fetch('/gem/sam/historico/filtros/', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Filtros do Histórico SAM indisponíveis.');
+    const data = await response.json();
+    const municipalitySelect = $('#municipio');
+    const selectedMunicipalities = new Set(selectedValues('#municipio'));
+    municipalitySelect.replaceChildren(...(data.municipalities || []).map((item) => {
+      const option = new Option(item.label || item.value, item.value || item.label);
+      option.selected = selectedMunicipalities.has(option.value);
+      return option;
+    }));
+    municipalitySelect.nextElementSibling?._sync?.();
+    state.locationCommons = data.commons || [];
+    updateCommonOptions();
+  }
+
+  function markFilterCatalogUnavailable() {
+    document.querySelectorAll('.gem-check-toggle').forEach((toggle) => {
+      toggle.textContent = 'Catálogo indisponível';
+      toggle.title = 'Não foi possível carregar municípios e comuns. Use Atualizar para tentar novamente.';
+    });
+  }
+
+  function dateString(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('pt-BR');
+  }
+
+  function refChips(event) {
+    const refs = event.parsed_refs || {};
+    return Object.entries(refs).map(([key, value]) => `<span class="ref"><i class="fa fa-hashtag"></i>${esc(key)} ${esc(value)}</span>`).join('');
+  }
+
+  function entityCell(event) {
+    const resolution = event.resolution || {};
+    const student = resolution.student || {};
+    const lesson = resolution.class || {};
+    const group = resolution.group || {};
+    const primary = resolution.primary_name || event.target_name_snapshot || 'Registro preservado';
+    const context = student.congregation || group.congregation || lesson.congregation || event.congregation_snapshot || 'Localidade não informada';
+    return `<div class="entity-name">${esc(primary)}</div><div class="sub">${esc(context)}</div>${refChips(event)}`;
+  }
+
+  function expanded(event) {
+    const resolution = event.resolution || {};
+    const student = resolution.student || {};
+    const lesson = resolution.class || {};
+    const group = resolution.group || {};
+    const latestMethod = resolution.latest_method || student.latest_method || {};
+    const methodReference = event.target_type === 'metodo' && event.target_source_id
+      ? `ID legado ${event.target_source_id}; sem vínculo direto no espelho atual`
+      : 'Não se aplica';
+    const studentLink = event.resolution_context
+      ? `Inferido do log ${event.resolution_context.source_event_id}, ${event.resolution_context.time_delta_seconds} s depois`
+      : student.name ? 'Identificação direta no log ou matrícula SAM' : 'Sem vínculo confirmado';
+    const latestMethodLabel = latestMethod.metodo
+      ? `${latestMethod.metodo}${latestMethod.data_inicio ? ` · ${dateString(latestMethod.data_inicio + 'T12:00:00').split(' ')[0]}` : ''}`
+      : 'Sem lançamento espelhado';
+    const items = [
+      ['Aluno identificado', student.name || 'Não se aplica'],
+      ['Origem do vínculo', studentLink],
+      ['Turma', group.name || lesson.name || 'Não identificada'],
+      ['Curso / instrumento', group.course || lesson.course || student.instrument || 'Não informado'],
+      ['Comum', group.congregation || lesson.congregation || student.congregation || event.congregation_snapshot || 'Não informada'],
+      ['Data da última aula espelhada', lesson.date ? dateString(lesson.date + 'T12:00:00') : 'Não encontrada'],
+      ['Horário da última aula', lesson.start ? [lesson.start, lesson.end].filter(Boolean).join(' às ') : group.schedule || 'Não encontrado'],
+      ['Instrutor da última aula', lesson.instructor || 'Não encontrado'],
+      ['Referência do lançamento neste evento', methodReference],
+      ['Último método documentado', latestMethodLabel],
+      ['Página / lição documentada', [latestMethod.pagina && `p. ${latestMethod.pagina}`, latestMethod.licao && `lição ${latestMethod.licao}`].filter(Boolean).join(' · ') || '—'],
+      ['Autorizado por', latestMethod.autorizado_por || '—'],
+      ['ID técnico SAM', event.target_source_id || Object.values(event.parsed_refs || {})[0] || 'Não fornecido'],
+      ['Primeira captura', dateString(event.first_seen_at)],
+      ['Assinatura', String(event.source_fingerprint || '').slice(0, 20) + '…']
+    ];
+    return `<div class="detail-box">${items.map(([labelText, value]) => `<div class="detail-item"><b>${labelText}</b>${esc(value)}</div>`).join('')}</div>`;
+  }
+
+  function render(data) {
+    state.total = data.total || 0;
+    const pages = Math.max(1, Math.ceil(state.total / state.size));
+    const summary = data.summary || {};
+
+    $('#kpis').innerHTML = [
+      ['Eventos encontrados', fmt(state.total), 'no recorte pesquisado', 'fa-box-archive', '#2f8de4', '#eaf4ff'],
+      ['Nesta página', fmt(summary.visible || 0), 'registros preservados', 'fa-list-check', '#12a594', '#e5f8f1'],
+      ['Responsáveis visíveis', fmt(summary.actors_visible || 0), 'identidades copiadas do SAM', 'fa-user-shield', '#6c5ce7', '#f0edff'],
+      ['Últimas 24 horas', fmt(summary.last_24h_visible || 0), 'eventos nesta página', 'fa-clock', '#f39c12', '#fff3df']
+    ].map(([labelText, value, note, icon, accent, tint]) => `
+      <div class="col-sm-6 col-xl-3">
+        <div class="kpi" style="--accent:${accent};--tint:${tint}">
+          <div class="kpi-icon"><i class="fa ${icon}"></i></div>
+          <strong>${value}</strong>
+          <small><b>${labelText}</b><br>${note}</small>
+        </div>
+      </div>
+    `).join('');
+
+    $('#result-note').textContent = `${fmt(state.total)} evento(s) encontrado(s) · ${state.size} por página`;
+    $('#page').textContent = `${state.page} / ${pages}`;
+    $('#prev').disabled = state.page <= 1;
+    $('#next').disabled = state.page >= pages;
+
+    const events = data.events || [];
+    const firstEvent = events.length ? (state.page - 1) * state.size + 1 : 0;
+    const lastEvent = events.length ? firstEvent + events.length - 1 : 0;
+    $('#range-note').textContent = `${fmt(firstEvent)}-${fmt(lastEvent)} de ${fmt(state.total)}`;
+    $('#page-bottom').textContent = `${state.page} / ${pages}`;
+    $('#prev-bottom').disabled = state.page <= 1;
+    $('#next-bottom').disabled = state.page >= pages;
+    $('#events').innerHTML = events.length ? events.map((event, index) => `
+      <tr>
+        <td class="text-nowrap"><strong>${dateString(event.occurred_at).split(' ')[0]}</strong><div class="sub">${dateString(event.occurred_at).split(' ').slice(1).join(' ')}</div></td>
+        <td><div class="actor">${esc(event.actor_name_snapshot || '—')}</div><div class="sub">${esc(event.congregation_snapshot || 'Localidade não informada')}</div></td>
+        <td><span class="type ${esc(event.action_type || 'outro')}">${esc(actionLabels[event.action_type] || event.action_type || 'Outro')}</span><div class="action-text mt-2">${esc(event.action_raw || '—')}</div></td>
+        <td>${entityCell(event)}</td>
+        <td>${esc(event.device || '—')}<div class="sub">${esc(event.platform || '—')} · ${esc(event.ip_address || 'IP não informado')}</div></td>
+        <td><button class="btn btn-outline-secondary btn-sm toggle" data-detail="${index}" data-event-id="${esc(event.id || '')}" type="button" title="Ver detalhes" aria-label="Ver detalhes"><i class="fa fa-chevron-down"></i></button></td>
+      </tr>
+      <tr class="detail-row d-none" id="detail-${index}"><td colspan="6">${expanded(event)}</td></tr>
+    `).join('') : '<tr><td colspan="6" class="empty"><i class="fa fa-magnifying-glass me-2"></i>Nenhum evento corresponde aos filtros.</td></tr>';
+
+    document.querySelectorAll('[data-detail]').forEach((button) => {
+      button.onclick = async () => {
+        const detail = $('#detail-' + button.dataset.detail);
+        if (!detail) return;
+        detail.classList.toggle('d-none');
+        const icon = button.querySelector('i');
+        if (icon) {
+          icon.classList.toggle('fa-chevron-down');
+          icon.classList.toggle('fa-chevron-up');
+        }
+        const eventId = button.dataset.eventId;
+        if (!detail.classList.contains('d-none') && eventId && detail.dataset.loaded !== 'true') {
+          detail.innerHTML = '<td colspan="6" class="empty"><i class="fa fa-spinner fa-spin me-2"></i>Consultando detalhes do evento…</td>';
+          try {
+            const response = await fetch('/gem/sam/historico/api/' + encodeURIComponent(eventId) + '/', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Detalhes indisponíveis.');
+            detail.innerHTML = `<td colspan="6">${expanded(data.event || {})}</td>`;
+            detail.dataset.loaded = 'true';
+          } catch (error) {
+            detail.innerHTML = `<td colspan="6" class="empty text-danger">${esc(error.message)}</td>`;
+          }
+        }
+      };
+    });
+  }
+
+  async function load() {
+    if (state.loadController) state.loadController.abort();
+    const controller = new AbortController();
+    state.loadController = controller;
+    controller.timedOut = false;
+    const timeoutId = setTimeout(() => {
+      controller.timedOut = true;
+      controller.abort();
+    }, 11000);
+    const tbody = $('#events');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty"><i class="fa fa-spinner fa-spin me-2"></i>Consultando arquivo permanente…</td></tr>';
+
+    try {
+      const response = await fetch('/gem/sam/historico/api/?' + params(), { cache: 'no-store', signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Falha na consulta');
+      if (state.loadController !== controller) return;
+      render(data);
+    } catch (error) {
+      if ((error.name === 'AbortError' && !controller.timedOut) || state.loadController !== controller) return;
+      const message = controller.timedOut ? 'A consulta ao arquivo SAM excedeu 10 segundos. Tente novamente.' : error.message;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty text-danger"><i class="fa fa-triangle-exclamation me-2"></i>${esc(message)}</td></tr>`;
+      $('#kpis').innerHTML = `<div class="col-12"><div class="panel p-3 text-danger"><i class="fa fa-triangle-exclamation me-2"></i>${esc(message)}</div></div>`;
+      $('#sync').textContent = 'Captura indisponível';
+      $('#result-note').textContent = 'Não foi possível carregar o histórico.';
+    } finally {
+      clearTimeout(timeoutId);
+      if (state.loadController === controller) state.loadController = null;
+    }
+  }
+
+  async function loadSyncStatus() {
+    const sync = $('#sync');
+    try {
+      const response = await fetch('/gem/sam/historico/api/sync/', {
+        cache: 'no-store', signal: AbortSignal.timeout(4000)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.available === false) throw new Error('Status indisponível');
+      sync.textContent = data.sync && data.sync.last_incremental_sync_at
+        ? 'Capturado em ' + dateString(data.sync.last_incremental_sync_at)
+        : 'Aguardando a primeira sincronização';
+    } catch (error) {
+      sync.textContent = 'Status de captura indisponível';
+    }
+  }
+
+  async function downloadExcel() {
+    const button = $('#excel');
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i>Gerando';
+
+    try {
+      const response = await fetch('/gem/sam/historico/exportar-excel/?' + filterParams(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('Não foi possível gerar a planilha.');
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = match ? match[1] : 'Historico_SAM.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  }
+
+  async function generatePdf() {
+    const button = $('#pdf');
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i>Gerando';
+
+    try {
+      const response = await fetch('/gem/sam/historico/exportar-pdf/?' + filterParams(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('Não foi possível gerar o PDF.');
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = match ? match[1] : 'Historico_SAM.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  }
+
+  $('#refresh').onclick = () => {
+    load();
+    loadSyncStatus();
+    loadFilters().catch(markFilterCatalogUnavailable);
+  };
+  $('#excel').onclick = downloadExcel;
+  $('#pdf').onclick = generatePdf;
+  $('#prev').onclick = () => { if (state.page > 1) { state.page -= 1; load(); } };
+  $('#next').onclick = () => { if (state.page < Math.ceil(state.total / state.size)) { state.page += 1; load(); } };
+  $('#prev-bottom').onclick = () => { if (state.page > 1) { state.page -= 1; load(); } };
+  $('#next-bottom').onclick = () => { if (state.page < Math.ceil(state.total / state.size)) { state.page += 1; load(); } };
+
+  $('#q').onkeydown = (event) => {
+    if (event.key === 'Enter') {
+      state.page = 1;
+      load();
+    }
+  };
+
+  $('#clear').onclick = () => {
+    ['q', 'action', 'start', 'end'].forEach((id) => {
+      const element = $('#' + id);
+      if (element) element.value = '';
+    });
+    ['#municipio', '#comum'].forEach((selector) => {
+      const element = $(selector);
+      if (!element) return;
+      [...element.options].forEach((option) => { option.selected = false; });
+      element.nextElementSibling?._sync?.();
+    });
+    updateCommonOptions();
+    state.page = 1;
+    load();
+  };
+
+  ['#municipio', '#comum'].forEach(setupGemFilter);
+  $('#municipio').addEventListener('change', () => {
+    updateCommonOptions();
+    state.page = 1;
+    load();
+  });
+  $('#comum').addEventListener('change', () => { state.page = 1; load(); });
+  ['#action', '#start', '#end'].forEach((selector) => {
+    $(selector).addEventListener('change', () => { state.page = 1; load(); });
+  });
+  load();
+  loadSyncStatus();
+  loadFilters().catch(markFilterCatalogUnavailable);
+})();
+</script>
+{% endblock %}

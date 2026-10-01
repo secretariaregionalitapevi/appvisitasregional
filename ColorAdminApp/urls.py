@@ -1,4 +1,4 @@
-from django.urls import path
+﻿from django.urls import path
 
 from . import views
 from . import admin_views
@@ -6,6 +6,7 @@ from . import admin_module_views
 from . import musicalizacao
 from . import gem
 from . import gem_sync_admin
+from . import sam_audit
 from . import gem_classes
 from . import music_exams
 from . import gem_projection
@@ -65,6 +66,14 @@ urlpatterns = [
     path('gem/projecao/api/', gem_projection.api_dashboard, name='gemProjectionApi'),
     path('gem/projecao/exportar-excel/', gem_projection.export_excel, name='gemProjectionExcel'),
     path('gem/sam/', gem_sync_admin.page, name='gemSyncAdmin'),
+    path('gem/sam/historico/', sam_audit.page, name='samAudit'),
+    path('gem/sam/historico/api/', sam_audit.api_events, name='samAuditApi'),
+    path('gem/sam/historico/api/sync/', sam_audit.api_sync_status, name='samAuditSyncStatus'),
+    path('gem/sam/historico/api/<uuid:event_id>/', sam_audit.api_event_detail, name='samAuditEventDetail'),
+    path('gem/sam/historico/filtros/', sam_audit.api_location_options, name='samAuditLocationOptions'),
+    path('gem/sam/historico/relatorio/', sam_audit.report_data, name='samAuditReportData'),
+    path('gem/sam/historico/exportar-excel/', sam_audit.export_excel, name='samAuditExcel'),
+    path('gem/sam/historico/exportar-pdf/', sam_audit.export_pdf, name='samAuditPdf'),
     path('gem/sam/api/dashboard/', gem_sync_admin.api_dashboard, name='gemSyncDashboard'),
     path('gem/sam/api/controle/', gem_sync_admin.api_control, name='gemSyncControl'),
     path('gem/sam/exportar/', gem_sync_admin.export_report, name='gemSyncExport'),
@@ -197,3 +206,4 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('helper/css', views.helperCss, name='helperCss')
 ]
+
