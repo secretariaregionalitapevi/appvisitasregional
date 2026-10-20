@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const bairro = document.querySelector('#roteiro-bairro');
   const ajuda = document.querySelector('#roteiro-bairro-ajuda');
   const data = document.querySelector('input[name="data"]');
+  const casas = document.querySelector('#roteiro-casas');
   const form = comum?.closest('form');
   const comuns = JSON.parse(document.querySelector('#roteiro-comuns-data')?.textContent || '[]');
   if (!municipio || !comum || !equipe || !bairro || !ajuda) return;
@@ -15,6 +16,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const primeiroNome = (nome) => String(nome || '').trim().split(/\s+/)[0];
   const comunsDoMunicipio = () => comuns.filter((item) => item.cidade === municipio.value);
   const comumValida = () => comunsDoMunicipio().some((item) => item.comum === comum.value.trim());
+  const metaKey = () => `visitas:casas:${JSON.stringify([municipio.value, comum.value, data?.value, equipe.value])}`;
+  function carregarMeta() {
+    if (!casas) return;
+    let value = 10;
+    try { if (equipe.value) value = Number(localStorage.getItem(metaKey()) || 10); } catch (_) {}
+    casas.value = Number.isInteger(value) && value >= 1 && value <= 10 ? value : 10;
+  }
+  function salvarMeta() {
+    if (casas?.checkValidity() && equipe.value) {
+      try { localStorage.setItem(metaKey(), casas.value); } catch (_) {}
+    }
+  }
 
   function carregarComuns(limpar = false) {
     const valorAtual = limpar ? '' : comum.value;
@@ -39,10 +52,13 @@ document.addEventListener('DOMContentLoaded', () => {
   async function carregarEquipes() {
     equipe.replaceChildren(option('', 'Carregando equipes...')); equipe.disabled = true;
     if (!comumValida()) return equipe.replaceChildren(option('', 'Selecione uma comum válida...'));
+    if (!data?.value) return equipe.replaceChildren(option('', 'Selecione a data das visitas...'));
+    const selectedCommon = comum.value, selectedDate = data.value, selectedCity = municipio.value;
     try {
-      const teamQuery = new URLSearchParams({modo:'catalogo', municipio:municipio.value, comum:comum.value});
+      const teamQuery = new URLSearchParams({modo:'catalogo', municipio:selectedCity, comum:selectedCommon, roteiro:'true', data:selectedDate});
       const response = await fetch(`/visitas/api/equipes/?${teamQuery}`);
       const payload = await response.json();
+      if (selectedCommon !== comum.value || selectedDate !== data.value || selectedCity !== municipio.value) return;
       if (!response.ok) throw new Error(payload.error || 'Falha ao carregar equipes.');
       const ativas = payload.filter((item) => item.ativo && (item.tipo === 'REGIONAL' || item.comum === comum.value));
       equipe.replaceChildren(option('', ativas.length ? 'Selecione a equipe...' : 'Nenhuma equipe ativa cadastrada'));
@@ -51,7 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
         equipe.append(option(item.nome, integrantes ? `${item.nome} - ${integrantes}` : item.nome));
       });
       equipe.disabled = !ativas.length;
-    } catch (error) { equipe.replaceChildren(option('', error.message)); }
+      carregarMeta();
+    } catch (error) { if (selectedCommon === comum.value && selectedDate === data.value && selectedCity === municipio.value) equipe.replaceChildren(option('', error.message)); }
   }
 
   async function carregarBairros() {
@@ -77,7 +94,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   municipio.addEventListener('change', () => carregarComuns(true));
   comum.addEventListener('change', comumAlterada);
-  if (data) data.addEventListener('change', carregarBairros);
+  equipe.addEventListener('change', carregarMeta);
+  casas?.addEventListener('input', salvarMeta);
+  form?.addEventListener('submit', salvarMeta);
+  if (data) data.addEventListener('change', () => { carregarEquipes(); carregarBairros(); });
   form?.addEventListener('submit', (event) => { if (!comumValida()) { event.preventDefault(); comum.setCustomValidity('Selecione uma comum pertencente ao município informado.'); comum.reportValidity(); } else comum.setCustomValidity(''); });
   carregarComuns(false); if (comumValida()) comumAlterada();
 });

@@ -8,14 +8,21 @@
     /* Estilos Premium para Impressão */
     @page {
         size: A4 portrait;
-        margin: 8mm;
+        margin: 4mm 8mm 8mm;
+        @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8pt; color: #1e4b7a; }
     }
     @media print {
+        html, body, #app.app {
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+        }
         * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
         }
-        #header, #sidebar, .app-header, .app-sidebar, .breadcrumb, .btn-print, .theme-panel {
+        #header, #sidebar, .app-header, .app-sidebar, .app-sidebar-bg,
+        .app-sidebar-mobile-backdrop, .pace, .breadcrumb, .btn-print, .theme-panel {
             display: none !important;
         }
         .app-content {
@@ -37,6 +44,10 @@
             font-synthesis: none !important;
             -webkit-font-smoothing: antialiased;
             text-rendering: geometricPrecision;
+        }
+        .print-container .fa, .print-container .fas, .print-container .fa-solid {
+            font-family: "Font Awesome 6 Free" !important;
+            font-weight: 900 !important;
         }
         .print-container {
             padding: 0 !important;
@@ -74,6 +85,16 @@
         margin-bottom: 15px;
         text-align: center;
     }
+    .institutional-header { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px; align-items: start; gap: 8px; }
+    .institutional-name { font-size: 15pt; font-weight: 700; }
+    .institutional-sub { font-size: 9pt; }
+    .institutional-module { font-size: 12pt; font-weight: 700; color: #1e4b7a; }
+    .institutional-meta { font-size: 8pt; text-align: right; line-height: 1.35; overflow-wrap: normal; word-break: normal; }
+    .institutional-meta-item + .institutional-meta-item { margin-top: 6px; }
+    .institutional-meta-label { display: block; font-size: 7pt; color: #536a7d; }
+    .institutional-meta-value { display: block; font-weight: 600; text-wrap: pretty; }
+    .institutional-meta-date { white-space: nowrap; }
+    .institutional-meta-location { white-space: nowrap; width: max-content; position: relative; left: 100%; transform: translateX(-100%); }
 
     .visit-card {
         border: 1px solid #e2e7eb;
@@ -153,9 +174,21 @@
 
 <div class="print-container">
     <div class="roteiro-header">
-        <img src="{% static 'img/logo/ccb-logo.png' %}" alt="CCB" style="height: 50px; margin-bottom: 10px;" onerror="this.style.display='none'">
-        <h2 class="fw-bolder text-dark mb-1">Roteiro Otimizado de Visitas</h2>
-        <h5 class="text-muted mb-0">Partida: {{ comum|default:request.session.user_profile.comum|default:'Regional Itapevi' }}</h5>
+        <div class="institutional-header">
+            <div aria-hidden="true"></div>
+            <div>
+                <div class="institutional-name">CONGREGAÇÃO CRISTÃ NO BRASIL</div>
+                <div class="institutional-sub">Regional Itapevi - São Paulo</div>
+                <div class="institutional-module">VISITAS</div>
+                <div class="institutional-sub">Roteiro Otimizado de Visitas</div>
+            </div>
+            <div class="institutional-meta">
+                <div class="institutional-meta-item"><span class="institutional-meta-label">Emissão</span><span class="institutional-meta-value institutional-meta-date">{{ emissao_roteiro }}</span></div>
+                <div class="institutional-meta-item"><span class="institutional-meta-label">Localidade</span><span class="institutional-meta-value institutional-meta-location">{{ comum }}</span></div>
+                <div class="institutional-meta-item"><span class="institutional-meta-label">Data das visitas</span><span class="institutional-meta-value institutional-meta-date">{{ data }}</span></div>
+            </div>
+        </div>
+        <h5 class="text-muted mb-0">Partida: {% firstof comum request.session.user_profile.comum 'Regional Itapevi' %}</h5>
         <div class="d-flex justify-content-center gap-4 mt-3">
             <span class="badge bg-primary fs-14px py-2 px-3"><i class="fa fa-users me-1"></i> {{ equipe|default:"Todas as Equipes" }}</span>
             <span class="badge bg-dark fs-14px py-2 px-3"><i class="fa fa-calendar me-1"></i> {{ data|default:"Data não especificada" }}</span>
@@ -163,7 +196,7 @@
         </div>
         <p class="small text-muted mt-3 mb-0">
             <i class="fa fa-clock me-1"></i>
-            Referência operacional: 5 visitas pela manhã e 5 visitas à tarde.
+            Meta: {{ meta_casas|default:10 }} casas por grupo ({{ meta_manha|default:5 }} pela manhã e {{ meta_tarde|default_if_none:5 }} à tarde).
             Todas as visitas programadas são exibidas, mesmo quando a referência for excedida.
         </p>
     </div>
@@ -181,7 +214,7 @@
         {% if roteiro_excede_referencia %}
             <div class="alert alert-warning border-warning mb-3" role="alert">
                 <strong>Atenção:</strong> este roteiro possui {{ total_visitas_roteiro }} visitas,
-                acima da referência operacional de 10. Nenhuma visita foi ocultada;
+                acima da meta de {{ meta_casas|default:10 }} casas. Nenhuma visita foi ocultada;
                 avalie a redistribuição entre os grupos antes da saída.
             </div>
         {% endif %}
@@ -189,9 +222,9 @@
         {% for visit in roteiro %}
             {% ifchanged visit.route_period %}
                 {% if visit.route_period == "manha" %}
-                    <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã - referência de 5 visitas</div>
+                    <div class="shift-divider"><i class="fa fa-sun me-2 text-warning"></i> Período da Manhã - referência de {{ meta_manha|default:5 }} casas</div>
                 {% else %}
-                    <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde - referência de 5 visitas</div>
+                    <div class="shift-divider page-break mt-4"><i class="fa fa-coffee me-2 text-primary"></i> Período da Tarde - referência de {{ meta_tarde|default_if_none:5 }} casas</div>
                 {% endif %}
             {% endifchanged %}
 
@@ -430,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, (result, routeStatus) => {
         if (routeStatus === 'OK') {
             new google.maps.DirectionsRenderer({map, directions: result, suppressMarkers: true, preserveViewport: false});
-            if (status) status.textContent = 'Percurso rodoviário calculado pelo Google na ordem 0–10.';
+            if (status) status.textContent = `Percurso rodoviário calculado pelo Google na ordem ${hasOrigin ? 0 : 1}–${points.length}.`;
         } else if (status) {
             status.textContent = 'O Google não calculou o traçado pelas ruas (' + routeStatus + '). Os marcadores permanecem disponíveis para conferência.';
             status.classList.add('text-danger');

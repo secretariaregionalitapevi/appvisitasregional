@@ -19,6 +19,9 @@
     city: $('#activity-city'), polo: $('#activity-polo')
   };
 
+  const multi = window.MusicMultiSelect;
+  multi.setupAll(root);
+
   function feedback(title, text, icon = 'success') {
     return Promise.resolve(AppFeedback.show({
       type: icon === 'success' ? 'success' : icon === 'warning' ? 'warning' : 'error',
@@ -29,9 +32,7 @@
   }
 
   function setOptions(select, values, placeholder) {
-    const selected = select.value;
-    select.innerHTML = `<option value="">${esc(placeholder)}</option>` + values.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join('');
-    if (values.includes(selected)) select.value = selected;
+    multi.setOptions(select, values, placeholder);
   }
 
   function unique(values) {
@@ -44,7 +45,7 @@
   function syncFilters(firstLoad = false) {
     const cities = unique([...state.municipios, ...state.polos.map(poloCity), ...state.aulas.map(row => row.cidade)]);
     setOptions(filters.city, cities, 'Todos os municípios');
-    const polos = unique(state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).map(poloName));
+    const polos = unique(state.polos.filter(row => multi.matches(filters.city, poloCity(row))).map(poloName));
     setOptions(filters.polo, polos, 'Todos os polos');
     const months = unique(state.aulas.map(row => iso(row.data_aula).slice(0, 7))).sort().reverse();
     const monthSelected = filters.month.value;
@@ -58,10 +59,12 @@
       const queryCity = query.get('municipio') || '';
       const queryPolo = query.get('polo') || '';
       if (cities.some(value => norm(value) === norm(queryCity))) filters.city.value = cities.find(value => norm(value) === norm(queryCity));
-      const availablePolos = unique(state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).map(poloName));
+      const availablePolos = unique(state.polos.filter(row => multi.matches(filters.city, poloCity(row))).map(poloName));
       setOptions(filters.polo, availablePolos, 'Todos os polos');
       if (availablePolos.some(value => norm(value) === norm(queryPolo))) filters.polo.value = availablePolos.find(value => norm(value) === norm(queryPolo));
     }
+    multi.refresh(filters.city);
+    multi.refresh(filters.polo);
   }
 
   function filteredAulas() {
@@ -70,8 +73,8 @@
       return (!filters.month.value || activityDate.startsWith(filters.month.value)) &&
         (!filters.from.value || activityDate >= filters.from.value) &&
         (!filters.to.value || activityDate <= filters.to.value) &&
-        (!filters.city.value || norm(row.cidade) === norm(filters.city.value)) &&
-        (!filters.polo.value || norm(row.polo) === norm(filters.polo.value));
+        (multi.matches(filters.city, row.cidade)) &&
+        (multi.matches(filters.polo, row.polo));
     }).sort((a, b) => iso(b.data_aula).localeCompare(iso(a.data_aula)));
   }
 
@@ -83,14 +86,14 @@
     const attendance = rows.reduce((sum, row) => sum + number(row.meninos_presentes) + number(row.meninas_presentes), 0);
     const team = rows.reduce((sum, row) => sum + number(row.instrutores_presentes) + number(row.colaboradores_presentes) + number(row.coordenadores_presentes), 0);
     const activePolos = new Set(rows.map(row => norm(row.polo)).filter(Boolean)).size;
-    const catalog = state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).filter(row => !filters.polo.value || norm(poloName(row)) === norm(filters.polo.value));
+    const catalog = state.polos.filter(row => multi.matches(filters.city, poloCity(row))).filter(row => multi.matches(filters.polo, poloName(row)));
     const coverage = catalog.length ? Math.round(activePolos / catalog.length * 100) : 0;
     return { launches: rows.length, attendance, team, average: rows.length ? Math.round(attendance / rows.length * 10) / 10 : 0, coverage, activePolos, catalog: catalog.length };
   }
 
   function operationalRows() {
     const today = new Date(); today.setHours(12, 0, 0, 0);
-    const catalog = state.polos.filter(row => !filters.city.value || norm(poloCity(row)) === norm(filters.city.value)).filter(row => !filters.polo.value || norm(poloName(row)) === norm(filters.polo.value));
+    const catalog = state.polos.filter(row => multi.matches(filters.city, poloCity(row))).filter(row => multi.matches(filters.polo, poloName(row)));
     return catalog.map(polo => {
       const name = poloName(polo);
       const launches = state.aulas.filter(row => norm(row.polo) === norm(name)).sort((a, b) => iso(b.data_aula).localeCompare(iso(a.data_aula)));
@@ -185,6 +188,8 @@
   }
 
   function render() {
+    multi.refresh(filters.city);
+    multi.refresh(filters.polo);
     const rows = filteredAulas();
     renderKpis(rows);
     if (mode === 'aulas') renderOperations(rows); else renderHistory(rows);

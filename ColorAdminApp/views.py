@@ -13,6 +13,8 @@ import unicodedata
 import uuid
 from urllib.parse import urlencode
 from .access_control import can_access, common_catalog, filter_rows, scope_details, user_scope, visible_commons
+from .utils.routing import normalize_text
+from .utils.supabase_http import supabase_get
 
 logger = logging.getLogger(__name__)
 
@@ -1419,6 +1421,10 @@ def apiVisitasEquipes(request):
                     teams = [item for item in teams if not item.get('comum') or str(item.get('comum')).strip() == comum]
                 if tipo in {'LOCAL', 'REGIONAL'}:
                     teams = [item for item in teams if item.get('tipo') == tipo]
+                if request.GET.get('roteiro') == 'true':
+                    from .utils.visit_participation import regional_team_confirmed
+                    teams = [item for item in teams if item.get('tipo') != 'REGIONAL' or
+                             regional_team_confirmed(item.get('nome'), request.GET.get('data'), item.get('municipio'))]
                 return JsonResponse(teams, safe=False)
 
             comum = (request.GET.get('comum') or '').strip()
@@ -1705,6 +1711,11 @@ def apiRoteiroBairros(request):
         return JsonResponse({"error": "Não foi possível mapear os bairros."}, status=502)
 
 def visitasRoteiro(request):
+    from .utils.routing import route_household_target
+    try:
+        target_houses = route_household_target(request.GET.get('casas', '10'))
+    except ValueError as exc:
+        return HttpResponse(str(exc), status=400, content_type='text/plain; charset=utf-8')
     scope = user_scope(request)
     equipe = normalize_visit_team(request.GET.get('equipe'))
     data_filtro = request.GET.get('data') # formato YYYY-MM-DD
@@ -1713,12 +1724,21 @@ def visitasRoteiro(request):
     route_map_mode = (request.GET.get('mapa') or 'none').strip().lower()
     if route_map_mode not in {'none', 'demo', 'google'}:
         route_map_mode = 'none'
-    comum_row = next((row for row in visible_commons(scope) if str(row.get('comum') or '').strip() == comum), None)
+    route_catalog = visible_commons(scope)
+    comum_row = next((row for row in route_catalog if normalize_text(row.get('comum')) == normalize_text(comum)), None)
     if comum and not comum_row:
         return render(request, 'pages/visitas-roteiro-impresso.html', {
             'error': 'A comum selecionada está fora do seu escopo de acesso.'
         })
     cidade_comum = (comum_row or {}).get('cidade') or ''
+
+    from .utils.visit_participation import regional_team_confirmed
+    if not regional_team_confirmed(equipe, data_filtro, cidade_comum):
+        return HttpResponse(
+            'Este grupo não confirmou participação na data selecionada. '
+            'Selecione um grupo confirmado para atribuir visitas.',
+            status=409, content_type='text/plain; charset=utf-8',
+        )
 
     # 1. Buscar Visitas da Agenda
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
@@ -1731,12 +1751,39 @@ def visitasRoteiro(request):
     params = [("select", "*")]
     if data_filtro:
         # Pega do inicio ao fim do dia
-        params.append(("data_inicio", f"gte.{data_filtro}T00:00:00"))
-        params.append(("data_inicio", f"lte.{data_filtro}T23:59:59"))
+        params.append(("data_inicio", f"gte.{data_filtro}T00:00:00-03:00"))
+        params.append(("data_inicio", f"lte.{data_filtro}T23:59:59.999999-03:00"))
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
-        visitas = filter_rows(scope, response.json()) if response.status_code == 200 else []
+        response.raise_for_status()
+        visitas = response.json()
+        # A agenda herda a comum do cadastro pelo UUID, inclusive quando o texto
+        # legado difere em maiúsculas/acentos. Hidratar antes de autorizar/filtrar.
+        route_member_ids = sorted({str(v.get('irmandade_id')) for v in visitas if v.get('irmandade_id')})
+        route_members = {}
+        if route_member_ids:
+            member_response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}",
+                headers=headers, params={'select': 'id,comum,endereco', 'id': f"in.({','.join(route_member_ids)})"}, timeout=10,
+            )
+            member_response.raise_for_status()
+            route_members = {str(row['id']): row for row in member_response.json()}
+        canonical_commons = {normalize_text(row.get('comum')): row for row in route_catalog}
+        scoped_visits = []
+        for visit in visitas:
+            member = route_members.get(str(visit.get('irmandade_id'))) or {}
+            location = canonical_commons.get(normalize_text(member.get('comum') or visit.get('comum')))
+            if not location or (comum and normalize_text(location['comum']) != normalize_text(comum)):
+                continue
+            visit['comum'] = location['comum']
+            visit['municipio'] = location.get('cidade') or ''
+            # Reutiliza a coordenada do cadastro apenas para o mesmo endereço.
+            from .utils.routing import clean_visit_address, route_address_key
+            if route_address_key(visit) == route_address_key(member) and member.get('endereco'):
+                visit['endereco_visitado'] = member['endereco']
+            scoped_visits.append(visit)
+        visitas = filter_rows(scope, scoped_visits)
         if equipe:
             visitas = [
                 v for v in visitas
@@ -1745,6 +1792,7 @@ def visitasRoteiro(request):
 
         # Filtrar apenas as que não estão canceladas/não realizadas
         visitas_validas = [v for v in visitas if v.get('status') not in ['Cancelada', 'Não realizada']]
+        visitas_do_grupo = list(visitas_validas)
         if bairro:
             visitas_validas = [
                 v for v in visitas_validas
@@ -1754,7 +1802,7 @@ def visitasRoteiro(request):
         # Integrantes das equipes não são destinatários do Roteiro Inteligente.
         # Além de não gerar novas visitas para eles, removemos eventuais registros
         # antigos para impedir que o endereço da comum apareça como parada.
-        visit_member_ids = sorted({str(v.get('irmandade_id')) for v in visitas_validas if v.get('irmandade_id')})
+        visit_member_ids = sorted({str(v.get('irmandade_id')) for v in visitas_do_grupo if v.get('irmandade_id')})
         if visit_member_ids:
             team_members_response = requests.get(
                 f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}",
@@ -1771,16 +1819,30 @@ def visitasRoteiro(request):
                     visit for visit in visitas_validas
                     if str(visit.get('irmandade_id')) not in team_member_ids
                 ]
+                visitas_do_grupo = [visit for visit in visitas_do_grupo
+                                    if str(visit.get('irmandade_id')) not in team_member_ids]
 
-        from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, group_route_visits_by_address, limit_daily_route, optimize_route, order_route_chronologically
+        from .utils.routing import auto_dispatch_visits, clean_visit_address, get_common_coordinates, group_route_visits_by_address, order_route_chronologically
 
         # 2. Despacho Automático: a meta operacional é de 10 casas, não de
         # 10 pessoas. Moradores do mesmo endereço contam como uma única parada.
-        total_casas = len(group_route_visits_by_address(visitas_validas))
-        if total_casas < 10 and equipe and data_filtro:
+        total_casas = len(group_route_visits_by_address(visitas_do_grupo))
+        if total_casas < target_houses and equipe and data_filtro:
+            team_response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_EQUIPES}",
+                headers=headers, params={'select': 'id,tipo,ativo,comum', 'nome': f'eq.{equipe}',
+                                         'municipio': f'eq.{cidade_comum}'}, timeout=10,
+            )
+            team_response.raise_for_status()
+            selected_teams = [team for team in team_response.json() if team.get('ativo') and
+                              (team.get('tipo') == 'REGIONAL' or normalize_text(team.get('comum')) in {normalize_text(comum), 'TODAS'})]
+            if len(selected_teams) != 1:
+                raise ValueError('Selecione uma equipe ativa e única para a localidade.')
             novas_visitas = auto_dispatch_visits(
-                equipe, data_filtro, existing_visits=visitas_validas,
+                equipe, data_filtro, existing_visits=visitas_do_grupo,
                 comum=comum or None, cidade=cidade_comum, bairro=bairro or None,
+                equipe_id=selected_teams[0]['id'], equipe_tipo=selected_teams[0]['tipo'],
+                target_houses=target_houses,
             )
             if novas_visitas:
                 visitas_validas.extend(filter_rows(scope, novas_visitas))
@@ -1814,6 +1876,7 @@ def visitasRoteiro(request):
         from datetime import datetime, timezone, timedelta
         from dateutil import parser
         fuso_br = timezone(timedelta(hours=-3))
+        original_scheduled_visits = [dict(visit) for visit in visitas_validas]
 
         for v in visitas_validas:
             if v.get('data_inicio'):
@@ -1837,42 +1900,36 @@ def visitasRoteiro(request):
         # roteiro. A consolidação é somente visual e não altera os agendamentos.
         visitas_validas = group_route_visits_by_address(visitas_validas)
 
-        # 4. Separar manhã e tarde
-        visitas_manha = []
-        visitas_tarde = []
-        for v in visitas_validas:
-            hora = 12
-            if v.get('data_inicio'):
-                try:
-                    hora = int(v['data_inicio'][11:13])
-                except:
-                    pass
-            if hora < 12:
-                visitas_manha.append(v)
-            else:
-                visitas_tarde.append(v)
-
-        # 5. Otimizar Rota (separadamente)
+        # A sequência é única: não reiniciar na comum na troca de período nem
+        # desfazer a otimização voltando aos horários antigos.
         ponto_comum = get_common_coordinates(comum, cidade_comum) if comum else None
-        roteiro_manha = order_route_chronologically(
-            optimize_route(visitas_manha, start_coords=ponto_comum), start_coords=ponto_comum
-        )
-        roteiro_tarde = order_route_chronologically(
-            optimize_route(visitas_tarde, start_coords=ponto_comum), start_coords=ponto_comum
-        )
-        # A referência operacional continua sendo 5 + 5, mas nenhuma visita já
-        # programada pode desaparecer do documento quando houver excedente.
-        roteiro_otimizado = limit_daily_route(roteiro_manha, roteiro_tarde)
-        # O grupo parte uma única vez da congregação. Recalcula a sequência
-        # completa para que a primeira distância seja desde o marco zero e todas
-        # as demais partam da casa anterior, inclusive na troca de período.
-        roteiro_otimizado = order_route_chronologically(
-            roteiro_otimizado, start_coords=ponto_comum
-        )
-        selected_morning_count = len(roteiro_manha)
+        for visit in visitas_validas:
+            visit['_route_origin'] = ponto_comum
+        from .utils.routing import get_visit_coordinates, plan_linear_schedule
+        can_replan = bool(equipe and data_filtro and ponto_comum and visitas_validas
+                          and data_filtro >= datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()
+                          and all(v.get('status') == 'Marcada' and v.get('id') and v.get('data_inicio') and v.get('data_fim')
+                                  for v in original_scheduled_visits)
+                          and all(get_visit_coordinates(v) for v in visitas_validas))
+        if can_replan:
+            roteiro_otimizado = plan_linear_schedule(visitas_validas, ponto_comum)
+            from .utils.route_schedule import persist_suggested_schedule
+            schedule_changes = []
+            try:
+                persist_suggested_schedule(roteiro_otimizado, original_scheduled_visits, schedule_changes)
+            finally:
+                if schedule_changes:
+                    log_audit(request, 'OPTIMIZE_ROUTE_SCHEDULE', 'VISITAS_AGENDA', {
+                        'comum': comum, 'equipe': equipe, 'data': data_filtro,
+                        'alteracoes': schedule_changes, 'scope': scope_details(scope),
+                    })
+        else:
+            # Histórico, visitas concluídas ou GPS incompleto não autorizam
+            # alterar horários; apenas recalcular as distâncias exibidas.
+            roteiro_otimizado = order_route_chronologically(visitas_validas, start_coords=ponto_comum)
         for index, visit in enumerate(roteiro_otimizado, start=1):
             visit['route_number'] = index
-            visit['route_period'] = 'manha' if index <= selected_morning_count else 'tarde'
+            visit['route_period'] = 'manha' if str(visit.get('data_inicio') or '')[11:13] < '12' else 'tarde'
 
         navigation_base_url = request.build_absolute_uri(reverse('ColorAdminApp:visitasNavegar'))
         for visit in roteiro_otimizado:
@@ -1880,7 +1937,7 @@ def visitasRoteiro(request):
             if visit.get('lat') not in (None, '') and visit.get('lng') not in (None, ''):
                 navigation_params = {'lat': visit['lat'], 'lng': visit['lng']}
             else:
-                navigation_params = {'endereco': visit['endereco_exibicao']}
+                navigation_params = {'endereco': ', '.join(filter(None, (visit['endereco_exibicao'], visit.get('setor'), cidade_comum, 'SP, Brasil')))}
             visit['navigation_url'] = f'{navigation_base_url}?{urlencode(navigation_params)}'
             visit['qr_url'] = 'https://api.qrserver.com/v1/create-qr-code/?' + urlencode({
                 'size': '180x180', 'data': visit['navigation_url']
@@ -1897,7 +1954,11 @@ def visitasRoteiro(request):
             'comum': comum,
             'bairro': bairro,
             'total_visitas_roteiro': len(roteiro_otimizado),
-            'roteiro_excede_referencia': len(roteiro_otimizado) > 10,
+            'roteiro_excede_referencia': len(roteiro_otimizado) > target_houses,
+            'emissao_roteiro': datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M'),
+            'meta_casas': target_houses,
+            'meta_manha': (target_houses + 1) // 2,
+            'meta_tarde': target_houses // 2,
             'route_map_mode': route_map_mode,
             'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY if route_map_mode == 'google' else '',
             'route_map_origin': (
@@ -2076,7 +2137,11 @@ def apiVisitasAgendaImport(request):
 
 
 def apiVisitasAgenda(request):
-    scope = user_scope(request)
+    try:
+        scope = user_scope(request)
+    except requests.RequestException:
+        return JsonResponse({'error': 'A conexão com a agenda está temporariamente indisponível. Tente atualizar em instantes.',
+                             'code': 'AGENDA_UNAVAILABLE', 'retryable': True}, status=503)
     url = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
@@ -2095,6 +2160,9 @@ def apiVisitasAgenda(request):
             municipio = (request.GET.get('municipio') or '').strip()
             visible_catalog = visible_commons(scope)
             allowed_commons = {str(item.get('comum') or '').strip() for item in visible_catalog}
+            canonical_common_names = {normalize_text(item): item for item in allowed_commons}
+            if comum and comum.casefold() != 'all':
+                comum = canonical_common_names.get(normalize_text(comum), comum)
             allowed_municipios = {str(item.get('cidade') or '').strip() for item in visible_catalog}
             if comum and comum.casefold() != 'all':
                 if comum not in allowed_commons:
@@ -2121,9 +2189,11 @@ def apiVisitasAgenda(request):
             if end_date:
                 params.append(("data_inicio", f"lt.{end_date}"))
 
-            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response = supabase_get(url, headers=headers, params=params, timeout=(3.05, 10))
             response.raise_for_status()
             rows = response.json()
+            if not rows:
+                return JsonResponse([], safe=False)
             for row in rows:
                 if row.get('equipe_responsavel'):
                     row['equipe_tipo'] = str(row.get('equipe_tipo') or visit_team_type(row['equipe_responsavel'])).upper()
@@ -2160,16 +2230,16 @@ def apiVisitasAgenda(request):
             page_size = 1000
             while True:
                 page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
-                members_response = requests.get(
+                members_response = supabase_get(
                     members_url,
                     headers=page_headers,
                     params=[("select", "id,comum,nome,endereco")],
-                    timeout=15,
+                    timeout=(3.05, 15),
                 )
                 members_response.raise_for_status()
                 member_page = members_response.json()
                 for item in member_page:
-                    member_common = str(item.get('comum') or '').strip()
+                    member_common = canonical_common_names.get(normalize_text(item.get('comum')), '')
                     if item.get('id') and member_common in target_commons:
                         member_locations[str(item['id'])] = member_common
                         scoped_members.append(item)
@@ -2218,6 +2288,13 @@ def apiVisitasAgenda(request):
                 })
 
             return JsonResponse(rows, safe=False)
+        except requests.RequestException as exc:
+            logger.warning('Agenda indisponível após tentativas de leitura: %s', type(exc).__name__)
+            return JsonResponse({
+                'error': 'Não foi possível recarregar a agenda por uma falha temporária de conexão. '
+                         'Uma exclusão já confirmada continua válida. Tente atualizar em instantes.',
+                'code': 'AGENDA_UNAVAILABLE', 'retryable': True,
+            }, status=503)
         except Exception as e:
             logger.exception("Unexpected agenda API failure: %s", e)
             return JsonResponse({"error": "Ocorreu um erro interno ao processar a solicitação."}, status=500)
@@ -2306,7 +2383,6 @@ def apiVisitasAgenda(request):
                     ("data_inicio", f"lte.{candidate_day}T23:59:59"),
                 ], timeout=10)
                 if day_visits_response.status_code == 200:
-                    from .utils.routing import normalize_text
                     conflicting_team = next((
                         normalize_team_name(item.get('equipe_responsavel'), item.get('equipe_tipo')) for item in day_visits_response.json()
                         if str(item.get('id')) != str(id or '')

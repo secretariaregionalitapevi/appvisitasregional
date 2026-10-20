@@ -73,15 +73,16 @@ class SupabaseAuthMiddleware:
 
             if revoke_reason:
                 request.session.flush()
-                if path.startswith(('/api/', '/visitas/api/', '/musicalizacao/api/', '/administracao/api/')):
+                if path.startswith(('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/administracao/api/')):
                     return JsonResponse({
                         'error': 'Sua sessão foi encerrada porque este acesso não está mais ativo.',
                         'code': revoke_reason,
                     }, status=401)
                 return redirect(f'/user/login-v1?reason={revoke_reason}')
 
-            from .module_access import MODULE_MUSICALIZACAO, MODULE_VISITAS, can_access_module
+            from .module_access import MODULE_DARPE, MODULE_MUSICALIZACAO, MODULE_VISITAS, can_access_module
             requested_module = (
+                MODULE_DARPE if path.startswith('/darpe/') else
                 MODULE_MUSICALIZACAO if path.startswith('/musicalizacao/') else
                 MODULE_VISITAS if path.startswith('/visitas/') else None
             )
@@ -96,7 +97,7 @@ class SupabaseAuthMiddleware:
 
         # Registra utilização real sem gerar ruído para APIs e arquivos estáticos.
         if request.method == 'GET' and request.session.get('user_id') and not any(
-            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/administracao/api/', '/static/')
+            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/administracao/api/', '/static/')
         ):
             try:
                 from .views import log_audit

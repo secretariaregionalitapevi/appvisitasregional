@@ -1,0 +1,105 @@
+"""Escopo regional para as APIs de Visitas.
+
+O servidor usa service_role para falar com o Supabase; por isso toda autorizacao
+precisa ocorrer antes de devolver ou alterar qualquer linha.
+"""
+import unicodedata
+
+import requests
+from django.conf import settings
+from django.core.cache import cache
+from ColorAdminApp.utils.supabase_http import supabase_get
+
+
+COMMON_CATALOG_CACHE_KEY = "visitas:common_catalog:v1"
+COMMON_CATALOG_STALE_CACHE_KEY = "visitas:common_catalog:stale:v1"
+COMMON_CATALOG_CACHE_SECONDS = 5 * 60
+COMMON_CATALOG_STALE_SECONDS = 24 * 60 * 60
+
+
+def _norm(value):
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).upper().split())
+
+
+def service_headers(prefer=None):
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def common_catalog():
+    """Mantém as telas disponíveis durante lentidões temporárias do Supabase."""
+    cached = cache.get(COMMON_CATALOG_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    try:
+        response = supabase_get(
+            f"{settings.SUPABASE_URL}/rest/v1/visitas_comuns",
+            headers=service_headers(),
+            params={"select": "comum,cidade", "order": "comum.asc"},
+            timeout=(3.05, 15),
+        )
+        response.raise_for_status()
+        catalog = response.json()
+        if not isinstance(catalog, list):
+            raise ValueError("Resposta inválida no catálogo de comuns")
+        cache.set(COMMON_CATALOG_CACHE_KEY, catalog, COMMON_CATALOG_CACHE_SECONDS)
+        cache.set(COMMON_CATALOG_STALE_CACHE_KEY, catalog, COMMON_CATALOG_STALE_SECONDS)
+        return catalog
+    except (requests.RequestException, ValueError):
+        stale = cache.get(COMMON_CATALOG_STALE_CACHE_KEY)
+        if stale is not None:
+            return stale
+        raise
+
+
+def user_scope(request):
+    profile = request.session.get("user_profile") or {}
+    role_id = int(profile.get("role_id") or 99)
+    explicit = _norm(profile.get("access_level") or profile.get("nivel_acesso")).lower()
+    level = explicit if explicit in {"local", "municipal", "regional", "global"} else (
+        "global" if role_id == 1 else "regional" if role_id == 2 else "municipal" if role_id == 3 else "local"
+    )
+    comum = str(profile.get("comum") or "").strip()
+    municipio = str(profile.get("municipio") or profile.get("cidade") or "").strip()
+    if level in {"local", "municipal"} and not municipio and comum:
+        match = next((x for x in common_catalog() if _norm(x.get("comum")) == _norm(comum)), None)
+        municipio = str((match or {}).get("cidade") or "").strip()
+    return {"level": level, "comum": comum, "municipio": municipio, "profile": profile}
+
+
+def row_location(row):
+    comum = str(row.get("comum") or "").strip()
+    municipio = str(row.get("municipio") or row.get("cidade") or "").strip()
+    if not municipio and comum:
+        match = next((x for x in common_catalog() if _norm(x.get("comum")) == _norm(comum)), None)
+        municipio = str((match or {}).get("cidade") or "").strip()
+    return municipio, comum
+
+
+def can_access(scope, row):
+    if scope["level"] in {"global", "regional"}:
+        return True
+    municipio, comum = row_location(row)
+    if scope["level"] == "municipal":
+        return bool(scope["municipio"] and _norm(municipio) == _norm(scope["municipio"]))
+    return bool(scope["comum"] and _norm(comum) == _norm(scope["comum"]))
+
+
+def filter_rows(scope, rows):
+    return [row for row in rows if can_access(scope, row)]
+
+
+def visible_commons(scope):
+    return filter_rows(scope, common_catalog())
+
+
+def scope_details(scope):
+    return {"nivel": scope["level"], "municipio": scope["municipio"], "comum": scope["comum"]}

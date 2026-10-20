@@ -187,9 +187,21 @@ SUPABASE_TABLE_VISITAS_IRMANDADE = 'visitas_irmandade'
 SUPABASE_TABLE_VISITAS_AGENDA = 'visitas_agenda'
 SUPABASE_TABLE_VISITAS_EQUIPES = 'visitas_equipes'
 
+# Enquete de presença fornecida em 16/10/2026. Apenas votos confirmados;
+# C e M não constam da enquete, D/I/J/L não responderam. Recorte por data
+# evita desativar permanentemente os grupos ou afetar equipes locais RF/RE.
+VISITAS_PARTICIPACAO_REGIONAL = {
+    '2026-10-17': {
+        'ITAPEVI': ['Grupo A', 'Grupo B', 'Grupo E', 'Grupo F', 'Grupo G', 'Grupo H', 'Grupo K'],
+    },
+}
+
 # External API Keys
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_DOCUMENT_MODEL = os.getenv('OPENAI_DOCUMENT_MODEL', 'gpt-4.1-mini')
 
 WHITENOISE_MANIFEST_STRICT = False
+
+# Cópias pessoais do espelho SAM; use diretório persistente fora de static/media.
+SAM_BACKUP_DIR = os.getenv("SAM_BACKUP_DIR") or None

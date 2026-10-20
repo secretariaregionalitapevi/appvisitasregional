@@ -53,15 +53,22 @@
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
-                        <select name="equipe" id="roteiro-equipe" class="form-select form-select-lg" required disabled>
-                            <option value="">Selecione primeiro a comum...</option>
-                        </select>
+                        <label class="form-label fw-bold small text-muted">DATA DAS VISITAS</label>
+                        <input type="date" name="data" class="form-control form-control-lg" required>
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold small text-muted">DATA DAS VISITAS</label>
-                        <input type="date" name="data" class="form-control form-control-lg" required>
+                        <label class="form-label fw-bold small text-muted">EQUIPE RESPONSÁVEL</label>
+                        <select name="equipe" id="roteiro-equipe" class="form-select form-select-lg" required disabled>
+                            <option value="">Selecione primeiro a comum e a data...</option>
+                        </select>
+                        <div class="form-text">Escolha a data para carregar as equipes. Quando houver enquete registrada, somente os grupos regionais confirmados poderão receber visitas.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="roteiro-casas" class="form-label fw-bold small text-muted">QUANTIDADE DE CASAS PARA ESTE GRUPO</label>
+                        <input type="number" name="casas" id="roteiro-casas" class="form-control form-control-lg" min="1" max="10" step="1" value="10" required>
+                        <div class="form-text">Escolha de 1 a 10 casas. Moradores do mesmo endereço contam como uma casa. O sistema completa a quantidade considerando as visitas já agendadas; diminuir a meta não exclui visitas.</div>
                     </div>
 
                     <div class="mb-5">
@@ -101,5 +108,5 @@
 {% block js %}
 <script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
 <script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
-<script src="{% static 'js/visitas/roteiro-form.js' %}?v=20260811-1"></script>
+<script src="{% static 'js/visitas/roteiro-form.js' %}?v=20261016-2"></script>
 {% endblock %}

@@ -46,3 +46,6 @@ Thumbs.db
 
 .vercel
 .env*.local
+
+# Acervo pessoal; nunca versionar dados dos alunos
+/.backups/

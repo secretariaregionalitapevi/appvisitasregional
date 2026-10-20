@@ -26,7 +26,7 @@
 							</div>
 							<div class="menu-caret ms-auto"></div>
 						</div>
-						{% with user_role=request.session.user_profile.role|default:"Membro" %}<small>{{ user_role }}</small>{% endwith %}
+						<small>{% firstof request.session.user_profile.cargo request.session.user_profile.cargo_ministerio request.session.user_profile.ministerio "Membro" %}</small>
 					</div>
 				</a>
 			</div>

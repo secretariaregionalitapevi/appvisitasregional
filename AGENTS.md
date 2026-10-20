@@ -1,5 +1,10 @@
 # Instruções do projeto
 
+## Identidade visual da CCB
+
+- Nunca utilizar cruzes, símbolos religiosos com cruz ou ícones de edifícios/livros que contenham cruz em páginas, gráficos, relatórios ou materiais do projeto. A CCB não adota essa representação.
+- Para comuns e localidades, utilizar símbolos neutros de localização, mapa ou edifício sem cruz. A regra também vale para componentes de demonstração visíveis no sistema.
+
 ## Servidor local e navegador
 
 - Nunca abrir URLs `localhost` ou `127.0.0.1` no navegador, preview ou visualização interna do Codex.

@@ -778,7 +778,7 @@
             const member = foundMarker.memberData;
 
             $('#dossie-nome').text(member.nome);
-            $('#dossie-comum-container').html(`<i class="fa fa-place-of-worship me-1"></i> ${member.comum || 'Comum nao informada'}`);
+            $('#dossie-comum-container').html(`<i class="fa fa-location-dot me-1"></i> ${member.comum || 'Comum nao informada'}`);
             $('#dossie-setor').text(member.setor || 'N/D');
             $('#dossie-endereco').text(member.endereco.split('] ').pop());
             

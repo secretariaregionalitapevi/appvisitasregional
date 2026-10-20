@@ -55,18 +55,27 @@ def sidebar_menu(request):
 			{ 'url': '/musicalizacao/historico/', 'title': 'Histórico de Atividades', 'name': 'musicalizacaoSection' }
 		]
 	},
+	{ 'url': '/darpe/', 'icon': 'fa fa-clipboard-list', 'title': 'D.A.R.P.E', 'name': 'darpeDashboard',
+		'children': [
+			{ 'url': '/darpe/', 'title': 'Visão geral', 'name': 'darpeDashboard' },
+			{ 'url': '/darpe/cadastros/', 'title': 'Cadastros', 'name': 'darpeSection' },
+			{ 'url': '/darpe/eventos/', 'title': 'Eventos', 'name': 'darpeSection' }
+		]
+	},
 	{ 'url': '/gem/', 'icon': 'fa fa-graduation-cap', 'title': 'GEM', 'name': 'gemDashboard',
 		'children': [
 			{ 'url': '/gem/', 'title': 'Painel de Alunos', 'name': 'gemDashboard' },
 			{ 'url': '/gem/aulas/', 'title': 'Aulas e Frequência', 'name': 'gemClasses', 'active_prefixes': ['/gem/aulas/'] },
 			{ 'url': '/gem/projecao/', 'title': 'Projeção da Orquestra', 'name': 'gemProjection' },
+			{ 'url': '/gem/sam/backup/', 'title': 'Backup SAM', 'name': 'samBackup', 'active_prefixes': ['/gem/sam/backup/'], 'master_only': True },
 			{ 'url': '/gem/sam/historico/', 'title': 'Histórico SAM', 'name': 'samAudit', 'active_prefixes': ['/gem/sam/historico/'] },
 			{ 'url': '/gem/sam/', 'title': 'SAM', 'name': 'gemSyncAdmin' }
 		]
 	},
 	{ 'url': '/musica/', 'icon': 'fa fa-music', 'title': 'Música',
 		'children': [
-			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' }
+			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' },
+			{ 'url': '/musica/eventos/', 'title': 'Ensaios Regionais e RTs', 'name': 'musicEvents' }
 		]
 	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-building-shield', 'title': 'Administração', 'name': 'administration',
@@ -263,7 +272,7 @@ def sidebar_menu(request):
 		current_path_name = ''
 	
 	# O menu usa a mesma autorizacao aplicada pelo servidor nas URLs e APIs.
-	from ..module_access import MODULE_MUSICALIZACAO, MODULE_VISITAS, allowed_modules, is_global
+	from ..module_access import MODULE_DARPE, MODULE_MUSICALIZACAO, MODULE_VISITAS, allowed_modules, is_global
 	user_profile = request.session.get('user_profile', {})
 	is_global_user = is_global(user_profile)
 	try:
@@ -278,9 +287,17 @@ def sidebar_menu(request):
 		if MODULE_MUSICALIZACAO in modules:
 			allowed_titles.add('Musicalização')
 			allowed_titles.add('GEM')
+			allowed_titles.add('Música')
+		if MODULE_DARPE in modules:
+			allowed_titles.add('D.A.R.P.E')
 		if is_admin_user:
 			allowed_titles.add('Administração')
 		sidebar_menu = [item for item in sidebar_menu if item.get('is_header') or item.get('title') == 'Dashboard' or item.get('title') in allowed_titles]
+
+	if str(user_profile.get("role_id")) != "1":
+		for item in sidebar_menu:
+			if item.get("children"):
+				item["children"] = [child for child in item["children"] if not child.get("master_only")]
 
 	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)
 

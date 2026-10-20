@@ -62,35 +62,54 @@ def extract_coords_from_address(address):
     match = re.match(r'^\[([-.\d]+),\s*([-.\d]+)\]', address)
     if match:
         try:
-            return (float(match.group(1)), float(match.group(2)))
-        except:
+            coords = (float(match.group(1)), float(match.group(2)))
+            if all(math.isfinite(value) for value in coords) and -90 <= coords[0] <= 90 and -180 <= coords[1] <= 180:
+                return coords
+        except (ValueError, TypeError):
             return None
     return None
 
 @lru_cache(maxsize=1024)
-def geocode_address_fallback(address):
+def geocode_address_fallback(address, city='', neighborhood=''):
     """
-    Geocodifica um endereço usando Google Maps ou Nominatim como fallback.
+    Geocodifica usando Google Maps ou ArcGIS, exigindo o município informado.
     """
     if not address:
         return None
         
     # Limpa a string de coordenadas se houver
     clean_addr = re.sub(r'^\[.*?\]\s*', '', address)
-    clean_addr += ", SP, Brasil"
+    clean_addr = ', '.join(filter(None, (clean_addr, neighborhood, city, 'SP, Brasil')))
+
+    def google_matches_city(candidate):
+        if not city:
+            return True
+        components = candidate.get('address_components') or []
+        cities = [c.get('long_name') for c in components
+                  if {'locality', 'administrative_area_level_2'} & set(c.get('types') or [])]
+        states = [c.get('short_name') for c in components if 'administrative_area_level_1' in (c.get('types') or [])]
+        precise_types = {'street_address', 'premise', 'subpremise', 'establishment', 'point_of_interest'}
+        if not re.search(r'\d', clean_visit_address(address)):
+            precise_types.add('route')
+        return (normalize_text(city) in {normalize_text(c) for c in cities}
+                and 'SP' in states and not candidate.get('partial_match')
+                and bool(precise_types & set(candidate.get('types') or [])))
     
     api_key = settings.GOOGLE_MAPS_API_KEY
     if api_key:
         try:
             response = requests.get(
                 "https://maps.googleapis.com/maps/api/geocode/json",
-                params={"address": clean_addr, "key": api_key, "language": "pt-BR"},
+                params={"address": clean_addr, "key": api_key, "language": "pt-BR",
+                        "components": "country:BR|administrative_area:SP"},
                 timeout=5,
             )
             result = response.json()
             if result.get('status') == 'OK':
-                location = result['results'][0]['geometry']['location']
-                return (location['lat'], location['lng'])
+                for candidate in result.get('results') or []:
+                    if google_matches_city(candidate):
+                        location = candidate['geometry']['location']
+                        return (float(location['lat']), float(location['lng']))
         except (requests.RequestException, ValueError, KeyError, IndexError):
             pass
 
@@ -103,16 +122,22 @@ def geocode_address_fallback(address):
                 "SingleLine": clean_addr,
                 "f": "json",
                 "countryCode": "BRA",
-                "maxLocations": 1,
-                "outFields": "Match_addr",
+                "maxLocations": 5,
+                "outFields": "Match_addr,City,RegionAbbr,Country,Addr_type",
             },
             timeout=8,
         )
         response.raise_for_status()
         candidates = response.json().get('candidates') or []
-        if candidates and float(candidates[0].get('score') or 0) >= 60:
-            location = candidates[0]['location']
-            return (float(location['y']), float(location['x']))
+        for candidate in candidates:
+            attributes = candidate.get('attributes') or {}
+            if city and (normalize_text(attributes.get('City')) != normalize_text(city)
+                         or attributes.get('RegionAbbr') != 'SP'
+                         or attributes.get('Addr_type') not in {'PointAddress', 'StreetAddress', 'POI'}):
+                continue
+            if float(candidate.get('score') or 0) >= (85 if city else 60):
+                location = candidate['location']
+                return (float(location['y']), float(location['x']))
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
         pass
         
@@ -130,7 +155,7 @@ def get_common_coordinates(comum, cidade=''):
         f"CCB {nome}, {cidade}, SP, Brasil",
     ]
     for consulta in consultas:
-        coords = geocode_address_fallback(consulta)
+        coords = geocode_address_fallback(consulta, city=cidade)
         if coords:
             return coords
     return None
@@ -145,10 +170,10 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
         "Content-Type": "application/json",
     }
     response = requests.get(url, headers=headers, params={
-        "select": "id,comum,setor,endereco,status", "comum": f"eq.{comum}", "order": "setor.asc"
+        "select": "id,comum,setor,endereco,status", "comum": f"ilike.{comum}", "order": "setor.asc"
     }, timeout=15)
     response.raise_for_status()
-    membros = [row for row in response.json() if row.get('setor')]
+    membros = [row for row in response.json() if row.get('setor') and normalize_text(row.get('comum')) == normalize_text(comum)]
 
     try:
         referencia = datetime.strptime(data_referencia, "%Y-%m-%d") if data_referencia else datetime.now()
@@ -166,6 +191,7 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
             if item.get('irmandade_id') and item.get('status') != 'Cancelada'
         }
     membros = [item for item in membros if str(item.get('id')) not in indisponiveis]
+    centro = get_common_coordinates(comum, cidade)
     grupos = {}
     for membro in membros:
         bairro = str(membro.get('setor') or '').strip()
@@ -175,17 +201,18 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
         grupo = grupos.setdefault(chave, {"nome": bairro, "quantidade": 0, "coords": [], "enderecos": []})
         grupo["quantidade"] += 1
         coords = extract_coords_from_address(membro.get('endereco') or '')
+        if cidade and coords and (not centro or haversine_distance(centro, coords) > 15000):
+            coords = None
         if coords:
             grupo["coords"].append(coords)
         elif membro.get('endereco'):
-            grupo["enderecos"].append(membro.get('endereco'))
+            grupo["enderecos"].append(clean_visit_address(membro.get('endereco')))
 
-    centro = get_common_coordinates(comum, cidade)
     grupos_sem_coords = [grupo for grupo in grupos.values() if not grupo["coords"] and grupo["enderecos"]]
     if grupos_sem_coords:
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             resultados = executor.map(
-                lambda grupo: geocode_address_fallback(grupo["enderecos"][0]), grupos_sem_coords
+                lambda grupo: geocode_address_fallback(grupo["enderecos"][0], city=cidade, neighborhood=grupo['nome']), grupos_sem_coords
             )
             for grupo, coords in zip(grupos_sem_coords, resultados):
                 if coords:
@@ -211,17 +238,30 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
     ))
     return bairros
 
+def resolve_visit_coordinates(address, city='', neighborhood='', origin=None):
+    """Rejeita coordenadas legadas incompatíveis com a área da congregação.
+
+    O raio é uma barreira contra erros grosseiros, não prova de endereço.
+    Não inventa coordenadas quando o geocodificador não confirma o município.
+    """
+    coords = extract_coords_from_address(address)
+    if coords and (not city or (origin and haversine_distance(origin, coords) <= 15000)):
+        return coords
+    if city:
+        coords = geocode_address_fallback(clean_visit_address(address), city=city, neighborhood=neighborhood)
+        if coords and origin and haversine_distance(origin, coords) > 15000:
+            return None
+        return coords
+    return geocode_address_fallback(address)
+
+
 def get_visit_coordinates(visit):
     """
     Tenta obter coordenadas de uma visita.
     """
     addr = visit.get('endereco_visitado') or ''
-    coords = extract_coords_from_address(addr)
-    if coords:
-        return coords
-    
-    coords = geocode_address_fallback(addr)
-    return coords
+    return resolve_visit_coordinates(addr, visit.get('municipio') or '',
+                                     visit.get('setor') or '', visit.get('_route_origin'))
 
 
 def clean_visit_address(address):
@@ -290,15 +330,9 @@ def group_route_visits_by_address(visits):
     return grouped
 
 
-def order_route_chronologically(visits, start_coords=None):
-    """Ordena o roteiro pelo horário e recalcula distâncias na sequência exibida."""
-    indexed = list(enumerate(visits or []))
-    indexed.sort(key=lambda pair: (
-        not bool(pair[1].get('data_inicio')),
-        str(pair[1].get('data_inicio') or ''),
-        pair[0],
-    ))
-    ordered = [visit for _, visit in indexed]
+def update_route_distances(visits, start_coords=None):
+    """Recalcula as distâncias sem desfazer a sequência geográfica escolhida."""
+    ordered = list(visits or [])
     current_loc = start_coords
     for visit in ordered:
         coords = get_visit_coordinates(visit)
@@ -306,14 +340,98 @@ def order_route_chronologically(visits, start_coords=None):
             if current_loc:
                 visit['distance_meters'] = haversine_distance(current_loc, coords)
             else:
-                # Sem coordenada real da comum, não inventa distância para a
-                # primeira parada. As próximas partem desta localização real.
                 visit.pop('distance_meters', None)
             visit['lat'], visit['lng'] = coords
             current_loc = coords
         else:
-            visit.pop('distance_meters', None)
+            for field in ('distance_meters', 'lat', 'lng'):
+                visit.pop(field, None)
+            current_loc = None
     return ordered
+
+
+def optimize_linear_route(visits, start_coords=None):
+    """Menor caminho aberto por coordenadas para até 12 casas, sem voltar à comum.
+
+    Horários, letras de bairro e números de porta não substituem a geografia.
+    Para roteiros maiores, melhora um caminho inicial com inversões de trechos.
+    """
+    located, missing = [], []
+    for source in visits or []:
+        visit = dict(source)
+        coords = get_visit_coordinates(visit)
+        (located if coords else missing).append((visit, coords))
+    n = len(located)
+    if n < 2:
+        return update_route_distances([v for v, _ in located + missing], start_coords)
+    distances = [[haversine_distance(a[1], b[1]) for b in located] for a in located]
+    start_cost = [haversine_distance(start_coords, v[1]) if start_coords else 0 for v in located]
+    if n <= 12:
+        states = {(1 << i, i): (start_cost[i], -1, (i,)) for i in range(n)}
+        for mask in range(1, 1 << n):
+            for last in range(n):
+                state = states.get((mask, last))
+                if state is None:
+                    continue
+                for nxt in range(n):
+                    if mask & (1 << nxt):
+                        continue
+                    key = (mask | (1 << nxt), nxt)
+                    candidate = state[0] + distances[last][nxt]
+                    path = state[2] + (nxt,)
+                    if (key not in states or candidate < states[key][0] - 1e-6
+                            or (abs(candidate - states[key][0]) <= 1e-6 and path < states[key][2])):
+                        states[key] = (candidate, last, path)
+        mask = (1 << n) - 1
+        last = min(range(n), key=lambda i: (round(states[(mask, i)][0], 6), states[(mask, i)][2]))
+        indices = []
+        while last != -1:
+            indices.append(last)
+            previous = states[(mask, last)][1]
+            mask ^= 1 << last
+            last = previous
+        indices.reverse()
+    else:
+        pending = set(range(n))
+        indices = [min(pending, key=lambda i: (start_cost[i], i))]
+        pending.remove(indices[0])
+        while pending:
+            nxt = min(pending, key=lambda i: (distances[indices[-1]][i], i))
+            indices.append(nxt)
+            pending.remove(nxt)
+        def cost(path):
+            return start_cost[path[0]] + sum(distances[a][b] for a, b in zip(path, path[1:]))
+        improved = True
+        while improved:
+            improved = False
+            for a in range(n - 1):
+                for b in range(a + 1, n):
+                    candidate = indices[:a] + indices[a:b + 1][::-1] + indices[b + 1:]
+                    if cost(candidate) < cost(indices) - 1e-6:
+                        indices, improved = candidate, True
+    return update_route_distances([located[i][0] for i in indices] + [v for v, _ in missing], start_coords)
+
+
+def plan_linear_schedule(visits, start_coords=None):
+    """Distribui os horários sugeridos existentes pela sequência otimizada."""
+    ordered = optimize_linear_route(visits, start_coords)
+    slots = sorted(((v.get('data_inicio'), v.get('data_fim')) for v in visits if v.get('data_inicio')), key=lambda slot: str(slot[0]))
+    if len(slots) != len(ordered):
+        raise ValueError('Todas as casas precisam de horário para reorganizar o roteiro.')
+    for visit, (start, end) in zip(ordered, slots):
+        visit['data_inicio'], visit['data_fim'] = start, end
+    return ordered
+
+
+def order_route_chronologically(visits, start_coords=None):
+    """Ordena pelo horário apenas nos fluxos que explicitamente o solicitam."""
+    indexed = list(enumerate(visits or []))
+    indexed.sort(key=lambda pair: (
+        not bool(pair[1].get('data_inicio')),
+        str(pair[1].get('data_inicio') or ''),
+        pair[0],
+    ))
+    return update_route_distances([visit for _, visit in indexed], start_coords)
 
 def _optimize_route_nearest_neighbor_legacy(visits, start_coords=None):
     """
@@ -566,15 +684,26 @@ def limit_daily_route(morning, afternoon, per_shift=5):
 from datetime import datetime, timedelta
 import concurrent.futures
 
-def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, cidade='', bairro=None):
+def route_household_target(value=10):
+    """Valida a quantidade de casas antes de qualquer consulta ou gravação."""
+    if not re.fullmatch(r'\d+', str(value)) or not 1 <= int(value) <= 10:
+        raise ValueError('Informe uma quantidade inteira de 1 a 10 casas.')
+    return int(value)
+
+
+def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, cidade='', bairro=None, equipe_id=None, equipe_tipo=None, target_houses=10):
     """
     Motor de Despacho Automático:
     1. Busca todos os irmãos.
     2. Busca visitas recentes (últimos 15 dias) ou futuras que não estão Canceladas.
     3. Filtra os irmãos que já receberam visita.
-    4. Seleciona os N mais próximos da igreja (para inteirar 10).
+    4. Completa a quantidade de casas solicitada, contando endereços distintos.
     5. Salva na agenda para a equipe e retorna.
     """
+    target_houses = route_household_target(target_houses)
+    from .visit_participation import regional_team_confirmed
+    if not regional_team_confirmed(equipe, data_filtro, cidade):
+        return []
     if existing_visits is None:
         existing_visits = []
         
@@ -582,7 +711,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         route_address_key(visit, fallback=f"__EXISTENTE_{position}")
         for position, visit in enumerate(existing_visits)
     }
-    num_to_generate = 10 - len(existing_address_keys)
+    num_to_generate = target_houses - len(existing_address_keys)
     if num_to_generate <= 0:
         return []
     url_irmandade = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
@@ -601,9 +730,12 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         "id,nome,comum,setor,endereco,status,categoria,equipe_id,equipe_visita,ultima_visita,"
         "preferencia_periodo_visita,observacoes"
     )
-    resp_irm = requests.get(url_irmandade, headers=headers, params=[("select", safe_member_fields)], timeout=10)
+    member_params = [("select", safe_member_fields), ("limit", "10000")]
+    if comum:
+        member_params.append(("comum", f"ilike.{comum}"))
+    resp_irm = requests.get(url_irmandade, headers=headers, params=member_params, timeout=10)
     if resp_irm.status_code != 200:
-        return []
+        raise RuntimeError('Não foi possível consultar os cadastros para gravar o roteiro.')
     todos_irmaos = resp_irm.json()
     if comum:
         todos_irmaos = [
@@ -634,6 +766,8 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         ("limit", "5000"),
     ]
     resp_agenda = requests.get(url_agenda, headers=headers, params=params_agenda, timeout=10)
+    if resp_agenda.status_code != 200:
+        raise RuntimeError('Não foi possível conferir a agenda existente. Nenhuma nova visita foi atribuída.')
     
     neighborhood_owners = {}
     occupied_day_addresses = set(existing_address_keys)
@@ -675,12 +809,15 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
                     occupied_day_addresses.add(address_key)
                 
     # 3. Filtrar elegíveis e extrair coordenadas
+    igreja_coords = get_common_coordinates(comum, cidade) if comum else None
     elegiveis = []
     sem_coords = []
     
     for irmao in todos_irmaos:
         addr = irmao.get('endereco') or ''
         coords = extract_coords_from_address(addr)
+        if cidade and coords and (not igreja_coords or haversine_distance(igreja_coords, coords) > 15000):
+            coords = None
         address_key = route_address_key(
             irmao, fallback=f"__MEMBRO_{irmao.get('id')}"
         )
@@ -728,22 +865,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             search_query = f"{cep} {addr}".strip()
             
             # Tentar geocodificar no Google Maps
-            coords = geocode_address_fallback(search_query)
-            
-            if coords:
-                # Disparar update no banco imediatamente e não bloquear
-                novo_end = f"[{coords[0]}, {coords[1]}] {addr}"
-                try:
-                    requests.patch(
-                        url_irmandade,
-                        headers=headers,
-                        params=[("id", f"eq.{item['irmao']['id']}")],
-                        json={"endereco": novo_end},
-                        timeout=3
-                    )
-                except:
-                    pass
-            return coords
+            return resolve_visit_coordinates(search_query, cidade, item['setor'], igreja_coords)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             resultados = list(executor.map(fetch_geocode_and_update, sem_coords))
@@ -758,7 +880,6 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
                 elegiveis.append(item)
             
     # 4. Calcular distância real até a igreja
-    igreja_coords = get_common_coordinates(comum, cidade) if comum else None
     for item in elegiveis:
         if item['coords'] and igreja_coords:
             item['dist'] = haversine_distance(igreja_coords, item['coords'])
@@ -817,26 +938,41 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     # Prepara payload em lote (Supabase permite bulk insert)
     payload_bulk = []
     
-    # Continuar índice baseado nos existentes
-    start_index = len(existing_address_keys)
+    # Reserva os horários já ocupados, inclusive ao aumentar de 6 para 7 casas.
+    # Distribui o total entre manhã e tarde sem mover agendamentos existentes.
+    from dateutil import parser
+    from zoneinfo import ZoneInfo
+    occupied_times = set()
+    for visit in existing_visits:
+        if visit.get('data_inicio'):
+            try:
+                dt = parser.parse(visit['data_inicio'])
+                if dt.tzinfo:
+                    dt = dt.astimezone(ZoneInfo('America/Sao_Paulo'))
+                occupied_times.add(dt.strftime('%Y-%m-%dT%H:%M:%S'))
+            except (ValueError, TypeError):
+                pass
+    morning_target = (target_houses + 1) // 2
+    available_times = []
+    for slot in range(target_houses):
+        hour, position = (9, slot) if slot < morning_target else (14, slot - morning_target)
+        start = datetime.strptime(f'{data_filtro} {hour:02}:00:00', '%Y-%m-%d %H:%M:%S') + timedelta(minutes=15 * position)
+        if start.strftime('%Y-%m-%dT%H:%M:%S') not in occupied_times:
+            available_times.append(start)
+    # Agendamentos legados podem ocupar vários horários para a mesma casa.
+    # Preserve-os e encontre vagas adicionais em vez de reutilizar um horário.
+    extra_position = target_houses - morning_target
+    while len(available_times) < num_to_generate:
+        start = datetime.strptime(f'{data_filtro} 14:00:00', '%Y-%m-%d %H:%M:%S') + timedelta(minutes=15 * extra_position)
+        extra_position += 1
+        if start.strftime('%Y-%m-%dT%H:%M:%S') not in occupied_times:
+            available_times.append(start)
     
     for i, (_, household) in enumerate(selected_households):
         item = household[0]
         irmao = item['irmao']
         
-        current_idx = start_index + i
-        
-        # Lógica de espaçamento: 15 minutos por visita
-        # As 5 primeiras (0 a 4) são de manhã começando às 09:00
-        # As 5 seguintes (5 a 9) são à tarde começando às 14:00
-        if current_idx < 5:
-            minutos_adicionais = current_idx * 15
-            hora_inicio_base = datetime.strptime(f"{data_filtro} 09:00:00", "%Y-%m-%d %H:%M:%S")
-        else:
-            minutos_adicionais = (current_idx - 5) * 15
-            hora_inicio_base = datetime.strptime(f"{data_filtro} 14:00:00", "%Y-%m-%d %H:%M:%S")
-            
-        hora_inicio = hora_inicio_base + timedelta(minutes=minutos_adicionais)
+        hora_inicio = available_times[i]
         hora_fim = hora_inicio + timedelta(minutes=15)
         
         # Forçando o Fuso de São Paulo (-03:00)
@@ -852,16 +988,25 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
                 for person in household if person['irmao'].get('nome')
             )),
             'setor': irmao.get('setor'),
-            'endereco_visitado': irmao.get('endereco'),
+            'endereco_visitado': (
+                f"[{item['coords'][0]}, {item['coords'][1]}] {clean_visit_address(irmao.get('endereco'))}"
+                if item['coords'] else clean_visit_address(irmao.get('endereco'))
+            ),
             'categoria': irmao.get('categoria') or 'GVI',
             'equipe_responsavel': equipe,
+            'equipe_id': equipe_id,
+            'equipe_tipo': equipe_tipo,
             'data_inicio': str_inicio,
             'data_fim': str_fim,
             'status': 'Marcada',
             'observacoes': ''
         }
         payload_bulk.append(visit)
-        
+    # Já grava novas casas na ordem espacial, antes de associar os horários.
+    planning = [{**visit, 'municipio': cidade, '_route_origin': igreja_coords} for visit in payload_bulk]
+    planned = plan_linear_schedule(planning, igreja_coords)
+    payload_bulk = [{key: visit[key] for key in payload_bulk[0]} for visit in planned]
+
     # Bulk insert
     post_headers = headers.copy()
     post_headers["Prefer"] = "return=representation"
@@ -869,6 +1014,8 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     
     if resp_post.status_code in [200, 201]:
         created = resp_post.json()
+        if not isinstance(created, list) or len(created) != len(payload_bulk):
+            raise RuntimeError('A gravação do roteiro não foi confirmada integralmente. Consulte a agenda antes de tentar novamente.')
         # Campos apenas em memória para que a auditoria de escopo também funcione
         # enquanto a agenda mantém o vínculo territorial pelo irmandade_id.
         for visit in created:
@@ -876,4 +1023,4 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             visit['municipio'] = cidade or ''
         return created
         
-    return []
+    raise RuntimeError('Falha ao gravar o roteiro na agenda. Nenhuma visita foi confirmada; consulte a agenda antes de tentar novamente.')

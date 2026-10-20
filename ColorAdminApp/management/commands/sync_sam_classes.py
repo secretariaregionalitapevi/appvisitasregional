@@ -13,6 +13,7 @@ from ColorAdminApp.sam_class_mirror import (
     BASE_URL, fetch_class_page, fetch_group_page, fetch_text, fingerprint, norm, parse_attendance, parse_class_detail, parse_class_row, parse_group_row,
 )
 from ColorAdminApp.sam_live_session import SamLiveSession
+from ColorAdminApp.sam_group_capture import sync_groups
 
 
 class Command(BaseCommand):
@@ -20,6 +21,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--scraper-dir", type=Path, default=os.getenv("SAM_SCRAPER_DIR"))
+        parser.add_argument("--groups-only", action="store_true", help="Atualiza apenas cadastros completos das turmas no espelho pessoal.")
         parser.add_argument("--full", action="store_true", help="Varre todas as aulas na carga inicial.")
         parser.add_argument("--lookback-days", type=int, default=45)
 
@@ -79,20 +81,13 @@ class Command(BaseCommand):
                 raise CommandError("Não foi possível autenticar no SAM.")
             page = session.scraper.page
             page.goto(f"{BASE_URL}/turmas", wait_until="domcontentloaded", timeout=60000)
-            group_start, group_length, group_rows = 0, 5000, []
-            while True:
-                group_page = fetch_group_page(page, group_start, group_length)
-                group_batch = [parsed for row in (group_page.get("data") or []) if (parsed := parse_group_row(row))]
-                group_rows.extend(group_batch)
-                group_start += len(group_page.get("data") or [])
-                if not group_page.get("data") or group_start >= int(group_page.get("recordsFiltered") or 0):
-                    break
-            now = datetime.now(timezone.utc).isoformat()
-            for group in group_rows:
-                group.update({"source_payload": dict(group), "last_seen_at": now, "synced_at": now})
-            for start_index in range(0, len(group_rows), 1000):
-                self._upsert("sam_gem_groups", group_rows[start_index:start_index + 1000], "source_id")
-            self.stdout.write(f"Turmas sincronizadas do SAM: {len(group_rows)}.")
+            result = sync_groups(self, page, force=bool(options.get("groups_only") or options.get("full")))
+            self.stdout.write(f"Turmas com cadastro atualizado: {result['updated']}; indisponíveis: {len(result['failures'])}.")
+            for failure in result["failures"]:
+                self.stderr.write(f"Turma {failure['source_id']}: {failure['reason']}")
+            if options.get("groups_only"):
+                return
+            groups_by_source = {str(r["source_id"]): r for r in self._get_all("sam_gem_groups")}
 
             page.goto(f"{BASE_URL}/aulas_abertas", wait_until="domcontentloaded", timeout=60000)
             start, length, candidates = 0, 2000, []
@@ -143,7 +138,10 @@ class Command(BaseCommand):
                     "last_seen_at": now, "synced_at": now,
                 }
                 group_payload["source_hash"] = fingerprint({key: value for key, value in group_payload.items() if key not in {"last_seen_at", "synced_at", "source_hash"}})
-                saved_group = self._upsert("sam_gem_groups", [group_payload], "source_id")[0]
+                saved_group = groups_by_source.get(str(item["turma_source_id"]))
+                if saved_group is None:
+                    saved_group = self._upsert("sam_gem_groups", [group_payload], "source_id")[0]
+                    groups_by_source[str(item["turma_source_id"])] = saved_group
                 class_payload = {**item, **detail, "turma_id": saved_group["id"], "source_payload": {**item, **detail}, "last_seen_at": now, "synced_at": now}
                 class_payload["source_hash"] = fingerprint({key: value for key, value in class_payload.items() if key not in {"last_seen_at", "synced_at", "source_hash"}})
                 previous = existing.get(item["source_id"])

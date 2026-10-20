@@ -4,10 +4,13 @@ from . import views
 from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
+from .modules import darpe
 from . import gem
 from . import gem_sync_admin
 from . import sam_audit
+from . import sam_backup_views
 from . import gem_classes
+from . import music_events
 from . import music_exams
 from . import gem_projection
 from . import gem_projection
@@ -61,10 +64,23 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/', musicalizacao.api_resource, name='musicalizacaoResource'),
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
+    path('darpe/', darpe.page, name='darpeDashboard'),
+    path('darpe/api/cadastros/exportar-excel/', darpe.export_cadastros_excel, name='darpeCadastrosExcel'),
+    path('darpe/api/cadastros/importar/', darpe.import_cadastros, name='darpeCadastrosImport'),
+    path('darpe/api/<str:resource>/', darpe.api_resource, name='darpeResource'),
+    path('darpe/api/<str:resource>/<uuid:record_id>/', darpe.api_resource, name='darpeRecord'),
+    path('darpe/<str:section>/', darpe.page, name='darpeSection'),
     path('gem/', gem.page, name='gemDashboard'),
     path('gem/projecao/', gem_projection.page, name='gemProjection'),
     path('gem/projecao/api/', gem_projection.api_dashboard, name='gemProjectionApi'),
     path('gem/projecao/exportar-excel/', gem_projection.export_excel, name='gemProjectionExcel'),
+    path('gem/sam/backup/', sam_backup_views.page, name='samBackup'),
+    path('gem/sam/backup/filtros/', sam_backup_views.options, name='samBackupOptions'),
+    path('gem/sam/backup/api/', sam_backup_views.data, name='samBackupData'),
+    path('gem/sam/backup/ensaios/', sam_backup_views.rehearsals, name='samBackupRehearsals'),
+    path('gem/sam/backup/ensaios/<uuid:run_id>/', sam_backup_views.rehearsal_detail, name='samBackupRehearsalDetail'),
+    path('gem/sam/backup/copias/', sam_backup_views.archives, name='samBackupArchives'),
+    path('gem/sam/backup/copias/<uuid:backup_id>/download/', sam_backup_views.download, name='samBackupDownload'),
     path('gem/sam/', gem_sync_admin.page, name='gemSyncAdmin'),
     path('gem/sam/historico/', sam_audit.page, name='samAudit'),
     path('gem/sam/historico/api/', sam_audit.api_events, name='samAuditApi'),
@@ -94,10 +110,18 @@ urlpatterns = [
     path('gem/api/lancamentos/<str:source_name>/', gem.api_student_record, name='gemStudentRecordCreate'),
     path('gem/api/lancamentos/<str:source_name>/<uuid:record_id>/', gem.api_student_record, name='gemStudentRecord'),
     path('gem/api/documentos/<uuid:record_id>/', gem.activity_document, name='gemActivityDocument'),
+    path('musica/eventos/', music_events.page, name='musicEvents'),
+    path('musica/eventos/api/importacao/<str:action>/', music_events.api_import, name='musicEventsImport'),
+    path('musica/eventos/api/eventos/<uuid:event_id>/encarregado/', music_events.api_conductor, name='musicEventsConductor'),
+    path('musica/eventos/api/painel/', music_events.api_dashboard, name='musicEventsDashboard'),
+    path('musica/eventos/exportar-<str:file_format>/', music_events.export_dashboard, name='musicEventsExport'),
+    path('musica/eventos/api/eventos/', music_events.api_events, name='musicEventsList'),
+    path('musica/eventos/api/eventos/<uuid:event_id>/', music_events.api_detail, name='musicEventsDetail'),
     path('musica/exames/', music_exams.page, name='musicExams'),
     path('musica/exames/api/dashboard/', music_exams.api_dashboard, name='musicExamsDashboard'),
     path('musica/exames/api/agenda/', music_exams.api_agenda, name='musicExamsAgenda'),
     path('musica/exames/api/registros/', music_exams.api_record, name='musicExamsRecordCreate'),
+    path('musica/exames/api/registros/<uuid:record_id>/', music_exams.api_record, name='musicExamsRecord'),
     path('musica/exames/api/importar/', music_exams.api_import, name='musicExamsImport'),
     path('musica/exames/api/participantes/', music_exams.api_participants, name='musicExamsParticipants'),
     path('musica/exames/documentos/<uuid:record_id>/', music_exams.document, name='musicExamsDocument'),
