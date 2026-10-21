@@ -59,6 +59,7 @@ def sidebar_menu(request):
 		'children': [
 			{ 'url': '/darpe/', 'title': 'Visão geral', 'name': 'darpeDashboard' },
 			{ 'url': '/darpe/cadastros/', 'title': 'Cadastros', 'name': 'darpeSection' },
+			{ 'url': '/darpe/conferencia-sam/', 'title': 'Conferência SAM', 'name': 'darpeSam' },
 			{ 'url': '/darpe/eventos/', 'title': 'Eventos', 'name': 'darpeSection' }
 		]
 	},

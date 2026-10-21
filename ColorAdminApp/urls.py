@@ -5,6 +5,8 @@ from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
 from .modules import darpe
+from .modules import darpe_sam
+from .modules import darpe_sam_exports
 from . import gem
 from . import gem_sync_admin
 from . import sam_audit
@@ -65,6 +67,11 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
     path('darpe/', darpe.page, name='darpeDashboard'),
+    path('darpe/conferencia-sam/', darpe_sam.page, name='darpeSam'),
+    path('darpe/api/conferencia-sam/', darpe_sam.api, name='darpeSamApi'),
+    path('darpe/api/conferencia-sam/exportar-excel/', darpe_sam_exports.export, {'format': 'xlsx'}, name='darpeSamExcel'),
+    path('darpe/api/conferencia-sam/exportar-pdf/', darpe_sam_exports.export, {'format': 'pdf'}, name='darpeSamPdf'),
+    path('darpe/api/conferencia-sam/preencher/', darpe_sam.api, {'action': 'preencher'}, name='darpeSamFill'),
     path('darpe/api/cadastros/exportar-excel/', darpe.export_cadastros_excel, name='darpeCadastrosExcel'),
     path('darpe/api/cadastros/importar/', darpe.import_cadastros, name='darpeCadastrosImport'),
     path('darpe/api/<str:resource>/', darpe.api_resource, name='darpeResource'),

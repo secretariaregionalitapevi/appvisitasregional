@@ -1,15 +1,19 @@
 """Cadastro e eventos do D.A.R.P.E com autorização e escopo territorial no servidor."""
 import io
 import json
+import logging
+import re
 import unicodedata
 from datetime import date, datetime
 from urllib.parse import quote
+from uuid import uuid4
 
 import requests
 from django.conf import settings
 from django.http import JsonResponse
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.views.decorators.cache import never_cache
 from openpyxl import Workbook
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -47,6 +51,66 @@ RESOURCES = {
         "location": lambda row: {},
     },
 }
+
+logger = logging.getLogger(__name__)
+
+
+def _write_cadastro(method, *, reference=None, **kwargs):
+    """Compatibilidade entre as colunas musicais antigas e as separadas."""
+    data = kwargs['json']
+    def adapt(payload):
+        payload = dict(payload)
+        if reference is not None:
+            for field in ('darpe_musico', 'darpe_organista', 'darpe_musico_organista'):
+                if field not in reference:
+                    payload.pop(field, None)
+        return payload
+    kwargs['json'] = [adapt(row) for row in data] if isinstance(data, list) else adapt(data)
+    response = method(_url(RESOURCES['cadastros']), **kwargs)
+    if response.status_code == 400:
+        try:
+            error = response.json()
+        except ValueError:
+            error = {}
+        # Falhas de schema ocorrem antes da escrita; somente essas permitem repetição.
+        if error.get('code') == 'PGRST204':
+            message = error.get('message', '')
+            missing = next((field for field in ('darpe_musico', 'darpe_organista', 'darpe_musico_organista')
+                            if f"'{field}'" in message), None)
+            if missing:
+                removed = {missing} if missing == 'darpe_musico_organista' else {'darpe_musico', 'darpe_organista'}
+                def strip(payload):
+                    return {key: value for key, value in payload.items() if key not in removed}
+                kwargs['json'] = [strip(row) for row in kwargs['json']] if isinstance(data, list) else strip(kwargs['json'])
+                response = method(_url(RESOURCES['cadastros']), **kwargs)
+    return response
+
+
+def _normalize_payload(payload, resource):
+    payload = {key: (value.strip() or None) if isinstance(value, str) else value
+               for key, value in payload.items()}
+    dates = {'data_nascimento': 'Data de nascimento', 'data_batismo': 'Data de batismo',
+             'declaracao_data': 'Data da declaração', 'data_evento': 'Data do evento'}
+    for key, label in dates.items():
+        if payload.get(key):
+            try:
+                date.fromisoformat(payload[key])
+            except (ValueError, TypeError):
+                raise ValueError(f'{label}: informe uma data válida.')
+    if resource == 'cadastros':
+        for key, size in (('cpf', 11), ('cep', 8)):
+            if payload.get(key):
+                digits = re.sub(r'\D', '', str(payload[key]))
+                if len(digits) != size:
+                    raise ValueError(f'{key.upper()}: informe {size} dígitos ou deixe em branco.')
+                payload[key] = digits
+        if payload.get('uf'):
+            payload['uf'] = payload['uf'].upper()
+            if not re.fullmatch('[A-Z]{2}', payload['uf']):
+                raise ValueError('UF: informe a sigla com duas letras ou deixe em branco.')
+        if 'status' in payload:
+            payload['status'] = payload['status'] or 'ATIVO'
+    return payload
 
 
 def _actor(request):
@@ -86,6 +150,11 @@ def _with_canonical_commons(rows):
         canonical = resolver.resolve(row.get("comum_congregacao"), row.get("cidade")) if resolver else None
         row["comum_exibicao"] = (canonical or {}).get("comum") or row.get("comum_congregacao")
         enriched.append(row)
+    try:
+        from .darpe_sam import enrich_roles
+        enriched = enrich_roles(enriched)
+    except (requests.RequestException, ValueError):
+        logger.warning('Não foi possível conferir o âmbito dos encarregados no SAM.')
     return enriched
 
 
@@ -133,6 +202,34 @@ def _import_key(row):
     return _norm(row.get("nome_completo")), _norm(row.get("comum_congregacao"))
 
 
+def _resolve_import_common(resolver, common, city):
+    canonical = resolver.resolve(common, city)
+    if canonical or _norm(common).startswith("BR-"):
+        return canonical
+
+    def name_key(value, municipality):
+        value = _norm(value)
+        for short, full in (("JD", "JARDIM"), ("VL", "VILA"), ("DR", "DOUTOR")):
+            value = re.sub(rf"\b{short}\.?\s+", full + " ", value)
+        value = re.sub(r"\s+-\s+" + re.escape(_norm(municipality)) + r"$", "", value)
+        if value in {"CENTRAL DE " + _norm(municipality), _norm(municipality) + " - CENTRAL"}:
+            return "CENTRAL"
+        # A primeira Rosemary consta no catálogo sem o numeral I.
+        if _norm(municipality) == "ITAPEVI" and value == "JARDIM ROSEMARY I":
+            return "JARDIM ROSEMARY"
+        return value
+
+    matches = []
+    for candidate in resolver.by_code.values():
+        municipality = candidate.get("cidade")
+        if city and _norm(city) != _norm(municipality):
+            continue
+        description = re.sub(r"^BR-\d+-\d+\s*-\s*", "", candidate["comum"])
+        if name_key(common, municipality) == name_key(description, municipality):
+            matches.append(candidate)
+    return matches[0] if len(matches) == 1 else None
+
+
 def _read_imported_cadastros(upload):
     try:
         workbook = load_workbook(upload, read_only=True, data_only=True)
@@ -144,17 +241,17 @@ def _read_imported_cadastros(upload):
     actor_name = "Importação do mapeamento regional D.A.R.P.E"
     rows = []
     unresolved = []
-    for values in sheet.iter_rows(min_row=4, values_only=True):
+    for line, values in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
         if not _import_clean(values[1]):
             continue
         common = _import_clean(values[7]) or "NÃO INFORMADA"
         city = _import_clean(values[13])
-        canonical = resolver.resolve(common, city)
+        canonical = _resolve_import_common(resolver, common, city)
         if canonical:
             common, city = canonical["comum"], canonical["cidade"]
         city = _canonical_city(city)
         if not city:
-            unresolved.append(common)
+            unresolved.append(f"linha {line}: {common}")
         musician, organist = _musical_flags(values[2], values[5], _import_yes(values[22]))
         rows.append({
             "cpf": _import_clean(values[0]), "nome_completo": _import_clean(values[1]),
@@ -178,13 +275,39 @@ def _read_imported_cadastros(upload):
             "updated_by_user_id": actor_id, "updated_by_name": actor_name,
         })
     keys = [_import_key(row) for row in rows]
+    workbook.close()
     if not rows:
         raise ValueError("A aba Cadastro não possui registros para importar.")
     if len(keys) != len(set(keys)):
         raise ValueError(f"A planilha possui {len(keys) - len(set(keys))} cadastro(s) repetido(s).")
     if unresolved:
-        raise ValueError(f"Existem {len(unresolved)} cadastro(s) sem município regional confirmado.")
+        raise ValueError(f"Existem {len(unresolved)} cadastro(s) sem município regional confirmado. "
+                         + "; ".join(unresolved) + ". Informe o município ou o código BR da comum na planilha.")
     return rows
+
+
+def _read_all_rows(config, select="*", filters=None):
+    """Le todas as paginas do PostgREST, inclusive acima de 1.000 linhas."""
+    rows, expected = [], None
+    while True:
+        response = requests.get(_url(config), headers=service_headers("count=exact"),
+                                params={"select": select, "order": "id.asc", "offset": len(rows), "limit": 1000,
+                                        **(filters or {})},
+                                timeout=30)
+        response.raise_for_status()
+        page = response.json()
+        rows.extend(page)
+        total = str(response.headers.get("Content-Range", "")).rsplit("/", 1)[-1]
+        if total.isdigit():
+            if expected is not None and expected != int(total):
+                raise ValueError('A base mudou durante a leitura. Atualize a conferência e tente novamente.')
+            expected = int(total)
+            if not page and len(rows) < expected:
+                raise ValueError('A leitura da base ficou incompleta. Tente novamente.')
+        if not page or (total.isdigit() and len(rows) >= int(total)):
+            return rows
+        if not total.isdigit() and len(page) < 1000:
+            return rows
 
 
 def import_cadastros(request):
@@ -198,38 +321,43 @@ def import_cadastros(request):
     try:
         rows = _read_imported_cadastros(upload)
         url = _url(RESOURCES["cadastros"])
-        current_response = requests.get(url, headers=service_headers(),
-                                        params={"select": "id,nome_completo,comum_congregacao"}, timeout=30)
-        current_response.raise_for_status()
-        current = current_response.json()
+        current = _read_all_rows(RESOURCES["cadastros"])
+        reference = current[0] if current else None
         existing = {}
         for row in current:
             existing.setdefault(_import_key(row), []).append(row)
-        for start in range(0, len(rows), 50):
-            new_rows = [row for row in rows[start:start + 50] if _import_key(row) not in existing]
-            if new_rows:
-                response = requests.post(url, headers=service_headers("return=minimal"),
-                                         json=new_rows, timeout=60)
-                response.raise_for_status()
+        pending, keep = [], set()
         for row in rows:
             matches = existing.get(_import_key(row)) or []
-            if matches:
-                response = requests.patch(url, headers=service_headers("return=minimal"),
-                                          params={"id": f"eq.{matches[0]['id']}"}, json=row, timeout=30)
-                response.raise_for_status()
-        refreshed = requests.get(url, headers=service_headers(),
-                                 params={"select": "id,nome_completo,comum_congregacao"}, timeout=30)
-        refreshed.raise_for_status()
-        official = {_import_key(row) for row in rows}
-        kept = set()
-        for row in refreshed.json():
-            row_key = _import_key(row)
-            if row_key not in official or row_key in kept:
-                response = requests.delete(url, headers=service_headers("return=minimal"),
-                                           params={"id": f"eq.{row['id']}"}, timeout=30)
-                response.raise_for_status()
-            else:
-                kept.add(row_key)
+            previous = matches[0] if matches else None
+            record_id = previous["id"] if previous else str(uuid4())
+            keep.add(record_id)
+            if previous:
+                if not row.get('instrumento_oficializado') and previous.get('instrumento_oficializado'):
+                    row = {**row, 'instrumento_oficializado': previous['instrumento_oficializado']}
+                elif row.get('instrumento_oficializado') and previous.get('instrumento_oficializado'):
+                    from .darpe_sam import instrument_key
+                    if instrument_key(row['instrumento_oficializado']) == instrument_key(previous['instrumento_oficializado']):
+                        row = {**row, 'instrumento_oficializado': previous['instrumento_oficializado']}
+                row = {**row, **{key: previous[key] for key in
+                       ("created_by_user_id", "created_by_name") if key in previous}}
+                fields = [key for key in row if not key.startswith(("created_by_", "updated_by_"))
+                          and key in previous]
+                if all(row[key] == previous.get(key) for key in fields):
+                    continue
+            pending.append({**row, "id": record_id})
+        # Upsert por UUID preserva os vinculos de participantes e a autoria original.
+        for start in range(0, len(pending), 500):
+            response = _write_cadastro(requests.post, reference=reference,
+                                      headers=service_headers("resolution=merge-duplicates,return=minimal"),
+                                      params={"on_conflict": "id"}, json=pending[start:start + 500], timeout=60)
+            response.raise_for_status()
+        # Limpeza somente depois de TODOS os lotes gravados com sucesso.
+        stale = [row["id"] for row in current if row["id"] not in keep]
+        for start in range(0, len(stale), 100):
+            response = requests.delete(url, headers=service_headers("return=minimal"),
+                                       params={"id": "in.(" + ",".join(stale[start:start + 100]) + ")"}, timeout=30)
+            response.raise_for_status()
         return JsonResponse({"message": "Importação concluída.", "total": len(rows)})
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -287,6 +415,7 @@ def export_cadastros_excel(request):
     return result
 
 
+@never_cache
 def page(request, section="dashboard"):
     if not can_access_module(request, MODULE_DARPE):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta D.A.R.P.E."}, status=403)
@@ -295,6 +424,7 @@ def page(request, section="dashboard"):
     return render(request, "pages/darpe.html", {"section": section, "scope": scope_details(user_scope(request))})
 
 
+@never_cache
 def api_resource(request, resource, record_id=None):
     if not can_access_module(request, MODULE_DARPE):
         return _denied()
@@ -304,10 +434,12 @@ def api_resource(request, resource, record_id=None):
     scope = user_scope(request)
     try:
         if request.method == "GET" and not record_id:
-            response = requests.get(_url(config), headers=service_headers(),
-                                    params={"select": "*", "order": config["order"]}, timeout=15)
-            response.raise_for_status()
-            rows = response.json()
+            rows = _read_all_rows(config) if resource == "cadastros" else None
+            if rows is None:
+                response = requests.get(_url(config), headers=service_headers(),
+                                        params={"select": "*", "order": config["order"]}, timeout=15)
+                response.raise_for_status()
+                rows = response.json()
             if resource != "participantes":
                 rows = filter_rows(scope, [{**row, **config["location"](row)} for row in rows])
             if resource == "cadastros":
@@ -330,6 +462,7 @@ def api_resource(request, resource, record_id=None):
             payload = {key: value for key, value in json.loads(request.body or "{}").items() if key in config["fields"]}
             if not payload:
                 return JsonResponse({"error": "Informe os dados do registro."}, status=400)
+            payload = _normalize_payload(payload, resource)
             candidate = {**(current or {}), **payload}
             if resource == "cadastros" and candidate.get("darpe_musico") and candidate.get("darpe_organista"):
                 return JsonResponse({"error": "Selecione Músico ou Organista, nunca as duas funções."}, status=400)
@@ -342,6 +475,11 @@ def api_resource(request, resource, record_id=None):
                 return _denied()
             if resource == "cadastros" and not str(candidate.get("nome_completo") or "").strip():
                 return JsonResponse({"error": "Informe o nome completo."}, status=400)
+            if resource == "cadastros":
+                if not candidate.get('comum_congregacao'):
+                    return JsonResponse({'error': 'Informe a comum congregação.'}, status=400)
+                if any(key in payload for key in ('darpe_musico', 'darpe_organista')):
+                    payload['darpe_musico_organista'] = bool(candidate.get('darpe_musico') or candidate.get('darpe_organista'))
             actor = _actor(request)
             if not actor["id"]:
                 return JsonResponse({"error": "A sessão não possui autoria válida."}, status=401)
@@ -349,8 +487,10 @@ def api_resource(request, resource, record_id=None):
             if not record_id:
                 payload.update({"created_by_user_id": actor["id"], "created_by_name": actor["name"]})
             method = requests.patch if record_id else requests.post
-            response = method(_url(config), headers=service_headers("return=representation"),
-                              params={"id": f"eq.{record_id}"} if record_id else None, json=payload, timeout=15)
+            options = dict(headers=service_headers("return=representation"),
+                           params={"id": f"eq.{record_id}"} if record_id else None, json=payload, timeout=15)
+            response = (_write_cadastro(method, reference=current, **options) if resource == 'cadastros'
+                        else method(_url(config), **options))
             response.raise_for_status()
             return JsonResponse({"item": response.json()[0]}, status=200 if record_id else 201)
 
@@ -362,5 +502,20 @@ def api_resource(request, resource, record_id=None):
         return JsonResponse({"error": "Método não permitido."}, status=405)
     except json.JSONDecodeError:
         return JsonResponse({"error": "JSON inválido."}, status=400)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except requests.HTTPError as exc:
+        response = exc.response
+        try:
+            code = response.json().get('code') if response is not None else None
+        except ValueError:
+            code = None
+        logger.warning('DARPE %s %s: HTTP %s, código %s', request.method, resource,
+                       response.status_code if response is not None else None, code)
+        if code == '23505':
+            return JsonResponse({'error': 'Já existe um cadastro com este CPF ou com o mesmo nome e comum.'}, status=409)
+        if code in {'22007', '22008', '22P02', '23514', '23502'}:
+            return JsonResponse({'error': 'Confira os campos obrigatórios, datas, CPF, CEP, UF e situação do registro.'}, status=400)
+        return JsonResponse({'error': 'O banco recusou a operação do D.A.R.P.E. Tente novamente ou informe o suporte.'}, status=502)
     except requests.RequestException:
         return JsonResponse({"error": "Não foi possível acessar os dados do D.A.R.P.E."}, status=502)

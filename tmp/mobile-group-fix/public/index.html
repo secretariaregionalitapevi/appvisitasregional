@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#087f8c">
+  <title>Roteiro | CCB Visitas</title>
+  <meta name="application-name" content="CCB Visitas">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CCB Visitas">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <link rel="icon" href="/assets/favicon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles/main.css?v=2.0.22">
+  <link rel="stylesheet" href="/styles/identity.css?v=2.0.1">
+  <link rel="stylesheet" href="/styles/install-prompt.css?v=1.0.0">
+  <script defer src="/scripts/install-prompt.js?v=1.0.0"></script>
+  <script defer src="/scripts/auth.js?v=2.0.3"></script>
+  <script defer src="/scripts/visitas.js?v=2.0.29"></script>
+</head>
+
+<body class="mobile-body">
+  <header class="app-header">
+    <div class="brand-mark compact">
+      <img src="/assets/logo-ccb.png" alt="CCB" class="header-logo">
+      <div class="header-titles">
+        <strong>CCB Visitas</strong>
+        <span id="header-comum">Carregando...</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a href="javascript:history.back()" class="header-btn btn-back">← Voltar</a>
+      <a href="#" id="logout" class="header-btn btn-exit">Sair</a>
+    </div>
+  </header>
+  <main class="app-main">
+    <section class="welcome-card">
+      <div style="width: 100%;">
+        <span class="eyebrow">ROTEIRO DA EQUIPE</span>
+        <h1 id="welcome">Olá!</h1>
+        <p id="team-line">Identificando sua equipe...</p>
+
+        <div class="welcome-controls-grid"
+          style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; width: 100%;">
+          <div id="admin-cidade-wrap" hidden style="flex: 1 1 180px; min-width: 150px;">
+            <label
+              style="font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; opacity: 0.9; display: block; margin-bottom: 4px;">Município
+              (Admin):</label>
+            <select id="admin-cidade-select"
+              style="width: 100%; height: 38px; font-size: 12.5px; font-weight: 700; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.22); color: #ffffff; outline: none; backdrop-filter: blur(8px); cursor: pointer;">
+              <option value="" style="color: #333;">Todos os Municípios</option>
+            </select>
+          </div>
+
+          <div id="admin-comum-wrap" hidden style="flex: 2 1 240px; min-width: 200px; position: relative;">
+            <label
+              style="font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; opacity: 0.9; display: block; margin-bottom: 4px;">Comum
+              / Igreja:</label>
+            <button type="button" id="comum-picker-btn"
+              style="width: 100%; height: 38px; font-size: 12.5px; font-weight: 700; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.22); color: #ffffff; text-align: left; display: flex; align-items: center; justify-content: space-between; cursor: pointer; backdrop-filter: blur(8px);">
+              <span id="comum-picker-label"
+                style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Selecione a comum...</span>
+              <span style="font-size: 10px; opacity: 0.8; margin-left: 6px;">▼</span>
+            </button>
+            <div id="comum-picker-panel"
+              style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: #ffffff; color: #1e3a8a; border-radius: 14px; margin-top: 6px; padding: 8px; box-shadow: 0 14px 35px rgba(0,0,0,0.25); z-index: 1000; border: 1px solid #cbd5e1;">
+              <div style="padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px;">
+                <input type="text" id="comum-panel-search" placeholder="🔍 Pesquisar comum..."
+                  style="width: 100%; height: 34px; font-size: 12px; font-weight: 700; padding: 0 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: #f8fafc; color: #1e3a8a; outline: none;"
+                  autocomplete="off">
+              </div>
+              <div id="comum-panel-list" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+          </div>
+
+          <div style="flex: 0 0 200px; min-width: 200px;">
+            <label
+              style="font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; opacity: 0.9; display: block; margin-bottom: 4px;">Data
+              do Roteiro:</label>
+            <input id="route-date" type="date"
+              style="width: 100%; height: 38px; font-size: 13px; font-weight: 700; padding: 0 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.22); color: #ffffff; outline: none; backdrop-filter: blur(8px); cursor: pointer;">
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="summary-grid" aria-label="Resumo do roteiro">
+      <article><strong id="count-total">0</strong><span>Programadas</span></article>
+      <article><strong id="count-done">0</strong><span>Realizadas</span></article>
+      <article><strong id="count-pending">0</strong><span>Pendentes</span></article>
+      <article><strong id="count-unsuccessful">0</strong><span>Canceladas / Não realizadas</span></article>
+    </section>
+    <section class="route-section">
+      <div class="section-heading">
+        <div><span class="eyebrow">COBERTURA DO DIA</span>
+          <h2>Visitas atribuídas</h2>
+        </div><button id="refresh" class="text-button">Atualizar</button>
+      </div>
+      <div id="state" class="state-card">Carregando seu roteiro...</div>
+      <div id="visit-list" class="visit-list"></div>
+    </section>
+  </main>
+  <div class="fab-container">
+    <button id="schedule-button" class="floating-button secondary"><span>🗓</span> Agendar Visita</button>
+    <button id="new-family" class="floating-button"><span>＋</span> Novo cadastro</button>
+  </div>
+
+  <dialog id="visit-dialog" class="app-dialog">
+    <form id="visit-form" method="dialog" class="dialog-content">
+      <div class="dialog-head">
+        <div><span class="eyebrow">ATUALIZAR VISITA</span>
+          <h2 id="visit-name">Visita</h2>
+        </div><button type="button" class="close-dialog">×</button>
+      </div>
+      <div id="restricted-note-wrap" class="restricted-note restricted-note-dialog" hidden><span
+          class="restricted-note-title">🛡️ Apontamento especial · acesso restrito</span><span
+          id="restricted-note-text"></span></div>
+      <p id="visit-address" class="address-line"></p><input id="visit-id" type="hidden">
+      <fieldset class="status-options">
+        <legend>Como foi a visita?</legend>
+        <label class="status-done"><input type="radio" name="status" value="Realizada" required><span>✓</span>
+          Realizada</label>
+        <label class="status-cancel"><input type="radio" name="status" value="Cancelada"><span>×</span>
+          Cancelada</label>
+        <label class="status-missed"><input type="radio" name="status" value="Não realizada"><span>!</span> Não
+          realizada</label>
+      </fieldset>
+      <div id="actual-time-wrap" class="visit-time-wrap" hidden>
+        <span class="visit-time-title">Horário da visita <small>(opcional)</small></span>
+        <div class="visit-time-grid">
+          <label>Início<input id="actual-start-time" type="time" step="60"></label>
+          <label>Fim<input id="actual-end-time" type="time" step="60"></label>
+        </div>
+      </div>
+      <label id="reason-wrap">Motivo<select id="reason">
+          <option value="">Selecione...</option>
+          <option>Não estava em casa</option>
+          <option>Estava dormindo</option>
+          <option>Endereço não localizado</option>
+          <option>Recusou a visita</option>
+          <option>Problema de saúde</option>
+          <option>Outro motivo</option>
+        </select></label>
+      <label>Observações<textarea id="visit-notes" rows="3"
+          placeholder="Informações úteis para a próxima equipe"></textarea></label>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-dialog"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg> Voltar</button><button class="primary-button" type="submit"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg> Salvar visita</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="family-dialog" class="app-dialog">
+    <form id="family-form" method="dialog" class="dialog-content">
+      <div class="dialog-head">
+        <div><span class="eyebrow">ENCONTRADA EM CAMPO</span>
+          <h2>Novo cadastro</h2>
+        </div><button type="button" class="close-family">×</button>
+      </div>
+      <p class="helper">O cadastro será vinculado à sua comum. O agendamento da visita é opcional.</p>
+      <div class="form-grid"><label class="full">Nome completo *<input name="nome" required></label><label>Celular<input
+            name="celular" inputmode="tel" placeholder="(11) 9 1234-5678"></label><label>CEP<input name="cep"
+            inputmode="numeric"></label><input type="hidden" name="cidade_residencial"><label class="full">Endereço
+          completo *<input name="endereco" required></label><label>Setor / Bairro<input
+            name="setor"></label><label>Complemento<input name="complemento"></label><label
+          class="full">Observações<textarea name="observacoes" rows="3"></textarea></label>
+        <div class="full optional-visit-card">
+          <label class="optional-visit-toggle">
+            <input type="checkbox" name="agendar_visita" id="family-schedule-toggle">
+            <span class="optional-visit-copy">
+              <span class="optional-visit-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <path d="M16 3v4M8 3v4M3 10h18" />
+                  <path d="m9 15 2 2 4-4" />
+                </svg>
+              </span>
+              <span><strong>Agendar visita</strong><small>Adicionar esta pessoa ao roteiro após o cadastro</small></span>
+            </span>
+            <span class="optional-visit-switch" aria-hidden="true"></span>
+          </label>
+          <div id="family-schedule-fields" class="form-grid optional-visit-fields" hidden>
+            <label>Data da visita *<input name="data" type="date" id="family-schedule-date" disabled></label>
+            <label>Horário *<input name="hora" type="time" id="family-schedule-time" value="20:00" disabled></label>
+            <label class="full">Grupo de Visita / Categoria *
+              <select name="categoria" id="family-schedule-category" disabled>
+                <option value="GVI">GVI: Irmandade</option>
+                <option value="GVM">GVM: Mocidade</option>
+                <option value="GVE">GVE: Encarregados</option>
+                <option value="RF">RF: Reunião Familiar</option>
+                <option value="RE">RE: Reunião de Evangelização</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-family"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg> Cancelar</button><button class="primary-button" type="submit"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg> Cadastrar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="schedule-dialog" class="app-dialog">
+    <form id="schedule-form" method="dialog" class="dialog-content">
+      <div class="dialog-head">
+        <div><span class="eyebrow">NOVA VISITA</span>
+          <h2>Agendar Visita</h2>
+        </div><button type="button" class="close-schedule">×</button>
+      </div>
+      <p class="helper">Agende uma visita para uma família já cadastrada na sua comum.</p>
+      <div class="form-grid">
+        <label class="full" style="position: relative;">Família / Membro *
+          <input type="text" id="schedule-member-search" placeholder="Pesquisar membro..." autocomplete="off" required
+            style="width: 100%;">
+          <input type="hidden" name="irmandade_id" id="schedule-member-id" required>
+          <div id="schedule-member-list"
+            style="display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 4px;">
+          </div>
+        </label>
+        <label>Data *<input name="data" type="date" id="schedule-date" required></label>
+        <label>Horário *<input name="hora" type="time" id="schedule-time" value="20:00" required></label>
+        <label class="full">Grupo de Visita / Categoria *
+          <select name="categoria" id="schedule-categoria" required>
+            <option value="GVI">GVI: Irmandade</option>
+            <option value="GVM">GVM: Mocidade</option>
+            <option value="GVE">GVE: Encarregados</option>
+            <option value="RF">RF: Reunião Familiar</option>
+            <option value="RE">RE: Reunião de Evangelização</option>
+          </select>
+        </label>
+        <label class="full">Observações<textarea name="observacoes" rows="2" placeholder="Opcional"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary-button close-schedule"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg> Cancelar</button><button class="primary-button" type="submit"
+          style="display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg width="16" height="16"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg> Agendar</button></div>
+    </form>
+  </dialog>
+  <dialog id="delete-visit-dialog" class="delete-visit-dialog" aria-labelledby="delete-visit-title">
+    <div class="delete-visit-content">
+      <div class="delete-visit-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="m19 6-1 14H6L5 6" /><path d="M10 11v5M14 11v5" />
+        </svg>
+      </div>
+      <span class="delete-visit-eyebrow">EXCLUIR DO ROTEIRO</span>
+      <h2 id="delete-visit-title">Excluir esta visita?</h2>
+      <p><strong id="delete-visit-name">Família</strong> será removida definitivamente do roteiro. O cadastro da família será preservado.</p>
+      <div class="delete-visit-actions">
+        <button type="button" id="delete-visit-cancel" class="delete-visit-cancel">Cancelar</button>
+        <button type="button" id="delete-visit-confirm" class="delete-visit-confirm">Excluir visita</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="recent-visit-dialog" class="recent-visit-dialog" aria-labelledby="recent-visit-title">
+    <div class="recent-visit-content">
+      <div class="recent-visit-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M10.3 3.6 2.4 17.3A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.7L13.7 3.6a2 2 0 0 0-3.4 0Z" />
+        </svg>
+      </div>
+      <span class="recent-visit-eyebrow">VISITA RECENTE</span>
+      <h2 id="recent-visit-title">Esta família já foi visitada</h2>
+      <p id="recent-visit-message"></p>
+      <div class="recent-visit-summary">
+        <div><span>Última equipe</span><strong id="recent-visit-team">—</strong></div>
+        <div><span>Última visita</span><strong id="recent-visit-date">—</strong></div>
+      </div>
+      <p class="recent-visit-rule" id="recent-visit-rule">O intervalo recomendado para retorno é de 35 dias. O novo agendamento não será bloqueado.</p>
+      <div class="recent-visit-actions">
+        <button type="button" id="recent-visit-cancel" class="recent-visit-cancel">Revisar agendamento</button>
+        <button type="button" id="recent-visit-confirm" class="recent-visit-confirm">Agendar mesmo assim</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="duplicate-visit-dialog" class="recent-visit-dialog duplicate-visit-dialog" aria-labelledby="duplicate-visit-title">
+    <div class="recent-visit-content">
+      <div class="recent-visit-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M10.3 3.6 2.4 17.3A2 2 0 0 0 4.1 20h15.8a2 2 0 0 0 1.7-2.7L13.7 3.6a2 2 0 0 0-3.4 0Z" />
+        </svg>
+      </div>
+      <span class="recent-visit-eyebrow">AGENDAMENTO DUPLICADO</span>
+      <h2 id="duplicate-visit-title">Já existe uma visita neste dia</h2>
+      <p id="duplicate-visit-message">Já existe uma visita para <strong id="duplicate-visit-name"></strong> nesta data. Não é possível agendar outra visita no mesmo dia.</p>
+      <div class="recent-visit-summary">
+        <div><span>Grupo / equipe</span><strong id="duplicate-visit-team">—</strong></div>
+        <div><span>Data da visita</span><strong id="duplicate-visit-date">—</strong></div>
+      </div>
+      <p class="recent-visit-rule">Para evitar visitas duplicadas, o novo agendamento foi bloqueado. Revise a visita existente antes de continuar.</p>
+      <div class="recent-visit-actions duplicate-visit-actions">
+        <button type="button" id="duplicate-visit-close" class="duplicate-visit-close-button">Fechar</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="success-dialog" class="success-dialog" aria-labelledby="success-dialog-title">
+    <div class="success-dialog-content">
+      <div class="success-dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 4 4L19 6" />
+        </svg>
+      </div>
+      <h2 id="success-dialog-title">Tudo certo!</h2>
+      <p id="success-dialog-message"></p>
+      <button type="button" id="success-dialog-ok">OK</button>
+      <div class="success-dialog-progress" aria-hidden="true"><span id="success-dialog-progress-bar"></span></div>
+    </div>
+  </dialog>
+  <div id="toast" class="app-toast" role="status"></div>
+</body>
+
+</html>
