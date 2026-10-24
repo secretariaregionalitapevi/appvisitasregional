@@ -90,3 +90,29 @@ class MusicEventsTests(SimpleTestCase):
         self.assertEqual(result['frequency'][0]['municipio'], 'COTIA')
         self.assertEqual(result['locations'], [])
         self.assertEqual(read.call_count, 1)
+
+
+class MusicEventPageSeparationTests(SimpleTestCase):
+    @patch.object(music_events, '_read')
+    @patch.object(music_events, 'user_scope', return_value={'level': 'regional'})
+    def test_category_filters_events_before_dashboard_and_history(self, scope, read):
+        read.return_value = [
+            {'id': 'rehearsal', 'tipo': 'ENSAIO_REGIONAL'},
+            {'id': 'meeting', 'tipo': 'REUNIAO_TECNICA'},
+        ]
+        for category, expected in [('ENSAIO_REGIONAL', 'rehearsal'), ('REUNIAO_TECNICA', 'meeting')]:
+            request = RequestFactory().get('/', {'categoria': category})
+            self.assertEqual([e['id'] for e in music_events._visible_events(request)], [expected])
+
+    @patch.object(music_events, '_allowed', return_value=True)
+    @patch.object(music_events, 'render')
+    def test_routes_render_distinct_categories(self, render, allowed):
+        from django.urls import resolve
+        for path, category in [('/musica/ensaios-regionais/', 'ENSAIO_REGIONAL'),
+                               ('/musica/reunioes-tecnicas/', 'REUNIAO_TECNICA')]:
+            match = resolve(path)
+            self.assertEqual(match.func.__name__, "page")
+            request = RequestFactory().get(path)
+            request.session = {'user_profile': {'role_id': 1}}
+            music_events.page(request, **match.kwargs)
+            self.assertEqual(render.call_args.args[2]['event_category'], category)

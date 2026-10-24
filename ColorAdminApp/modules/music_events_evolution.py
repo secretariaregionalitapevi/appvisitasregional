@@ -1,4 +1,5 @@
 """Comparações observadas entre encontros importados do mesmo tipo e local."""
+from collections import defaultdict
 from .music_events_dashboard import aggregate, event_kind, regional_city
 from .music_events_import import norm
 
@@ -13,6 +14,12 @@ def comparison(points, field):
 
 
 def evolution(events,records,locations,filters,catalog=()):
+    records_by_event = defaultdict(list)
+    locations_by_event = defaultdict(list)
+    for row in records:
+        records_by_event[row['evento_id']].append(row)
+    for row in locations:
+        locations_by_event[row['evento_id']].append(row)
     selected=next((e for e in events if e['id']==filters.get('evento')),None)
     public=filters.get('tipo') or (event_kind(selected) if selected else '')
     current=dict(filters);current.pop('evento',None);current['tipo']=public
@@ -44,7 +51,7 @@ def evolution(events,records,locations,filters,catalog=()):
             target=next((x for x in locations if x['evento_id']==event['id'] and norm(x['nome'])==norm(local_name)),None)
             if not target:continue
             event_filters['local']=target['id']
-        data=aggregate([event],records,locations,[],event_filters,catalog)
+        data=aggregate([event],records_by_event[event['id']],locations_by_event[event['id']],[],event_filters,catalog)
         if not data['events']:continue
         # Encontros sem informação do local escolhido não representam ausência.
         if filters.get('local') and not data['locations']:continue

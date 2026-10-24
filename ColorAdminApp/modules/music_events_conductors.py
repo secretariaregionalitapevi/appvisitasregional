@@ -3,9 +3,20 @@ from collections import Counter
 from .music_events_dashboard import code, REGIONAL, regional_city
 from .music_events_import import norm
 from .music_events_identity import CommonResolver
+from .music_events_calendar import validated_sites
 
 LABELS={'PRESENTE':'Presente','JUSTIFICOU':'J · Justificou','NAO_JUSTIFICOU':'NJ · Não justificou',
         'NAO_INFORMADO':'Não informado','SEM_ENCARREGADO':'Sem encarregado','ENFERMO':'Enfermo'}
+
+
+def attendance_status(row):
+    raw = row.get('leader_attendance') or row.get('presenca_situacao') or row.get('encarregado_situacao') or row.get('leader_status') or row.get('situacao')
+    return raw if raw in {'PRESENTE', 'JUSTIFICOU', 'SEM_ENCARREGADO', 'ENFERMO'} else 'NAO_JUSTIFICOU'
+
+
+def attendance_label(row):
+    return {'PRESENTE': 'PRESENTE', 'JUSTIFICOU': 'JUSTIFICOU', 'NAO_JUSTIFICOU': 'NJ',
+            'SEM_ENCARREGADO': 'SEM ENCARREGADO', 'ENFERMO': 'ENFERMO'}[attendance_status(row)]
 
 
 def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leaders=()):
@@ -35,7 +46,7 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
             row.update(comum_chave=code(canonical['comum']),comum_nome=canonical['comum'],municipio=canonical['cidade'])
         normalized_reviews.append(row)
     reviews=sorted(normalized_reviews,key=lambda r:str(r.get('updated_at') or ''))
-    event_map={e['id']:e for e in events};site_map={s['id']:s for s in sites}
+    event_map={e['id']:e for e in events};site_map={s['id']:s for s in validated_sites(events, sites)}
     reference={(r['evento_id'],code(r['comum_codigo'])):r.get('local_referencia_id') for r in frequency}
     canonical=canonical_by_code;groups={}
     def allowed(city,key):
@@ -64,6 +75,7 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         imported_local_conductor='ENCARREGADO LOCAL' in norm(row.get('cargo'))
         registered_identity=norm(row.get('nome')) in registered_leaders.get(key,set())
         if imported_local_conductor or registered_identity:
+            group['consta_lista']=True
             group['situacao']='PRESENTE';group['fonte']='Presença nominal importada'
             local=site_map.get(row['local_id'],{}).get('nome','Não informado')
             if local not in group['locais']:group['locais'].append(local)
@@ -84,16 +96,21 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         rows=[r for r in rows if target in r['locais']] # ausência não é atribuída a um local de comparecimento
     by_city={}
     for row in rows:
+        row['consta_lista']=bool(row.get('consta_lista'))
+        row['presenca_situacao']=attendance_status(row)
+        row['presenca_lista_label']=attendance_label(row)
+        row['locais_validos']=[local for local in row.get('locais',[]) if norm(local) not in {'LOCAL A CONFERIR','NAO INFORMADO'}] if row['presenca_situacao']=='PRESENTE' else []
         reference_id=reference.get((row['evento_id'],row['comum_chave']))
         row['local_referencia']=site_map.get(reference_id,{}).get('nome') or 'Não informado'
         row['em_outro_local']=bool(row['situacao']=='PRESENTE' and reference_id and row.get('locais')
                                    and row['local_referencia'] not in row['locais'])
         origin=norm(regional_city(row['municipio']))
-        attendance_cities={norm(regional_city(local)) for local in row.get('locais',[])}
+        attendance_cities={norm(regional_city(local)) for local in row.get('locais',[]) if local != 'LOCAL A CONFERIR'}
         row['fora_municipio']=bool(row['situacao']=='PRESENTE' and attendance_cities and origin not in attendance_cities)
-        row['participacao']='FORA DO MUNICÍPIO' if row['fora_municipio'] else 'NO MUNICÍPIO' if row['situacao']=='PRESENTE' else ''
+        row['participacao']=('LOCAL A CONFERIR' if not attendance_cities else
+                             'FORA DO MUNICÍPIO' if row['fora_municipio'] else 'NO MUNICÍPIO') if row['situacao']=='PRESENTE' else ''
         row['situacao_label']=LABELS[row['situacao']]
-        row['registro']=(('Outro local · ' if row['em_outro_local'] else '')+' / '.join(row['locais']) if row['situacao']=='PRESENTE' else row['situacao_label'])
+        row['registro']=row['presenca_lista_label']
         group=by_city.setdefault(row['municipio'],{'municipio':row['municipio'],**{k:0 for k in LABELS},
             'PRESENTE_REFERENCIA':0,'PRESENTE_OUTRO':0,'total':0})
         group[row['situacao']]+=1;group['total']+=1

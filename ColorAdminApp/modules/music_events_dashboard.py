@@ -50,7 +50,6 @@ def candidate_level(level):
 def aggregate(events, records, locations, frequency, filters, catalog=(), eligible=()):
     """Filtra antes de agregar; percentuais usam só vínculos SAM elegíveis."""
     filters = {**filters, 'origem': filters.get('origem') or 'regional'}
-    records = CommonResolver(catalog).records(records)
     by_code = {code(x.get('comum')): x for x in catalog}
     site = {x['id']: x for x in locations}
     reference_site = {(x['evento_id'],code(x['comum_codigo'])):x.get('local_referencia_id') for x in frequency}
@@ -68,6 +67,7 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
         if filters.get('busca') and norm(filters['busca']) not in norm(e['titulo']): continue
         chosen.append(e)
     selected_ids = {x['id'] for x in chosen}
+    records = CommonResolver(catalog).records(x for x in records if x['evento_id'] in selected_ids)
     all_rows = []
     for original in records:
         if original['evento_id'] not in selected_ids or original.get('situacao','PRESENTE') != 'PRESENTE': continue

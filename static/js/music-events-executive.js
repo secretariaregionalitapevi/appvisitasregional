@@ -30,6 +30,7 @@
     host.innerHTML=`<div class="events-trend-summary"><div><span class="events-series-label" style="--series:#2f8de4">Músicos no último</span><strong>${n(s.summary.latest)}</strong>${delta(s.summary)}</div><div><span class="events-series-label" style="--series:#12a594">Organistas no último</span><strong>${n(s.organists_summary.latest)}</strong>${delta(s.organists_summary)}</div></div><svg class="events-main-trend" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(points.map(p=>`${p.date.split('-').reverse().join('/')}: ${p.musicians} músicos e ${p.organists} organistas`).join('; '))}">${grid}${lines}${dates}</svg><p class="events-trend-caption">${points.length===1?'1 encontro registrado. Ainda não é possível medir evolução.':`${points.length} encontros comparáveis · Azul: músicos · Verde: organistas · Vertical: presenças · Horizontal: data do encontro`}</p>`;
   }
   function trendProfile(){
+    if(!data?.evolution){$('#events-history').innerHTML='<div class="events-empty">Carregando histórico dos encontros…</div>';return;}
     const list=data?.evolution?.municipalities||[],s=list[Number($('#events-history-select').value)||0],host=$('#events-history');
     const series=[['musicians','#2f8de4','Músicos'],['organists','#d85a8a','Organistas'],['instructors','#6756c7','Instrutores'],['instructresses','#a66ac7','Instrutoras'],['candidates','#e7a329','Candidatos(as)']];
     if(!s){host.innerHTML='<div class="events-trend-empty"><strong>Sem série comparável neste recorte</strong><p>Selecione um evento ou importe encontros do mesmo município e circuito.</p></div>';return;}
@@ -48,17 +49,24 @@
     host.innerHTML=`<div class="events-trend-summary">${series.map(([field,color,label])=>`<div><span class="events-series-label" style="--series:${color}">${label} no último</span><strong>${n(summaries[field].latest)}</strong>${delta(summaries[field])}</div>`).join('')}</div><svg class="events-main-trend" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(points.map(p=>`${p.date.split('-').reverse().join('/')}: ${p.musicians} músicos, ${p.organists} organistas, ${p.instructors||0} instrutores, ${p.instructresses||0} instrutoras e ${p.candidates||0} candidatos`).join('; '))}">${grid}${lines}${dates}</svg><div class="events-profile-legend">${series.map(([,color,label])=>`<span><i style="background:${color}"></i>${label}</span>`).join('')}</div><p class="events-trend-caption">${points.length} encontros equivalentes · Vertical: pessoas presentes · Horizontal: data. Cargo e nível podem se sobrepor às categorias músico e organista.</p>`;
   }
   $('#events-history-select').onchange=trendProfile;
+  function updateHistory(){
+    const selector=$('#events-history-select'),previous=selector.selectedOptions[0]?.dataset.key;
+    selector.innerHTML=(data?.evolution?.municipalities||[]).map((s,i)=>`<option value="${i}" data-key="${esc(s.name+'|'+s.kind)}">${esc(s.name)} · ${esc(s.kind==='ENSAIO_REGIONAL'?'Ensaio Regional':s.kind.replace('RT_','RT '))}</option>`).join('');
+    const found=[...selector.options].find(o=>o.dataset.key===previous);if(found)selector.value=found.value;trendProfile();
+  }
+  document.addEventListener('music-events-history',({detail})=>{
+    if(detail.error){$('#events-history').textContent=detail.error;return;}
+    if(data){data.evolution=detail.evolution;updateHistory();}
+  });
   $('#events-regional-overview').addEventListener('click',event=>{const b=event.target.closest('[data-city]');if(!b)return;showView('commons');const select=$('#events-city');window.MusicMultiSelect.setValues(select,[b.dataset.city]);window.MusicMultiSelect.refresh(select);select.dispatchEvent(new Event('change',{bubbles:true}));});
   document.addEventListener('music-events-data',({detail:d})=>{data=d;
     const rows=d.regional_overview||[],max=Math.max(1,...rows.map(r=>r.MUSICO+r.ORGANISTA));
     const chartRows=d.filters.origem==='visitantes'?d.municipalities:rows;
     const chartMax=Math.max(1,...chartRows.map(r=>r.MUSICO+r.ORGANISTA));
-    $('#events-regional-overview').innerHTML=`<div class="events-municipality-bar-head"><span>Município de origem</span><span>Quantidade de presenças</span><span>Mús. / Org.</span><span>Total</span></div><div class="events-municipality-bars">${chartRows.slice(0,7).map(r=>`<button type="button" data-city="${esc(r.municipio)}" class="events-municipality-row" title="${esc(r.municipio)}: ${n(r.MUSICO)} músicos e ${n(r.ORGANISTA)} organistas"><span class="events-municipality-name">${esc((r.label||r.municipio).split(' · ')[0])}</span><span class="events-municipality-track"><i style="width:${r.MUSICO/chartMax*100}%;background:#2f8de4"></i><i style="width:${r.ORGANISTA/chartMax*100}%;background:#d85a8a"></i></span><span class="events-municipality-values"><b>${n(r.MUSICO)}</b><b style="color:#d85a8a">${n(r.ORGANISTA)}</b></span><strong>${n(r.MUSICO+r.ORGANISTA)}</strong></button>`).join('')}</div><div class="events-municipality-foot"><span>Valores: <b style="color:#2f8de4">músicos</b> / <b style="color:#d85a8a">organistas</b></span><span>Total musical à direita</span></div>`;
+    $('#events-regional-overview').innerHTML=`<div class="events-municipality-bar-head"><span>Município de origem</span><span>Quantidade de presenças</span><span>Músicos / Organistas</span><span>Total</span></div><div class="events-municipality-bars">${chartRows.slice(0,7).map(r=>`<button type="button" data-city="${esc(r.municipio)}" class="events-municipality-row" title="${esc(r.municipio)}: ${n(r.MUSICO)} músicos e ${n(r.ORGANISTA)} organistas"><span class="events-municipality-name">${esc((r.label||r.municipio).split(' · ')[0])}</span><span class="events-municipality-track"><i style="width:${r.MUSICO/chartMax*100}%;background:#2f8de4"></i><i style="width:${r.ORGANISTA/chartMax*100}%;background:#d85a8a"></i></span><span class="events-municipality-values"><b>${n(r.MUSICO)}</b><b style="color:#d85a8a">${n(r.ORGANISTA)}</b></span><strong>${n(r.MUSICO+r.ORGANISTA)}</strong></button>`).join('')}</div><div class="events-municipality-foot"><span>Valores: <b style="color:#2f8de4">músicos</b> / <b style="color:#d85a8a">organistas</b></span><span>Total musical à direita</span></div>`;
     overviewCharts(d);
 
-    const selector=$('#events-history-select'),previous=selector.selectedOptions[0]?.dataset.key;
-    selector.innerHTML=(d.evolution?.municipalities||[]).map((s,i)=>`<option value="${i}" data-key="${esc(s.name+'|'+s.kind)}">${esc(s.name)} · ${esc(s.kind==='ENSAIO_REGIONAL'?'Ensaio Regional':s.kind.replace('RT_','RT '))}</option>`).join('');
-    const found=[...selector.options].find(o=>o.dataset.key===previous);if(found)selector.value=found.value;trendProfile();
+    updateHistory();
     const roles=Object.entries(d.roles||{}).filter(([name])=>!['MUSICO','MUSICISTA','ORGANISTA','IRMANDADE','NAO INFORMADO'].includes(name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()));
     compact('#events-roles',roles,'#7c6acf');compact('#events-instruments',Object.entries(d.instruments||{}),'#2f8de4');
     const c=d.origin_context||{};$('#events-visitors-reading').textContent=`${n(c.regional)} presenças de origem regional · ${n(c.visitantes)} visitantes de fora.`;

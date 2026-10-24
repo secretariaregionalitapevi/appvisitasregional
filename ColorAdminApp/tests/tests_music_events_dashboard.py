@@ -175,9 +175,14 @@ class DashboardTests(SimpleTestCase):
         req=RequestFactory().get('/musica/eventos/exportar-pdf/')
         req.session={'user_profile':{'full_name':'Teste','role_id':1}}
         response=export_response(d,req,'pdf')
-        self.assertIn('Participacao_por_Comum',response['Content-Disposition'])
+        self.assertIn('PRESENCA_EnR_COTIA_ITAPEVI_SET26.pdf',response['Content-Disposition'])
         text='\n'.join(p.extract_text() for p in PdfReader(io.BytesIO(response.content)).pages)
         self.assertIn('RELATÓRIO UNIFICADO ENSAIO REGIONAL',text)
+        from urllib.parse import unquote
+        d['filters']['municipios'] = ['ITAPEVI']
+        d['events'][0]['data_evento'] = '2026-05-17'
+        renamed = export_response(d,req,'pdf')
+        self.assertIn("filename*=UTF-8''[RELATÓRIO] PRESENÇA_EnR_ITAPEVI_MAI26.pdf", unquote(renamed['Content-Disposition']))
         req=RequestFactory().get('/musica/eventos/exportar-pdf/?relatorio=comuns')
         req.session={'user_profile':{'full_name':'Teste','role_id':1}}
         response=export_response(d,req,'pdf')

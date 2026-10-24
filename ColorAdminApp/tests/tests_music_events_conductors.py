@@ -12,8 +12,17 @@ from ColorAdminApp.modules import music_events
 
 
 class ConductorSummaryTests(SimpleTestCase):
+    def test_sick_and_without_conductor_are_preserved_in_reports(self):
+        from ColorAdminApp.modules.music_events_conductors import attendance_status, attendance_label
+        from ColorAdminApp.modules.music_events_annual_reports import leader_text
+        for state, label, short in [('ENFERMO', 'ENFERMO', 'EF'), ('SEM_ENCARREGADO', 'SEM ENCARREGADO', 'SE')]:
+            row = {'situacao': state}
+            self.assertEqual(attendance_status(row), state)
+            self.assertEqual(attendance_label(row), label)
+            self.assertEqual(leader_text(row), short)
+
     def fixture(self):
-        events=[{'id':'e','titulo':'Ensaio Regional','data_evento':'2026-09-20','tipo':'ENSAIO_REGIONAL','familia':'GERAL','status':'ABERTO'}]
+        events=[{'id':'e','titulo':'Ensaio Regional','data_evento':'2026-07-19','tipo':'ENSAIO_REGIONAL','familia':'GERAL','status':'ABERTO'}]
         sites=[{'id':'l','evento_id':'e','nome':'CAUCAIA DO ALTO'}]
         records=[{'evento_id':'e','local_id':'l','nome':'Encarregado de teste','comum_informada':'BR-22-1 - A','municipio_informado':'COTIA','cargo':'ENCARREGADO LOCAL','categoria':'MUSICO'},
                  {'evento_id':'e','local_id':'l','comum_informada':'BR-22-2 - B','municipio_informado':'COTIA','categoria':'MUSICO'}]
@@ -21,7 +30,8 @@ class ConductorSummaryTests(SimpleTestCase):
 
     def test_infers_present_location_but_never_nj(self):
         e,r,l=self.fixture();data=summarize(e,r,l,[],{})
-        self.assertEqual(data['rows'][0]['registro'],'CAUCAIA DO ALTO')
+        self.assertEqual(data['rows'][0]['registro'],'PRESENTE')
+        self.assertEqual(data['rows'][0]['locais_validos'],['CAUCAIA DO ALTO'])
         self.assertEqual(data['rows'][1]['situacao'],'NAO_INFORMADO')
         self.assertEqual(data['totals'].get('NAO_JUSTIFICOU',0),0)
 
@@ -32,7 +42,7 @@ class ConductorSummaryTests(SimpleTestCase):
         data=summarize(e,r,l,[],{},catalog=[{'comum':'BR-22-1 - A','cidade':'COTIA'}],leaders=leaders)
         row=next(x for x in data['rows'] if x['comum_chave']=='BR-22-1')
         self.assertEqual(row['situacao'],'PRESENTE')
-        self.assertEqual(row['registro'],'CAUCAIA DO ALTO')
+        self.assertEqual(row['registro'],'PRESENTE')
 
     def test_registered_name_resolves_unrecognized_itapevi_common(self):
         e,r,l=self.fixture();r[0].update(cargo='MÚSICO',comum_informada='ITACOLMY',municipio_informado='ITAPEVI',nome='Claudio')
@@ -55,10 +65,10 @@ class ConductorSummaryTests(SimpleTestCase):
         data=summarize(e,r,l,[review],{})
         self.assertEqual(data['totals']['JUSTIFICOU'],1)
         self.assertEqual(data['municipalities'][0]['JUSTIFICOU'],1)
-        self.assertEqual(next(x for x in data['rows'] if x['comum_chave']=='BR-22-3')['registro'],'J · Justificou')
+        self.assertEqual(next(x for x in data['rows'] if x['comum_chave']=='BR-22-3')['registro'],'JUSTIFICOU')
 
     def test_reports_reference_site_and_presence_at_another_rehearsal(self):
-        e,r,l=self.fixture();l.append({'id':'other','evento_id':'e','nome':'ITAPEVI'});r[0]['local_id']='other'
+        e,r,l=self.fixture();l.append({'id':'other','evento_id':'e','nome':'JANDIRA'});r[0]['local_id']='other'
         frequency=[{'evento_id':'e','comum_codigo':'BR-22-1','local_referencia_id':'l'}]
         data=summarize(e,r,l,[],{},frequency=frequency)
         row=next(x for x in data['rows'] if x['comum_chave']=='BR-22-1')
@@ -66,7 +76,8 @@ class ConductorSummaryTests(SimpleTestCase):
         self.assertTrue(row['em_outro_local'])
         self.assertTrue(row['fora_municipio'])
         self.assertEqual(row['participacao'],'FORA DO MUNICÍPIO')
-        self.assertEqual(row['registro'],'Outro local · ITAPEVI')
+        self.assertEqual(row['registro'],'PRESENTE')
+        self.assertEqual(row['locais_validos'],['JANDIRA'])
         self.assertEqual(data['municipalities'][0]['PRESENTE_OUTRO'],1)
 
     def test_every_convoked_common_appears_even_without_attendance(self):
@@ -92,6 +103,24 @@ class ConductorSummaryTests(SimpleTestCase):
         self.assertIn('JUSTIFICOU',statuses)
         text=''.join(p.extract_text() for p in PdfReader(io.BytesIO(build_pdf(data,'Operador',datetime(2026,10,19,12,0)))).pages)
         self.assertNotIn('Trabalho',text);self.assertIn('CAUCAIA DO ALTO',text);self.assertIn('PRESENTE',text);self.assertIn('JUSTIFICOU',text)
+
+    def test_manual_presence_does_not_imply_a_nominal_list_entry(self):
+        e,r,l=self.fixture()
+        review={'evento_id':'e','comum_chave':'BR-22-3','comum_nome':'Comum C','municipio':'COTIA',
+                'situacao':'PRESENTE','observacoes':'','local_id':'l'}
+        data=summarize(e,r,l,[review],{})
+        row=next(item for item in data['rows'] if item['comum_chave']=='BR-22-3')
+        self.assertFalse(row['consta_lista'])
+        self.assertEqual(row['registro'],'PRESENTE')
+
+    def test_invalid_destination_keeps_binary_nominal_presence(self):
+        e,r,l=self.fixture()
+        e[0]['data_evento']='2026-05-17'
+        data=summarize(e,r,l,[],{})
+        row=data['rows'][0]
+        self.assertTrue(row['consta_lista'])
+        self.assertEqual(row['registro'],'PRESENTE')
+        self.assertEqual(row['locais_validos'],[])
 
 
 @override_settings(SUPABASE_URL='https://db.example',SUPABASE_SERVICE_ROLE_KEY='test')

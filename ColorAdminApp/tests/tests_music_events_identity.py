@@ -10,6 +10,49 @@ from ColorAdminApp.modules.music_events_reports import build_excel,build_pdf,sco
 
 
 class IdentityAndRegistryTests(SimpleTestCase):
+    def test_itapevi_report_variants_merge_into_catalog_commons(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        catalog = [{'comum': 'BR-22-0673 - VILA DOUTOR CARDOSO', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-0674 - JARDIM GIÓIA', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-0683 - JARDIM ROSEMARY', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-3050 - JARDIM ROSEMARY II', 'cidade': 'ITAPEVI'}]
+        resolver = CommonResolver(catalog)
+        for source, expected in [('ENGENHEIRO CARDOSO', 'BR-22-0673'), ('JARDIM JOIA', 'BR-22-0674'),
+                                 ('JARDIM ROSIMEIRE 2', 'BR-22-3050'), ('ROZIMEIRE 1', 'BR-22-0683')]:
+            self.assertTrue(resolver.resolve(source, 'ITAPEVI')['comum'].startswith(expected))
+        events = [{'id': 'e', 'data_evento': '2026-05-17', 'tipo': 'ENSAIO_REGIONAL'}]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': str(index),
+                    'comum_informada': common, 'municipio_informado': 'ITAPEVI', 'categoria': 'MUSICO'}
+                   for index, common in enumerate(['ENGENHEIRO CARDOSO', 'VILA DOUTOR CARDOSO'])]
+        data = aggregate(events, resolver.records(records), [{'id': 'l', 'evento_id': 'e', 'nome': 'ITAPEVI'}], [], {}, catalog)
+        self.assertEqual(len(data['rows']), 1)
+        self.assertEqual(data['rows'][0]['MUSICO'], 2)
+        self.assertEqual(data['rows'][0]['comum'], catalog[0]['comum'])
+
+    def test_catalog_names_normalize_prefixes_suffixes_and_known_local_variants(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        catalog = [{'comum': 'BR-22-3510 - SÃO JOÃO', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-0679 - JARDIM BELA VISTA - ITAPEVI', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-2294 - JARDIM SANTA CECÍLIA', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-21-1312 - SITIO JOSÉ TEIXEIRA', 'cidade': 'ITAPEVI'}]
+        resolver = CommonResolver(catalog)
+        for source, expected in [('BAIRRO SÃO JOÃO', 'BR-22-3510'), ('BELA VISTA BAIXA', 'BR-22-0679'),
+                                 ('JD SANTA CECILIA ITAPEVI', 'BR-22-2294'),
+                                 ('SITIO JOSE TEIXEIRA - ITAPEVI', 'BR-21-1312')]:
+            self.assertTrue(resolver.resolve(source, 'ITAPEVI')['comum'].startswith(expected))
+
+    def test_ambiguous_short_name_does_not_merge_distinct_commons(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        resolver = CommonResolver([{'comum': 'BR-22-1 - JARDIM SANTA RITA - ITAPEVI', 'cidade': 'ITAPEVI'},
+                                   {'comum': 'BR-22-2 - VILA SANTA RITA', 'cidade': 'ITAPEVI'}])
+        self.assertIsNone(resolver.resolve('SANTA RITA', 'ITAPEVI'))
+        self.assertTrue(resolver.resolve('VILA SANTA RITA', 'ITAPEVI')['comum'].startswith('BR-22-2'))
+
+    def test_unknown_old_code_with_unambiguous_catalog_name_is_normalized(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        resolver = CommonResolver([{'comum': 'BR-21-1636 - JARDIM ALVORADA', 'cidade': 'JANDIRA'}])
+        self.assertTrue(resolver.resolve('BR-22-0678 - JARDIM ALVORADA', 'JANDIRA')['comum'].startswith('BR-21-1636'))
+
     def fixture(self):
         catalog=[{'comum':'BR-22-2797 - LAGEADO - COTIA','cidade':'COTIA'},
                  {'comum':'BR-22-0416 - MOINHO VELHO','cidade':'COTIA'}]
@@ -56,7 +99,7 @@ class IdentityAndRegistryTests(SimpleTestCase):
         self.assertEqual(sheet['G10'].value,1)
         pdf=PdfReader(io.BytesIO(build_pdf(d,'Operador',datetime(2026,10,19,12))))
         text='\n'.join(page.extract_text() for page in pdf.pages)
-        self.assertIn('Base SAM atual',text)
+        self.assertIn('BASE SAM ATUAL',text.upper())
         self.assertNotIn('Base SAM pendente',text)
 
     def test_export_scope_omits_unused_filters(self):

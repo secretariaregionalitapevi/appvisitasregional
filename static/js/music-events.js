@@ -14,7 +14,7 @@
     try {
       const data=await request('/musica/eventos/api/importacao/previa/',{method:'POST',headers:{'X-CSRFToken':$('#events-import-form [name=csrfmiddlewaretoken]').value},body:form});
       if(version!==previewVersion) return;
-      state.importToken=data.token; $('#import-date').value=data.suggested_date; $('#import-title').value=`Ensaio Regional · ${date(data.suggested_date)}`;
+      state.importToken=data.token; $('#import-date').value=data.suggested_date; $('#import-title').value=`${$('#import-type').value==='ENSAIO_REGIONAL'?'Ensaio Regional':'Reunião Técnica'} · ${date(data.suggested_date)}`;
       $('#import-preview').innerHTML=`<div class="alert alert-success"><strong>${data.count} registros únicos prontos para importar</strong><br>Aba: ${esc(data.sheet)} · Linhas recebidas: ${data.raw_count} · UUIDs repetidos: ${data.duplicates}<br>Possíveis homônimos ou duplicidades com UUID diferente: ${data.possible_duplicates} (preservados para conferência)</div><p><strong>Locais:</strong> ${Object.entries(data.locations).map(([key,value])=>`${esc(key)}: ${value}`).join(' · ')}</p><p><strong>Datas originais:</strong> ${Object.entries(data.dates).map(([key,value])=>`${date(key)}: ${value}`).join(' · ')}</p><p><strong>Classificação proposta:</strong> ${Object.entries(data.categories).map(([key,value])=>`${esc(key)}: ${value}`).join(' · ')}</p><p class="text-muted small">Instrumentistas contam como músicos; órgão e funções de organistas, como organistas. O cargo é preservado separadamente. Nenhum vínculo com pessoa do SAM é presumido.</p>`;
       $('#import-confirm').disabled=false;
     } catch(error) { if(version===previewVersion){$('#import-preview').textContent='Prévia indisponível.';$('#import-error').textContent=error.message;} }
@@ -35,7 +35,7 @@
     try {
       const payload=Object.fromEntries(new FormData(event.target)); delete payload.csrfmiddlewaretoken;
       await request('/musica/eventos/api/eventos/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':event.target.querySelector('[name=csrfmiddlewaretoken]').value},body:JSON.stringify(payload)});
-      bootstrap.Modal.getOrCreateInstance($('#events-create-modal')).hide(); event.target.reset(); $('#event-family').disabled=true; await load(); feedback('Rascunho registrado com o responsável da sessão.','success');
+      bootstrap.Modal.getOrCreateInstance($('#events-create-modal')).hide(); event.target.reset(); $('#event-type').onchange(); await load(); feedback('Rascunho registrado com o responsável da sessão.','success');
     } catch(error) {$('#events-create-error').textContent=error.message;} finally {$('#events-save').disabled=false;}
   };
 })();

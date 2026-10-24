@@ -84,15 +84,17 @@ def sheets(data):
     conductor_rows=[]
     for r in conductors.get('rows',[]):
         present_names=(' / '.join(r.get('nomes') or []) if r['situacao']=='PRESENTE' else '') or r.get('encarregado_nome') or 'Não identificado'
-        status={'PRESENTE':'PRESENTE','JUSTIFICOU':'JUSTIFICOU','NAO_JUSTIFICOU':'NÃO JUSTIFICOU',
-                'NAO_INFORMADO':'NÃO INFORMADO','SEM_ENCARREGADO':'SEM ENCARREGADO','ENFERMO':'ENFERMO'}.get(r['situacao'],r['situacao_label'].upper())
+        status=r.get('presenca_lista_label', 'NJ')
         conductor_rows.append([datetime.strptime(str(r['data'])[:10],'%Y-%m-%d').strftime('%d/%m/%Y'),r['municipio'],
-            r['comum']+'\nEncarregado: '+present_names,status,r.get('participacao',''),' / '.join(r['locais']) if r['situacao']=='PRESENTE' else ''])
+            r['comum']+'\nEncarregado: '+present_names,status,r.get('participacao','') if r.get('consta_lista') and r.get('locais_validos') else '',
+            ' / '.join(r.get('locais_validos',[]))])
     reports=[('Frequência por comum',frequency_headers,frequency,frequency_widths),
             ('Encarregados por comum',['Data','Município de origem','Comum / encarregado','Presença','Participação','Local do ensaio'],
              conductor_rows,[16,26,70,22,30,42]),
-            ('Encarregados por município',['Município','No local de referência','Em outro ensaio','J · Justificaram','NJ · Não justificaram','Não informado','Sem encarregado','Enfermo'],
-             [[r['municipio'],r.get('PRESENTE_REFERENCIA',0),r.get('PRESENTE_OUTRO',0),r['JUSTIFICOU'],r['NAO_JUSTIFICOU'],r['NAO_INFORMADO'],r['SEM_ENCARREGADO'],r['ENFERMO']] for r in conductors.get('municipalities',[])],[34,24,22,24,28,24,24,18]),
+            ('Encarregados por município',['Município','PRESENTE','JUSTIFICOU','NJ','SE','EF'],
+             [[r['municipio']]+[sum(item.get('presenca_situacao')==status for item in conductors.get('rows',[]) if item['municipio']==r['municipio'])
+                                for status in ['PRESENTE','JUSTIFICOU','NAO_JUSTIFICOU','SEM_ENCARREGADO','ENFERMO']]
+              for r in conductors.get('municipalities',[])],[50,25,25,25,25,25]),
             ('Resumo por local',['Local','Músicos','Organistas','Ministério','Apoio','Irmandade','Total'],
              [[x['nome'],x['MUSICO'],x['ORGANISTA'],x['MINISTERIO'],x['APOIO'],x['IRMANDADE'],x['total']] for x in data['locations']], [44,19,19,19,19,19,19]),
             ('Instrumentos',['Músicos por instrumento / Organistas','Participantes presentes'],list(sorted(data['instruments'].items())),[95,45]),
@@ -120,7 +122,7 @@ def executive_story(data,width,style,head,context):
     visible=list(rows[:7])
     if len(rows)>7:
         visible.append({'municipio':'Outros municípios',**{key:sum(r.get(key,0) for r in rows[7:]) for key in ['MUSICO','ORGANISTA','total','encarregados']}})
-    body=[[Paragraph(x,head) for x in ['Município de origem','Músicos','Organistas','Total musical','Enc. locais']]]
+    body=[[Paragraph(x,head) for x in ['Município de origem','Músicos','Organistas','Total musical','Encarregados locais']]]
     for r in visible:body.append([cell(r['municipio']),cell(fmt(r['MUSICO'])),cell(fmt(r['ORGANISTA'])),cell(fmt(r['MUSICO']+r['ORGANISTA'])),cell(fmt(r.get('encarregados',0)))])
     body.append([cell('TOTAL DO RECORTE'),cell(fmt(t.get('MUSICO'))),cell(fmt(t.get('ORGANISTA'))),cell(fmt(musical)),cell(fmt(t.get('encarregados')))])
     table=Table(body,colWidths=[width*.4]+[width*.15]*4,repeatRows=1)
@@ -140,7 +142,7 @@ def executive_story(data,width,style,head,context):
     others=t.get('MUSICO',0)-sum(value for _,value in family_items)
     if others:family_items.append(('Outros / não informado',others))
     composition=bars('Composição dos músicos',family_items,'#2f8de4')
-    staffing=bars('Participação administrativa',[('Enc. locais',t.get('encarregados',0)),('Ministério',t.get('ministerio_cargos',0)),('Apoio',t.get('APOIO',0)),('Irmandade',t.get('IRMANDADE',0))],'#12a594')
+    staffing=bars('Participação administrativa',[('Encarregados locais',t.get('encarregados',0)),('Ministério',t.get('ministerio_cargos',0)),('Apoio',t.get('APOIO',0)),('Irmandade',t.get('IRMANDADE',0))],'#12a594')
     charts=Table([[composition,staffing]],colWidths=[width/2]*2)
     charts.setStyle(TableStyle([('LEFTPADDING',(0,0),(-1,-1),0),('TOPPADDING',(0,0),(-1,-1),0),('VALIGN',(0,0),(-1,-1),'TOP')]))
     comparable=data.get('evolution',{}).get('comparable',False)
@@ -153,10 +155,17 @@ def executive_story(data,width,style,head,context):
         date=lambda v:datetime.strptime(str(v)[:10],'%Y-%m-%d').strftime('%d/%m/%Y')
         message=f"Comparação do mesmo circuito ({date(points[-2]['date'])} a {date(points[-1]['date'])}): músicos {change('musicians')}; organistas {change('organists')}."
     return [Paragraph(escape(scope_label(data)),context),Spacer(1,12),cards,Spacer(1,13),Paragraph('Participação por município de origem',heading),Spacer(1,6),table,Spacer(1,14),charts,
-            Paragraph(escape(message),style),Spacer(1,5),Paragraph('Enc. locais e ministério são cargos e podem estar incluídos no total musical. Não somar novamente ao público geral.',style)]
+            Paragraph(escape(message),style),Spacer(1,5),Paragraph('Encarregados locais e ministério são cargos e podem estar incluídos no total musical. Não somar novamente ao público geral.',style)]
 
 
-def build_presence_model_pdf(data):
+def build_presence_model_pdf(data, actor='Secretaria Musical', now=None):
+    if all(event.get('tipo') == 'ENSAIO_REGIONAL' for event in data.get('events', [])):
+        from .music_events_annual_reports import build_model_pdf
+        return build_model_pdf(data, actor, now)
+    return _build_legacy_presence_pdf(data)
+
+
+def _build_legacy_presence_pdf(data):
     """Reproduz a grade do relatório unificado usado pela Secretaria Musical."""
     stream=io.BytesIO();page_width,page_height=landscape(A4)
     doc=SimpleDocTemplate(stream,pagesize=landscape(A4),leftMargin=30,rightMargin=30,topMargin=26,bottomMargin=24)
@@ -285,7 +294,7 @@ class NumberedCanvas(Canvas):
 
 def build_pdf(data,actor,now):
     if data.get('report')=='comuns':
-        return build_presence_model_pdf(data)
+        return build_presence_model_pdf(data,actor,now)
     stream=io.BytesIO();page_width,page_height=landscape(A4);width=page_width-56
     doc=SimpleDocTemplate(stream,pagesize=landscape(A4),leftMargin=28,rightMargin=28,topMargin=100,bottomMargin=34)
     style=ParagraphStyle('cell',fontName='Helvetica',fontSize=7,leading=9,textColor=colors.HexColor('#243746'))
@@ -375,5 +384,10 @@ def export_response(data,request,file_format):
     response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext=='xlsx' else 'application/pdf')
     prefix={'executivo':'Resumo_Executivo_Ensaios_RTs','encarregados':'Encarregados_Locais','comuns':'Participacao_por_Comum','composicao':'Composicao_Musical'}.get(data.get('report'),'Ensaios_RTs')
     response['Content-Disposition']=f'attachment; filename="{prefix}_{now:%d-%m-%Y_%H-%M}.{ext}"'
+    events = data.get('events', [])
+    if file_format == 'pdf' and data['report'] == 'comuns' and events and all(e.get('tipo') == 'ENSAIO_REGIONAL' for e in events):
+        from .music_events_filenames import presence_filename, download_header
+        cities = data.get('filters', {}).get('municipios') or sorted({r['municipio'] for r in data.get('rows', [])})
+        response['Content-Disposition'] = download_header(presence_filename(cities, [e['data_evento'] for e in events]))
     response['Cache-Control']='private, no-store'
     return response

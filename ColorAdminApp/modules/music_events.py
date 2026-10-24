@@ -13,7 +13,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from .access_control import can_access, service_headers, user_scope, common_catalog
+from .access_control import can_access, service_headers, user_scope, common_catalog, scope_details
 from .gem import can_open_module
 from .music_events_import import parse_workbook, norm
 from .music_events_dashboard import aggregate, code, REGIONAL
@@ -26,20 +26,54 @@ def _allowed(request):
 
 def _read(table, **params):
     rows = []
-    while True:
-        response = requests.get(
-            f'{settings.SUPABASE_URL}/rest/v1/{table}', headers=service_headers(),
-            params={'select': '*', **params, 'offset': len(rows), 'limit': 1000}, timeout=15,
-        )
-        response.raise_for_status()
-        batch = response.json()
-        rows.extend(batch)
-        if len(batch) < 1000:
-            return rows
+    # Reutiliza TLS/conexão entre páginas da mesma consulta.
+    with requests.Session() as client:
+        while True:
+            response = client.get(
+                f'{settings.SUPABASE_URL}/rest/v1/{table}', headers=service_headers(),
+                params={'select': '*', **params, 'offset': len(rows), 'limit': 1000}, timeout=(3.05, 15),
+            )
+            response.raise_for_status()
+            batch = response.json()
+            rows.extend(batch)
+            if len(batch) < 1000:
+                return rows
+
+
+def _registry():
+    registry = cache.get('music-events:registry:v2')
+    if registry is None:
+        registry = _read('musica_acompanhamento_aluno', select='id,nome_aluno,cargo_ministerio,status,nivel,instrumento,comum_congregacao,municipio,updated_at', order='id.asc')
+        cache.set('music-events:registry:v2', registry, 300)
+    return registry
+
+
+def _leaders():
+    members = cache.get('music-events:registered-leaders:v1')
+    if members is None:
+        members = _read(settings.SUPABASE_TABLE_VISITAS_IRMANDADE, select='id,nome,cargo_outros,codigo_comum,comum,cidade,status', cargo_outros='ilike.*encarregado local*', order='id.asc')
+        cache.set('music-events:registered-leaders:v1', members, 300)
+    return members
+
+
+def _reviews(events):
+    reviews = []
+    for start in range(0, len(events), 40):
+        ids = 'in.(' + ','.join(e['id'] for e in events[start:start + 40]) + ')'
+        try:
+            reviews.extend(_read('musica_evento_encarregados', evento_id=ids, order='evento_id.asc,comum_chave.asc'))
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                return [], False
+            raise
+    return reviews, True
 
 
 def _visible_events(request):
     events = _read('musica_eventos', order='data_evento.desc,id.asc')
+    category = request.GET.get('categoria')
+    if category in {'ENSAIO_REGIONAL', 'REUNIAO_TECNICA'}:
+        events = [event for event in events if event['tipo'] == category]
     scope = user_scope(request)
     if scope['level'] in {'regional', 'global'}:
         return events
@@ -67,10 +101,16 @@ def _visible_events(request):
     return [event for event in events if event['id'] in authorized]
 
 
-def page(request):
+def page(request, category="ENSAIO_REGIONAL"):
     if not _allowed(request):
         return render(request, 'pages/403.html', {'message': 'Seu perfil não possui acesso à pasta Música.'}, status=403)
-    return render(request, 'pages/music_events.html')
+    from django.utils import timezone
+    return render(request, 'pages/music_events.html', {
+        'event_category': category,
+        'event_page_title': 'Ensaios Regionais' if category == 'ENSAIO_REGIONAL' else 'Reuniões Técnicas',
+        'scope': scope_details(user_scope(request)),
+        'annual_year': timezone.localdate().year,
+    })
 
 
 @require_http_methods(['GET', 'POST'])
@@ -109,9 +149,13 @@ def api_events(request):
             response = requests.post(f'{settings.SUPABASE_URL}/rest/v1/musica_eventos',
                                      headers=service_headers('return=representation'), json=payload, timeout=15)
             response.raise_for_status()
+            _invalidate_annual()
             return JsonResponse({'item': response.json()[0]}, status=201)
-        events = _visible_events(request)
-        bases = _read('musica_evento_bases', order='referencia.desc,id.asc') if manager else []
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            events_future = executor.submit(_visible_events, request)
+            bases_future = executor.submit(_read, 'musica_evento_bases', order='referencia.desc,id.asc') if manager else None
+            events = events_future.result()
+            bases = bases_future.result() if bases_future else []
         # A lista não expõe documentos, hashes, observações privadas ou população nominal.
         bases = [{'id': row['id'], 'referencia': row['referencia'], 'origem': row['origem'],
                   'homologada': bool(row.get('homologada_em'))} for row in bases]
@@ -195,11 +239,20 @@ def api_import(request, action):
             raise ValueError('Confira título, tipo e família.')
         if kind == 'ENSAIO_REGIONAL':
             family = 'GERAL'
+            from .music_events_calendar import regular_destinations
+            from .music_events_identity import normalized_city
+            destinations = regular_destinations(day)
+            invalid = sorted({row['local'] for row in result['records']
+                              if destinations is not None and normalized_city(row['local']) not in destinations})
+            if invalid:
+                raise ValueError('LOCAIS INCOMPATÍVEIS COM A DATA DO ENSAIO: ' + ', '.join(invalid)
+                                 + '. CONFIRA A COLUNA LOCAL_ENSAIO ANTES DE IMPORTAR.')
         response = requests.post(f'{settings.SUPABASE_URL}/rest/v1/rpc/musica_evento_importar_appcont',
             headers=service_headers(), json={'p_hash': result['sha256'], 'p_titulo': title, 'p_data': day,
                 'p_tipo': kind, 'p_familia': family, 'p_usuario_id': str(actor_id), 'p_usuario_nome': actor,
                 'p_resumo': {k: v for k, v in result.items() if k != 'records'}, 'p_registros': result['records']}, timeout=90)
         response.raise_for_status()
+        _invalidate_annual()
         return JsonResponse(response.json())
     except (ValueError, TypeError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)
@@ -207,32 +260,48 @@ def api_import(request, action):
         return JsonResponse({'error': 'Não foi possível confirmar a importação. Verifique a conexão e se a migração 030 foi aplicada. Você pode repetir a confirmação; o mesmo arquivo não será duplicado.'}, status=502)
 
 
-def dashboard_data(request):
+def dashboard_data(request, *, include_history=True, history_only=False):
     events = _visible_events(request)
     filters = {key:request.GET.get(key,'').strip() for key in
                ('evento','ano','mes','inicio','fim','tipo','status','busca','local','origem')}
     filters.update(municipios=request.GET.getlist('municipio'), comuns=request.GET.getlist('comum'))
+    if request.GET.get('inicial') == '1' and not filters['evento'] and events:
+        filters['evento'] = events[0]['id']
     filters['origem'] = filters.get('origem') or 'regional'
     if filters['origem'] not in {'regional','visitantes','todos'}:
         raise ValueError('Origem inválida.')
     chosen = aggregate(events,[],[],[],filters)['events']
     history_filters=dict(filters);history_filters.pop('evento',None)
     history_events=aggregate(events,[],[],[],history_filters)['events']
+    if not include_history:
+        history_events = chosen
     records, locations, frequencies, eligible = [],[],[],[]
-    # Lotes limitam o comprimento da URL; cada fonte é paginada em _read.
-    for start in range(0,len(history_events),40):
-        batch = history_events[start:start+40]
-        ids = 'in.(' + ','.join(e['id'] for e in batch) + ')'
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            people_future=executor.submit(_read,'musica_evento_presencas',evento_id=ids,situacao='eq.PRESENTE',order='id.asc')
-            sites_future=executor.submit(_read,'musica_evento_locais',evento_id=ids,order='id.asc')
-            if any(e.get('base_id') for e in batch):
-                frequency_future=executor.submit(_read,'musica_evento_frequencia',evento_id=ids,order='evento_id.asc,comum_codigo.asc')
-                eligible_future=executor.submit(_read,'musica_evento_elegiveis',evento_id=ids,order='evento_id.asc,sam_pessoa_id.asc')
-                frequencies.extend(frequency_future.result());eligible.extend(eligible_future.result())
-            records.extend(people_future.result());locations.extend(sites_future.result())
+    # Todas as fontes independentes iniciam juntas, inclusive os cadastros maiores.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        catalog_future = executor.submit(common_catalog) if chosen or history_events else None
+        if not history_only:
+            registry_future = executor.submit(_registry)
+            leaders_future = executor.submit(_leaders)
+            reviews_future = executor.submit(_reviews, chosen)
+        pending = []
+        for start in range(0,len(history_events),40):
+            batch = history_events[start:start+40]
+            ids = 'in.(' + ','.join(e['id'] for e in batch) + ')'
+            pending.append((records, executor.submit(_read,'musica_evento_presencas',select='id,evento_id,local_id,sam_pessoa_id,nome,comum_codigo,comum_informada,municipio_informado,categoria,instrumento,familia,nivel,cargo,situacao',evento_id=ids,situacao='eq.PRESENTE',order='id.asc')))
+            pending.append((locations, executor.submit(_read,'musica_evento_locais',select='id,evento_id,nome',evento_id=ids,order='id.asc')))
+            if not history_only and any(e.get('base_id') for e in batch):
+                pending.append((frequencies, executor.submit(_read,'musica_evento_frequencia',evento_id=ids,order='evento_id.asc,comum_codigo.asc')))
+                pending.append((eligible, executor.submit(_read,'musica_evento_elegiveis',evento_id=ids,order='evento_id.asc,sam_pessoa_id.asc')))
+        for target, future in pending:
+            target.extend(future.result())
+        catalog = catalog_future.result() if catalog_future else []
+        if not history_only:
+            registry = registry_future.result()
+            members = leaders_future.result()
+            reviews, review_available = reviews_future.result()
     scope = user_scope(request)
-    catalog = common_catalog() if chosen else []
+    from .music_events_calendar import validated_sites
+    locations = validated_sites(events, locations)
     records=CommonResolver(catalog).records(records)
     if scope['level'] not in {'regional','global'}:
         canonical = {code(x.get('comum')):x for x in catalog}
@@ -244,30 +313,23 @@ def dashboard_data(request):
         records = [x for x in records if permitted(x)]
         frequencies = [x for x in frequencies if permitted({'comum_codigo':x['comum_codigo'],'municipio_informado':x['municipio']})]
         eligible = [x for x in eligible if permitted(x)]
+    if history_only:
+        from .music_events_evolution import evolution
+        return {'evolution': evolution(events, records, locations, filters, catalog)}
     result = aggregate(events,records,locations,frequencies,filters,catalog,eligible)
+    result['allow_original'] = scope['level'] in {'regional', 'global'}
+    if result['allow_original']:
+        from .music_events_closing import physical_closings
+        result['physical_closings'] = physical_closings(result['events'], records, locations)
     from .music_events_registry import attach_registry
-    registry=cache.get('music-events:registry:v2')
-    if registry is None:
-        registry=_read('musica_acompanhamento_aluno',select='id,nome_aluno,cargo_ministerio,status,nivel,instrumento,comum_congregacao,municipio,updated_at',order='id.asc')
-        cache.set('music-events:registry:v2',registry,300)
     if scope['level'] not in {'regional','global'}:
         registry=[r for r in registry if permitted({'comum_codigo':r.get('comum_congregacao'),'municipio_informado':r.get('municipio')})]
     attach_registry(result,registry,catalog)
     from .music_events_conductors import summarize
-    reviews=[];review_available=True
-    for event in chosen:
-        try:reviews.extend(_read('musica_evento_encarregados',evento_id='eq.'+event['id'],order='comum_chave.asc'))
-        except requests.HTTPError as exc:
-            if exc.response is not None and exc.response.status_code==404:review_available=False;break
-            raise
     if scope['level'] not in {'regional','global'}:
         reviews=[r for r in reviews if permitted({'comum_codigo':r['comum_chave'],'municipio_informado':r['municipio']})]
     result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry)
     from .music_events_leaders import attach_leaders
-    members=cache.get('music-events:registered-leaders:v1')
-    if members is None:
-        members=_read(settings.SUPABASE_TABLE_VISITAS_IRMANDADE,select='id,nome,cargo_outros,codigo_comum,comum,cidade,status',cargo_outros='ilike.*encarregado local*',order='id.asc')
-        cache.set('music-events:registered-leaders:v1',members,300)
     if scope['level'] not in {'regional','global'}:
         members=[r for r in members if permitted({'comum_codigo':r.get('codigo_comum') or r.get('comum'),'municipio_informado':r.get('cidade')})]
     attach_leaders(result,registry,catalog,members)
@@ -282,13 +344,15 @@ def dashboard_data(request):
             entry=by_key.get(code(row['comum']))
             if entry:
                 row['encarregado']=entry['registro']
+                row['encarregado_na_lista']=entry['consta_lista']
+                row['encarregado_status']=entry['presenca_situacao']
                 row['encarregado_situacao']=entry['situacao']
-                row['encarregado_local']=' / '.join(entry.get('locais',[]))
-                row['encarregado_situacao_label']=entry['situacao_label']+(' · '+entry['registro'] if entry['situacao']=='PRESENTE' else '')
+                row['encarregado_local']=' / '.join(entry.get('locais_validos',[]))
+                row['encarregado_situacao_label']=entry['presenca_lista_label']
     elif len(chosen)>1:
         for row in result['rows']:row['encarregado']='Ver conferência por evento'
     from .music_events_evolution import evolution
-    result['evolution']=evolution(events,records,locations,filters,catalog)
+    result['evolution']=evolution(events,records,locations,filters,catalog) if include_history else None
     # Não listar locais de outros territórios a perfis restritos.
     if scope['level'] not in {'regional','global'}:
         visible_sites = {x['local_id'] for x in records}
@@ -320,8 +384,11 @@ def api_conductor(request,event_id):
         if status=='JUSTIFICOU' and not notes:raise ValueError('Informe a justificativa ou a referência recebida.')
         local=raw.get('local_id') if status=='PRESENTE' else None
         if status=='PRESENTE' and not local:raise ValueError('Selecione o local de comparecimento.')
-        if status=='PRESENTE' and not _read('musica_evento_locais',evento_id=f'eq.{event_id}',id='eq.'+str(local)):
-            raise ValueError('Selecione o local em que o encarregado esteve presente.')
+        if status=='PRESENTE':
+            from .music_events_calendar import valid_destination
+            sites = _read('musica_evento_locais',evento_id=f'eq.{event_id}',id='eq.'+str(local))
+            if not sites or not valid_destination(event, sites[0]):
+                raise ValueError('LOCAL INCOMPATÍVEL COM A DATA DO ENSAIO. CONFIRA O DESTINO DO ENCARREGADO LOCAL.')
         profile=request.session.get('user_profile') or {};actor_id=request.session.get('user_id') or profile.get('user_id')
         actor=profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email')
         if not actor_id or not actor:return JsonResponse({'error':'Entre novamente para identificar o responsável.'},status=401)
@@ -333,7 +400,7 @@ def api_conductor(request,event_id):
         else:
             method=requests.post;payload.update(evento_id=str(event_id),comum_chave=key,created_by_user_id=str(actor_id),created_by_name=actor)
         response=method(f'{settings.SUPABASE_URL}/rest/v1/musica_evento_encarregados',headers=service_headers('return=representation'),json=payload,params=params,timeout=15)
-        response.raise_for_status();return JsonResponse({'item':response.json()[0]})
+        response.raise_for_status();_invalidate_annual();return JsonResponse({'item':response.json()[0]})
     except (ValueError,TypeError) as exc:return JsonResponse({'error':str(exc)},status=400)
     except requests.RequestException:return JsonResponse({'error':'Não foi possível salvar. Confira a conexão e aplique a migração 031 para habilitar a conferência dos encarregados.'},status=502)
 
@@ -343,9 +410,101 @@ def api_dashboard(request):
     if not _allowed(request):
         return JsonResponse({'error':'Acesso não autorizado.'},status=403)
     try:
-        return JsonResponse(dashboard_data(request))
+        return JsonResponse(dashboard_data(request, include_history=False))
     except requests.RequestException:
         return JsonResponse({'error':'Não foi possível carregar os indicadores. Tente atualizar novamente.'},status=502)
+
+
+@require_http_methods(['GET'])
+def api_evolution(request):
+    if not _allowed(request):
+        return JsonResponse({'error': 'Acesso não autorizado.'}, status=403)
+    try:
+        return JsonResponse(dashboard_data(request, history_only=True))
+    except requests.RequestException:
+        return JsonResponse({'error': 'Não foi possível carregar o histórico.'}, status=502)
+
+
+def _annual_sources(year):
+    # O calendário é regional; o resultado nominal e as comuns passam pelo escopo abaixo.
+    events = _read('musica_eventos', select='id,titulo,data_evento,tipo,familia,status,base_id',
+                   tipo='eq.ENSAIO_REGIONAL', data_evento=f'gte.{year}-01-01',
+                   **{'and': f'(data_evento.lt.{year + 1}-01-01)'}, order='data_evento.asc,id.asc')
+    records, sites, invitations = [], [], []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        registry_future = executor.submit(_registry)
+        leaders_future = executor.submit(_leaders)
+        catalog_future = executor.submit(common_catalog)
+        review_future = executor.submit(_reviews, events)
+        pending = []
+        for start in range(0, len(events), 40):
+            ids = 'in.(' + ','.join(e['id'] for e in events[start:start + 40]) + ')'
+            pending.append((records, executor.submit(_read, 'musica_evento_presencas', evento_id=ids,
+                select='id,evento_id,local_id,sam_pessoa_id,pessoa_chave,origem_registro_id,nome,comum_codigo,comum_informada,municipio_informado,categoria,instrumento,familia,nivel,cargo,situacao',
+                situacao='eq.PRESENTE', order='id.asc')))
+            pending.append((sites, executor.submit(_read, 'musica_evento_locais', evento_id=ids,
+                select='id,evento_id,nome,municipio', order='id.asc')))
+            pending.append((invitations, executor.submit(_read, 'musica_evento_convocacoes', evento_id=ids,
+                select='evento_id,comum_codigo,local_referencia_id,encarregado_situacao,encarregado_observacoes',
+                order='evento_id.asc,comum_codigo.asc')))
+        for target, future in pending:
+            target.extend(future.result())
+        reviews, available = review_future.result()
+        return {'events': events, 'records': records, 'sites': sites, 'registry': registry_future.result(),
+                'catalog': catalog_future.result(), 'reviews': reviews, 'members': leaders_future.result(),
+                'invitations': invitations, 'review_available': available}
+
+
+def _invalidate_annual():
+    cache.set('music-events:annual-generation', uuid4().hex, None)
+
+
+def annual_dashboard_data(request):
+    from django.utils import timezone
+    from .music_events_annual import annual_data
+    year = int(request.GET.get('ano') or timezone.localdate().year)
+    if not 2000 <= year <= 2100:
+        raise ValueError('Selecione um ano entre 2000 e 2100.')
+    status = request.GET.get('situacao')
+    if status and status not in {'no_participation', 'no_musicians', 'no_organists', 'no_leader'}:
+        raise ValueError('Filtro de acompanhamento inválido.')
+    generation = cache.get('music-events:annual-generation', '0')
+    key = f'music-events:annual-sources:v1:{year}:{generation}'
+    sources = None if request.GET.get('atualizar') == '1' else cache.get(key)
+    if sources is None:
+        sources = _annual_sources(year)
+        cache.set(key, sources, 60)
+    # Só as fontes são compartilhadas no servidor. Escopo e filtros são reaplicados a cada chamada.
+    result = annual_data(**sources, year=year, scope=user_scope(request),
+                         cities=request.GET.getlist('municipio'), commons=request.GET.getlist('comum'))
+    if status:
+        result['rows'] = [row for row in result['rows'] if row[status]]
+    return result
+
+
+@require_http_methods(['GET'])
+def api_annual(request):
+    if not _allowed(request):
+        return JsonResponse({'error': 'Acesso não autorizado.'}, status=403)
+    try:
+        return JsonResponse(annual_dashboard_data(request))
+    except (ValueError, TypeError) as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except requests.RequestException:
+        return JsonResponse({'error': 'Não foi possível carregar o acompanhamento anual.'}, status=502)
+
+
+@require_http_methods(['GET'])
+def export_annual(request):
+    if not _allowed(request):
+        return JsonResponse({'error': 'Acesso não autorizado.'}, status=403)
+    try:
+        from .music_events_annual_reports import export_response
+        return export_response(annual_dashboard_data(request), request)
+    except (ValueError, TypeError) as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except requests.RequestException:
+        return JsonResponse({'error': 'Não foi possível gerar o relatório anual.'}, status=502)
 
 
 @require_http_methods(['GET'])
@@ -356,6 +515,19 @@ def export_dashboard(request, file_format):
         return JsonResponse({'error':'Formato inválido.'},status=404)
     try:
         from .music_events_reports import export_response
-        return export_response(dashboard_data(request),request,file_format)
+        data = dashboard_data(request)
+        dates = {str(event['data_evento'])[:10] for event in data.get('events', [])}
+        if (file_format == 'pdf' and request.GET.get('relatorio', 'comuns') == 'comuns' and len(dates) == 1
+                and all(event['tipo'] == 'ENSAIO_REGIONAL' for event in data['events'])
+                and data.get('filters', {}).get('origem', 'regional') == 'regional'):
+            from copy import copy
+            from .music_events_annual import annual_comparison
+            annual_request = copy(request)
+            annual_request.GET = request.GET.copy()
+            day = next(iter(dates))
+            annual_request.GET['ano'] = day[:4]
+            annual_request.GET.pop('situacao', None)
+            data['comparison'] = annual_comparison(annual_dashboard_data(annual_request), day)
+        return export_response(data,request,file_format)
     except requests.RequestException:
         return JsonResponse({'error':'Não foi possível consultar os dados para exportação.'},status=502)

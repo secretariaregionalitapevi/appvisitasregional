@@ -81,7 +81,19 @@ class AppContApiTests(SimpleTestCase):
 
     def setUp(self):
         cache.clear()
-        cache.set('music-events-import:actor-1:token-1',{'sha256':'a'*64,'records':[{'nome':'Teste'}]},1800)
+        cache.set('music-events-import:actor-1:token-1',{'sha256':'a'*64,'records':[{'nome':'Teste','local':'ITAPEVI'}]},1800)
+
+    @patch.object(music_events,'_allowed',return_value=True)
+    @patch.object(music_events,'user_scope',return_value={'level':'global'})
+    @patch.object(music_events.requests,'post')
+    def test_may_import_rejects_cotia_before_writing(self, post, scope, allowed):
+        cache.set('music-events-import:actor-1:token-1',{'sha256':'a'*64,'records':[{'nome':'Teste','local':'COTIA'}]},1800)
+        request = self.request({'token':'token-1','titulo':'Ensaio de maio','tipo':'ENSAIO_REGIONAL',
+                               'data_evento':'2026-05-17','conferido':True})
+        response = music_events.api_import(request,'confirmar')
+        self.assertEqual(response.status_code,400)
+        self.assertIn('COTIA',response.content.decode())
+        post.assert_not_called()
 
     @patch.object(music_events,'_allowed',return_value=True)
     @patch.object(music_events,'user_scope',return_value={'level':'global'})
