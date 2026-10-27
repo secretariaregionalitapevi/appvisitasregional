@@ -1,4 +1,4 @@
--- Remove a carga incorreta originada em darpe_musicos e recria a base canônica.
+m]ap-- Remove a carga incorreta originada em darpe_musicos e recria a base canônica.
 -- Depois desta migration, darpe_cadastro fica vazia e deve receber somente a
 -- planilha oficial validada pelo import_darpe_workbook.py.
 begin;
