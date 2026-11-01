@@ -2225,6 +2225,7 @@ def apiVisitasAgenda(request):
                 for item in visible_catalog
             }
             member_locations = {}
+            known_member_ids = set()
             scoped_members = []
             offset = 0
             page_size = 1000
@@ -2239,6 +2240,8 @@ def apiVisitasAgenda(request):
                 members_response.raise_for_status()
                 member_page = members_response.json()
                 for item in member_page:
+                    if item.get('id'):
+                        known_member_ids.add(str(item['id']))
                     member_common = canonical_common_names.get(normalize_text(item.get('comum')), '')
                     if item.get('id') and member_common in target_commons:
                         member_locations[str(item['id'])] = member_common
@@ -2251,6 +2254,8 @@ def apiVisitasAgenda(request):
             repaired_links = []
             for row in rows:
                 row_member_id = str(row.get('irmandade_id') or '')
+                if row_member_id in known_member_ids and row_member_id not in member_locations:
+                    continue  # Existing members of other commons must never be reconciled here.
                 if row_member_id not in member_locations:
                     orphan_member_id = row_member_id
                     matched_member = unique_member_for_orphan_visit(row, scoped_members)

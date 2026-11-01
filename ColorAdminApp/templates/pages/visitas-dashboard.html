@@ -192,6 +192,27 @@
         $('#filter-mes').val(currentMonth);
     };
 
+    const dashboardPeriodStorageKey = 'visitas-dashboard-period-v1';
+    const rememberDashboardPeriod = () => {
+        try {
+            localStorage.setItem(dashboardPeriodStorageKey, JSON.stringify({
+                year: $('#filter-ano').val(), month: $('#filter-mes').val()
+            }));
+        } catch (error) { /* O painel continua funcionando se o armazenamento estiver indisponivel. */ }
+    };
+    const restoreDashboardPeriod = () => {
+        resetDashboardPeriodToCurrent();
+        try {
+            const saved = JSON.parse(localStorage.getItem(dashboardPeriodStorageKey));
+            if (!saved || !/^\d{4}$/.test(saved.year) || !/^(all|[1-9]|1[0-2])$/.test(saved.month)) return;
+            if (!$(`#filter-ano option[value="${saved.year}"]`).length) {
+                $('#filter-ano').prepend(new Option(saved.year, saved.year));
+            }
+            $('#filter-ano').val(saved.year);
+            $('#filter-mes').val(saved.month);
+        } catch (error) { /* Sem preferencia valida, usar o mes vigente. */ }
+    };
+
     const formatNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const formatDisplayText = value => {
@@ -210,7 +231,7 @@
         const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleUpperCase('pt-BR').trim();
         if (normalized === 'GVI' || normalized.includes('GRUPO DE VISITAS') || normalized.includes('MINISTERIO')) return {label:'GVI - Irmandade', css:'category-gvi'};
         if (normalized === 'GVM' || normalized.includes('MOCIDADE')) return {label:'GVM - Mocidade', css:'category-gvm'};
-        if (normalized === 'GVE' || normalized === 'GVMU' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO')) return {label:'GVE - Músicos', css:'category-gve'};
+        if (normalized === 'GVE' || normalized === 'GVMU' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO') || normalized.includes('ORGANISTA')) return {label:'GVE - Músicos', css:'category-gve'};
         if (normalized === 'RF' || normalized.includes('REUNIAO FAMILIAR')) return {label:'RF - Reunião Familiar', css:'category-rf'};
         if (normalized === 'RE' || normalized.includes('EVANGELIZACAO')) return {label:'RE - Evangelização', css:'category-re'};
         return {label:formatDisplayText(value || 'Não informada'), css:'category-other'};
@@ -219,7 +240,7 @@
         const explicit = String(item.equipe_tipo || '').toUpperCase();
         if (explicit === 'LOCAL' || explicit === 'REGIONAL') return explicit;
         const teamName = String(item.equipe_responsavel || '').trim();
-        if (!teamName) return 'UNASSIGNED';
+        if (!teamName) return 'LOCAL';
         return /^Grupo\s+[A-Z]$/i.test(teamName) ? 'REGIONAL' : 'LOCAL';
     };
     const normalizedStatus = item => String(item.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -232,9 +253,9 @@
         return 'source-default';
     };
     const contextDescriptions = {
-        ALL: 'Relatório mensal local + agenda local + agenda regional.',
-        LOCAL: 'Relatório mensal + visitas pontuais das equipes locais.',
-        REGIONAL: 'Visitas pontuais realizadas pelos grupos regionais.'
+        ALL: 'Visitas realizadas da agenda local e regional.',
+        LOCAL: 'Visitas realizadas locais, incluindo registros sem equipe.',
+        REGIONAL: 'Visitas realizadas pelos grupos regionais.'
     };
     const syncGroupContextWithCommon = commonSelection => {
         const hasSpecificCommon = Boolean(commonSelection && commonSelection !== '__all__');
@@ -252,52 +273,44 @@
             return;
         }
         
+        const selectedCommon = $('#filter-comum').val();
+        const scopedAgenda = agendaData.filter(item => !selectedCommon || selectedCommon === '__all__'
+            || String(item.comum || '').trim() === selectedCommon);
         const contextualAgenda = dashboardGroupContext === 'ALL'
-            ? agendaData
-            : agendaData.filter(item => agendaTeamType(item) === dashboardGroupContext);
-        // O fechamento mensal e a fonte oficial do projeto principal. A agenda
-        // so compoe o total quando ainda nao existe fechamento para o periodo/comum.
-        const contextualData = dashboardGroupContext === 'REGIONAL' ? [] : data;
+            ? scopedAgenda
+            : scopedAgenda.filter(item => agendaTeamType(item) === dashboardGroupContext);
         const commonIdentity = comum => {
             const value = String(comum || '').trim().toUpperCase();
             const code = value.match(/BR-\d{2}-\d{4}/);
             return code ? code[0] : value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
         };
         const getKey = (mes, ano, comum) => `${parseInt(mes, 10)}-${parseInt(ano, 10)}-${commonIdentity(comum)}`;
-        const monthlyKeys = new Set(contextualData.map(item => getKey(item.referencia_mes, item.referencia_ano, item.comum)));
-        const agendaForTotals = dashboardGroupContext === 'REGIONAL'
-            ? contextualAgenda
-            : contextualAgenda.filter(item => {
-                if (dashboardGroupContext === 'ALL' && agendaTeamType(item) === 'REGIONAL') return true;
-                const dt = moment(item.data_inicio);
-                return dt.isValid() && !monthlyKeys.has(getKey(dt.month() + 1, dt.year(), item.comum));
-            });
+        const categoryKey = value => {
+            const cat = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+            if (cat === 'GVM' || cat.includes('MOCIDADE')) return 'gvm';
+            if (cat === 'GVE' || cat === 'GVMU' || /MUSICO|ORGANISTA|ENCARREGADO/.test(cat)) return 'gve';
+            if (cat === 'RF' || cat.includes('REUNIAO FAMILIAR')) return 'rf';
+            if (cat === 'RE' || cat.includes('EVANGELIZACAO')) return 're';
+            return 'gvi';
+        };
+        const realizedAgenda = contextualAgenda.filter(item => normalizedStatus(item).trim() === 'realizada');
+        const agendaForTotals = realizedAgenda.filter(item => {
+            if (!moment(item.data_inicio).isValid()) return false;
+            return !selectedCommon || selectedCommon === '__all__'
+                || commonIdentity(item.comum) === commonIdentity(selectedCommon);
+        });
         let agendaGVI = 0, agendaGVM = 0, agendaGVE = 0, agendaRF = 0, agendaRE = 0;
         agendaForTotals.forEach(item => {
-            const cat = (item.categoria || '').toUpperCase().trim();
-            if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) agendaGVI++;
-            else if (cat === 'GVM' || cat.includes('MOCIDADE')) agendaGVM++;
-            else if (cat === 'GVE' || cat === 'GVMU' || cat.includes('ENCARREGADO') || cat.includes('MÚSICO') || cat.includes('MUSICO')) agendaGVE++;
-            else if (cat === 'RF' || cat.includes('REUNIÃO FAMILIAR') || cat.includes('REUNIAO FAMILIAR')) agendaRF++;
-            else if (cat === 'RE' || cat.includes('EVANGELIZAÇÃO') || cat.includes('EVANGELIZACAO')) agendaRE++;
-            else agendaGVI++;
-        });
-
-        let manualGVI = 0, manualGVM = 0, manualGVE = 0, manualRF = 0, manualRE = 0;
-        contextualData.forEach(d => {
-            manualGVI += parseInt(d.gvi || 0, 10);
-            manualGVM += parseInt(d.gvm || 0, 10);
-            manualGVE += parseInt(d.gve || 0, 10);
-            manualRF += parseInt(d.rf || 0, 10);
-            manualRE += parseInt(d.re || 0, 10);
+            const category = categoryKey(item.categoria);
+            if (category === 'gvi') agendaGVI++;
+            else if (category === 'gvm') agendaGVM++;
+            else if (category === 'gve') agendaGVE++;
+            else if (category === 'rf') agendaRF++;
+            else if (category === 're') agendaRE++;
         });
 
         const totals = {
-            gvi: manualGVI + agendaGVI,
-            gvm: manualGVM + agendaGVM,
-            gve: manualGVE + agendaGVE,
-            rf: manualRF + agendaRF,
-            re: manualRE + agendaRE
+            gvi: agendaGVI, gvm: agendaGVM, gve: agendaGVE, rf: agendaRF, re: agendaRE
         };
         totals.visitas = totals.gvi + totals.gvm + totals.gve + totals.rf + totals.re;
 
@@ -309,11 +322,11 @@
         $('#kpi-rf').text(formatNum(totals.rf));
         $('#kpi-re').text(formatNum(totals.re));
 
-        const statusCount = status => contextualAgenda.filter(item => normalizedStatus(item) === status).length;
+        const statusCount = status => contextualAgenda.filter(item => normalizedStatus(item).trim() === status).length;
         const realized = statusCount('realizada');
         const notRealized = statusCount('nao realizada');
         const cancelled = statusCount('cancelada');
-        const durations = contextualAgenda.map(item => Number(item.duracao_minutos)).filter(value => Number.isFinite(value) && value > 0);
+        const durations = agendaForTotals.map(item => Number(item.duracao_minutos)).filter(value => Number.isFinite(value) && value > 0);
         const completionBase = realized + notRealized + cancelled;
         $('#ops-realizadas').text(formatNum(realized));
         $('#ops-nao-realizadas').text(formatNum(notRealized));
@@ -325,30 +338,13 @@
             .text(averageDuration !== null ? `${averageDuration} min` : '\u2014')
             .toggleClass('duration-alert', canSeeDurationAlert && averageDuration > 30);
 
-        const manualTotal = manualGVI + manualGVM + manualGVE + manualRF + manualRE;
-        const provisionalTotal = agendaGVI + agendaGVM + agendaGVE + agendaRF + agendaRE;
-        const operationalTotal = contextualAgenda.length;
         const contextLabel = dashboardGroupContext === 'LOCAL' ? 'Projeto local' : (dashboardGroupContext === 'REGIONAL' ? 'Projeto regional' : 'Geral');
-        const sourceDetail = dashboardGroupContext === 'REGIONAL'
-            ? `${formatNum(provisionalTotal)} visitas pontuais regionais`
-            : provisionalTotal
-                ? `${formatNum(manualTotal)} no fechamento mensal + ${formatNum(provisionalTotal)} visitas provis\u00f3rias sem fechamento`
-                : `${formatNum(manualTotal)} no fechamento mensal. ${formatNum(operationalTotal)} registros da agenda exibidos apenas no detalhamento`;
-        $('#exec-text').html(`<b>${contextLabel}: ${formatNum(totals.visitas)} visitas.</b> ${sourceDetail}.`);
+        $('#exec-text').html(`<b>${contextLabel}: ${formatNum(totals.visitas)} visitas realizadas.</b> Somente registros da agenda com status Realizada, dentro da localidade e do per\u00edodo selecionados.`);
 
-        // Mesclar data e agendaData para a Tabela
+        // Agrupar somente as realizadas por comum e mes para a tabela.
         const tableMap = {};
         
-        contextualData.forEach(d => {
-            const k = getKey(d.referencia_mes, d.referencia_ano, d.comum);
-            if (!tableMap[k]) tableMap[k] = { ...d, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, total_visitas: 0, status: 'Mensal' };
-            ['gvi', 'gvm', 'gve', 'rf', 're'].forEach(category => {
-                tableMap[k][category] += parseInt(d[category] || 0, 10);
-            });
-            tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
-        });
-
-        contextualAgenda.forEach(item => {
+        agendaForTotals.forEach(item => {
             const dt = moment(item.data_inicio);
             const mes = dt.month() + 1;
             const ano = dt.year();
@@ -360,19 +356,9 @@
 
             if (!tableMap[k]) {
                 tableMap[k] = { referencia_mes: mes, referencia_ano: ano, comum: comum, gvi: 0, gvm: 0, gve: 0, rf: 0, re: 0, status: 'Agenda' };
-            } else if (String(tableMap[k].status || '').includes('Mensal')) {
-                tableMap[k].status = 'Mensal + Agenda';
-                // Agenda local detalha o fechamento; grupos regionais continuam independentes.
-                if (agendaTeamType(item) !== 'REGIONAL') return;
             }
             
-            const cat = (item.categoria || '').toUpperCase().trim();
-            if (cat === 'GVI' || cat.includes('IRMANDADE') || cat.includes('GRUPO DE VISITAS') || cat.includes('MINISTÉRIO') || cat.includes('MINISTERIO')) tableMap[k].gvi++;
-            else if (cat === 'GVM' || cat.includes('MOCIDADE')) tableMap[k].gvm++;
-            else if (cat === 'GVE' || cat === 'GVMU' || cat.includes('ENCARREGADO') || cat.includes('MÚSICO') || cat.includes('MUSICO')) tableMap[k].gve++;
-            else if (cat === 'RF' || cat.includes('REUNIÃO FAMILIAR') || cat.includes('REUNIAO FAMILIAR')) tableMap[k].rf++;
-            else if (cat === 'RE' || cat.includes('EVANGELIZAÇÃO') || cat.includes('EVANGELIZACAO')) tableMap[k].re++;
-            else tableMap[k].gvi++;
+            tableMap[k][categoryKey(item.categoria)]++;
             
             tableMap[k].total_visitas = tableMap[k].gvi + tableMap[k].gvm + tableMap[k].gve + tableMap[k].rf + tableMap[k].re;
         });
@@ -383,9 +369,9 @@
             return a.comum.localeCompare(b.comum);
         });
 
-        renderTrendChart(contextualAgenda, combinedTableData);
+        renderTrendChart(agendaForTotals, combinedTableData);
         renderMixChart(totals);
-        renderRankingList(combinedTableData, contextualAgenda);
+        renderRankingList(combinedTableData, agendaForTotals);
         renderTable(combinedTableData);
     };
 
@@ -402,7 +388,7 @@
         const categoryKey = value => {
             const normalized = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
             if (normalized === 'GVM' || normalized.includes('MOCIDADE')) return 'gvm';
-            if (normalized === 'GVE' || normalized === 'GVMU' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO')) return 'gve';
+            if (normalized === 'GVE' || normalized === 'GVMU' || normalized.includes('ENCARREGADO') || normalized.includes('MUSICO') || normalized.includes('ORGANISTA')) return 'gve';
             if (normalized === 'RF' || normalized.includes('REUNIAO FAMILIAR')) return 'rf';
             if (normalized === 'RE' || normalized.includes('EVANGELIZACAO')) return 're';
             return 'gvi';
@@ -604,15 +590,7 @@
         if (mes === 'undefined' || !mes) mes = 'all';
 
         try {
-            const dashboardParams = new URLSearchParams({ ano, mes });
-            if (municipio) dashboardParams.set('municipio', municipio);
-            if (comum) dashboardParams.set('comum', comum);
-            const res = await fetch(`/visitas/api/dashboard/?${dashboardParams.toString()}`);
-            const data = await res.json();
-            if (requestSequence !== dashboardRequestSequence) return;
-            if (data.error) throw new Error(data.error);
-
-            currentData = Array.isArray(data) ? data : [];
+            currentData = [];
 
             const agendaParams = new URLSearchParams();
             if (dataDe) agendaParams.set('start_date', saoPauloDayStart(dataDe));
@@ -637,10 +615,13 @@
             const dataAgenda = await resAgenda.json();
             if (requestSequence !== dashboardRequestSequence) return;
             let filteredAgenda = [];
-            if (!dataAgenda.error) {
+            if (!resAgenda.ok || dataAgenda.error) throw new Error(dataAgenda.error || 'Falha ao consultar a agenda.');
+            if (Array.isArray(dataAgenda)) {
                 // Production metrics include only visits with a final outcome.
                 const finalStatuses = new Set(['realizada', 'nao realizada', 'cancelada']);
-                filteredAgenda = dataAgenda.filter(item => finalStatuses.has(normalizedStatus(item)));
+                filteredAgenda = dataAgenda.filter(item => finalStatuses.has(normalizedStatus(item).trim())
+                    && (!comum || String(item.comum || '').trim() === comum)
+                    && (!municipio || String(item.municipio || '').trim() === municipio));
                 
                 window.globalAgendaVisitas = filteredAgenda;
                 window.dashboardAgendaData = filteredAgenda;
@@ -844,9 +825,7 @@
     };
 
     $(document).ready(function () {
-        // A abertura do painel sempre começa no mês vigente. "Todos" e os
-        // demais meses continuam disponíveis para escolha manual.
-        resetDashboardPeriodToCurrent();
+        restoreDashboardPeriod();
         const rebuildDashboardCommons = (municipio, selected = '') => {
             const select = $('#filter-comum');
             if (select.hasClass('select2-hidden-accessible')) select.select2('destroy');
@@ -887,6 +866,8 @@
             renderRealizedVisits(contextualAgenda.filter(item => normalizedStatus(item) === 'realizada'));
         });
 
+        $('#filter-ano, #filter-mes').on('change', rememberDashboardPeriod);
+
         // Auto-update on filter change
         $('#filter-ano, #filter-mes, #peridodo-de, #peridodo-ate').on('change', applyFilters);
 
@@ -895,7 +876,7 @@
                 Swal.fire({
                     icon: 'info',
                     title: 'Painel Atualizado',
-                    text: `Sincronização concluída: ${currentData.length} registros de visitas processados.`,
+                    text: `Sincronização concluída: ${(window.dashboardAgendaData || []).filter(item => normalizedStatus(item).trim() === 'realizada').length} visitas realizadas processadas.`,
                     confirmButtonColor: '#2c3e50',
                     timer: 3000
                 });
@@ -904,6 +885,7 @@
 
         $('#btn-clear').click(() => {
             resetDashboardPeriodToCurrent();
+            rememberDashboardPeriod();
             if (dashboardAccessLevel === 'regional' || dashboardAccessLevel === 'global') $('#filter-municipio').val(dashboardDefaultCity);
             rebuildDashboardCommons(
                 $('#filter-municipio').val() || dashboardDefaultCity,
