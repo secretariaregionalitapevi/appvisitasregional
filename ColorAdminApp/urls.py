@@ -13,6 +13,7 @@ from . import sam_audit
 from . import sam_backup_views
 from . import gem_classes
 from . import music_events
+from .modules import music_ministry
 from . import music_exams
 from . import gem_projection
 from . import gem_projection
@@ -118,6 +119,10 @@ urlpatterns = [
     path('gem/api/lancamentos/<str:source_name>/<uuid:record_id>/', gem.api_student_record, name='gemStudentRecord'),
     path('gem/api/documentos/<uuid:record_id>/', gem.activity_document, name='gemActivityDocument'),
     path('musica/eventos/', music_events.page, name='musicEvents'),
+    path('musica/ministerio/', music_ministry.page, name='musicMinistry'),
+    path('musica/ministerio/api/painel/', music_ministry.api_dashboard, name='musicMinistryDashboard'),
+    path('musica/ministerio/api/<str:action>/', music_ministry.api_manage, name='musicMinistryManage'),
+    path('musica/ministerio/exportar-<str:file_format>/', music_ministry.export, name='musicMinistryExport'),
     path('musica/ensaios-regionais/', music_events.page, name='musicRegionalRehearsals'),
     path('musica/reunioes-tecnicas/', music_events.page, {'category': 'REUNIAO_TECNICA'}, name='musicTechnicalMeetings'),
     path('musica/eventos/api/importacao/<str:action>/', music_events.api_import, name='musicEventsImport'),

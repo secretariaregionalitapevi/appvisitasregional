@@ -20,28 +20,41 @@
   function render(){
     if(!data)return;
     const filter=$('#annual-status').value, rows=data.rows.filter(row=>!filter||row[filter]);
-    const dates=[...new Set(data.rows.flatMap(row=>row.cells.map(cell=>cell.date)))].sort();
+    const groups=[
+      {title:'Itapevi e Pirapora do Bom Jesus · Janeiro / Maio / Setembro',cities:['ITAPEVI','PIRAPORA DO BOM JESUS']},
+      {title:'Cotia, Caucaia, VGP, Jandira e Santana · Março / Julho / Novembro',cities:['COTIA','CAUCAIA DO ALTO','VARGEM GRANDE PAULISTA','JANDIRA','SANTANA DE PARNAÍBA']}
+    ];
     const summary=data.summary;
     $('#annual-metrics').innerHTML=[['Comuns acompanhadas',summary.commons],['Sem registro dos três públicos',summary.no_participation],['Nenhum músico registrado',summary.no_musicians],['Nenhuma organista registrada',summary.no_organists],['Sem registro do encarregado',summary.no_leader]].map(([label,value])=>`<div><small>${label}</small><strong>${n(value)}</strong></div>`).join('');
     $('#annual-city-reports').innerHTML='<span>PDF por município:</span>'+data.selected_cities.map(city=>`<button type="button" class="btn btn-sm btn-white border" data-annual-city="${esc(city)}">${esc(city)}</button>`).join('');
-    $('#annual-head').innerHTML=`<tr><th>Município / comum / encarregado cadastrado</th><th>Cadastro SAM<br>Músicos / Organistas</th>${dates.map(day=>`<th>${date(day)}<br><button type="button" class="btn btn-sm btn-white border" data-annual-date="${day}">PDF deste ensaio</button></th>`).join('')}<th>Participação no ano</th></tr>`;
-    $('#annual-body').innerHTML=rows.map(row=>{
+    $('#annual-tables').innerHTML=groups.map(group=>{
+      const groupRows=rows.filter(row=>group.cities.includes(row.municipio));
+      if(!groupRows.length)return '';
+      const dates=[...new Set(groupRows.flatMap(row=>row.cells.map(cell=>cell.date)))].sort();
+      const columns=dates.length+3;
+      let municipality=null;
+      return `<h4 class="px-3 py-3 mb-0 fs-6">${esc(group.title)}</h4><div class="table-responsive annual-table-scroll mb-4"><table class="table events-table annual-table mb-0"><thead><tr><th>Município / comum / encarregado cadastrado</th><th>Cadastro SAM<br>Músicos / Organistas</th>${dates.map(day=>`<th>${date(day)}<br><button type="button" class="btn btn-sm btn-white border" data-annual-date="${day}">PDF deste ensaio</button></th>`).join('')}<th>Participação no ano</th></tr></thead><tbody>`+groupRows.map(row=>{
+      const municipalityHeading=municipality!==row.municipio?`<tr class="events-city-group"><th colspan="${columns}">${esc(row.municipio)}</th></tr>`:'';
+      municipality=row.municipio;
       const cells=new Map(row.cells.map(cell=>[cell.date,cell]));
       const readings=[];
+      const leaderCount=Number(row.leader_sessions||0), loadedCount=Number(row.loaded_sessions||0);
+      const leaderBadge=loadedCount?`<strong class="annual-leader-total ${leaderCount===0?'annual-leader-zero':leaderCount===loadedCount?'annual-leader-full':'annual-leader-partial'}">Encarregado local: ${leaderCount}/${loadedCount} presenças</strong>`:'<strong>Encarregado local: sem dados carregados</strong>';
       if(row.no_musicians)readings.push('Nenhum músico');
       if(row.no_organists)readings.push('Nenhuma organista');
       if(row.no_leader)readings.push('Sem registro do encarregado');
-      return `<tr${row.no_participation?' class="annual-no-participation"':''}><td><small>${esc(row.municipio)}</small><strong>${esc(row.comum)}</strong><small>${esc(row.encarregado_nome)}</small></td><td><div class="annual-base"><span>MÚSICOS <b>${row.cadastro_musicos??'—'}</b></span><span>ORGANISTAS <b>${row.cadastro_organistas??'—'}</b></span></div></td>${dates.map(day=>{
+      return municipalityHeading+`<tr${row.no_participation?' class="annual-no-participation"':''}><td><small>${esc(row.municipio)}</small><strong>${esc(row.comum)}</strong><small>${esc(row.encarregado_nome)}</small></td><td><div class="annual-base"><span>MÚSICOS <b>${row.cadastro_musicos??'—'}</b></span><span>ORGANISTAS <b>${row.cadastro_organistas??'—'}</b></span></div></td>${dates.map(day=>{
         const cell=cells.get(day);
-        if(!cell)return '<td class="annual-outside">Outro circuito</td>';
+        if(!cell)return '<td class="annual-outside">Não previsto neste ciclo</td>';
         if(!cell.loaded)return '<td class="annual-outside">Sem dados carregados</td>';
         const status=cell.leader_attendance??(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO'].includes(cell.leader_status)?cell.leader_status:'NAO_JUSTIFICOU');
         const onList=status==='PRESENTE',leader={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO'}[status];
         const places=onList?(cell.leader_valid_locations??cell.leader_locations).filter(local=>!['LOCAL A CONFERIR','NÃO INFORMADO'].includes(local.toUpperCase())):[];
         const noLeader=!onList, noThree=cell.musicians===0&&cell.organists===0&&noLeader;
         return `<td${noThree?' class="annual-missing-three"':''}><div class="annual-attendance"><span${cell.musicians===0?' class="annual-missing-category" title="SEM MÚSICO REGISTRADO NESTE ENSAIO"':''}>Músicos <b>${n(cell.musicians)}</b> <small>${pct(cell.musician_percent,row.cadastro_musicos)}</small></span><span${cell.organists===0?' class="annual-missing-category" title="SEM ORGANISTA REGISTRADA NESTE ENSAIO"':''}>Organistas <b>${n(cell.organists)}</b> <small>${pct(cell.organist_percent,row.cadastro_organistas)}</small></span></div><div class="annual-leader conductor-status ${status} ${status==='NAO_JUSTIFICOU'?'annual-missing-category':''}">Encarregado local: ${esc(leader)}</div>${places.length?`<small>LOCAL: ${esc(places.join(' / '))}</small>`:''}${noThree?'<small class="annual-missing-label">SEM REGISTRO DOS TRÊS PÚBLICOS</small>':''}${cell.unresolved?'<small class="text-warning">Conciliação de comuns pendente</small>':''}</td>`;
-      }).join('')}<td><strong>${row.loaded_sessions}/3 ensaios carregados</strong><small>Com músicos: ${row.musician_sessions} · Com organistas: ${row.organist_sessions} · Com encarregado local: ${row.leader_sessions}</small><small>${esc(row.reading)}</small>${row.year_complete?'<span class="annual-complete">Três ensaios carregados</span>':'<span class="annual-partial">Ano ainda incompleto</span>'}${readings.length?`<small>${readings.map(esc).join(' · ')}</small>`:''}</td></tr>`;
-    }).join('')||`<tr><td colspan="${dates.length+3}" class="events-empty">Nenhuma comum para os filtros selecionados.</td></tr>`;
+      }).join('')}<td>${leaderBadge}<small>Com músicos: ${row.musician_sessions} · Com organistas: ${row.organist_sessions} · Com encarregado local: ${row.leader_sessions}</small><small>${esc(row.reading)}</small><small>Cobertura dos dados: ${loadedCount}/${row.expected_sessions??3} ensaios carregados${row.year_complete?'':' · Ano ainda incompleto'}</small>${readings.length?`<small>${readings.map(esc).join(' · ')}</small>`:''}</td></tr>`;
+    }).join('')+'</tbody></table></div>';
+    }).join('')||'<div class="events-empty">Nenhuma comum para os filtros selecionados.</div>';
     $('#annual-note').textContent=data.note;
   }
   async function load(force=false){
@@ -57,7 +70,7 @@
       $('#annual-city').innerHTML='<option value="">Todos os municípios</option>'+(['COTIA','CAUCAIA DO ALTO','VARGEM GRANDE PAULISTA'].every(c=>data.cities.includes(c))?'<option value="ADMIN_COTIA">Administração: Cotia / Caucaia / VGP</option>':'')+data.cities.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
       $('#annual-city').value=city;
       if(city==='PANEL_SELECTION'){$('#annual-city').add(new Option('Municípios selecionados no painel',city));$('#annual-city').value=city;}
-      $('#annual-message').textContent=`Ano ${data.year} · ${data.sessions.filter(s=>s.loaded).length} datas com dados carregados. Cada comum considera os ensaios do seu circuito. Encarregado local: PRESENTE, J, NJ, SE ou EF.`;
+      $('#annual-message').textContent=`Ano ${data.year} · ${data.sessions.filter(s=>s.loaded).length} datas com dados carregados. Acompanhamento separado por ciclo e município. Itapevi / Pirapora: janeiro, maio e setembro. Demais municípios: março, julho e novembro. Encarregado local: PRESENTE, J, NJ, SE ou EF.`;
       render();$('#annual-pdf').disabled=false;
     }catch(error){if(current===version&&error.name!=='AbortError')$('#annual-message').textContent=error.message;}
     finally{if(current===version){$('#annual-refresh').disabled=false;controller=null;}}
@@ -95,5 +108,5 @@
   },true);
   $('#annual-pdf').onclick=event=>download(undefined,undefined,event.currentTarget);
   $('#annual-city-reports').onclick=event=>{const button=event.target.closest('[data-annual-city]');if(button)void download(button.dataset.annualCity,undefined,button);};
-  $('#annual-head').onclick=event=>{const button=event.target.closest('[data-annual-date]');if(button)void download(undefined,button.dataset.annualDate,button);};
+  $('#annual-tables').onclick=event=>{const button=event.target.closest('[data-annual-date]');if(button)void download(undefined,button.dataset.annualDate,button);};
 })();

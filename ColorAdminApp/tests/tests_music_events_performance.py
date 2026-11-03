@@ -45,6 +45,18 @@ class MusicEventsPerformanceTests(SimpleTestCase):
         self.assertTrue(self.calls)
         self.assertTrue(all(params['evento_id'] == 'in.(current)' for _, params in self.calls))
 
+    def test_selected_rehearsal_limits_commons_and_leader_catalog_to_cycle(self):
+        self.catalog.append({'comum': 'BR-22-2 - Cotia', 'cidade': 'COTIA'})
+        result, _, _ = self.data(include_history=False)
+        self.assertEqual(set(result['filters']['municipios']), {'ITAPEVI', 'PIRAPORA DO BOM JESUS'})
+        self.assertEqual([row['city'] for row in result['conductors']['catalog']], ['ITAPEVI'])
+
+    def test_explicit_municipality_selection_is_preserved(self):
+        self.request = RequestFactory().get('/', {'evento': 'current', 'municipio': ['ITAPEVI', 'PIRAPORA DO BOM JESUS']})
+        result, _, _ = self.data(include_history=False)
+        self.assertTrue(all(row['municipio'] in {'ITAPEVI', 'PIRAPORA DO BOM JESUS'} for row in result['rows']))
+        self.assertTrue(all(row['municipio'] in {'ITAPEVI', 'PIRAPORA DO BOM JESUS'} for row in result['conductors']['rows']))
+
     def test_history_keeps_comparisons_without_loading_sam_or_reviews(self):
         result, registry_calls, leader_calls = self.data(history_only=True)
         self.assertEqual([point['event_id'] for point in result['evolution']['points']], ['old', 'current'])

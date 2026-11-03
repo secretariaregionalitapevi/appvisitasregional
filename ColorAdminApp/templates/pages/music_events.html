@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}{{ event_page_title }} | Música{% endblock %}
-{% block css %}<link rel="stylesheet" href="{% static 'css/musicalizacao-multiselect.css' %}"><link rel="stylesheet" href="{% static 'css/music-events.css' %}?v=20261101-2"><link rel="stylesheet" href="{% static 'css/music-events-admin.css' %}?v=20261101-2">{% endblock %}
+{% block css %}<link rel="stylesheet" href="{% static 'css/musicalizacao-multiselect.css' %}"><link rel="stylesheet" href="{% static 'css/music-events.css' %}?v=20261101-2"><link rel="stylesheet" href="{% static 'css/music-events-admin.css' %}?v=20261103-2">{% endblock %}
 {% block content %}
 <div class="music-events" data-event-category="{{ event_category }}">
   <section class="events-hero mb-4"><div><div class="small fw-bold text-uppercase mb-2">Painel de gestão · Administração musical</div><h1>{{ event_page_title }}</h1><p class="mb-0">Presença, alcance regional e acompanhamento das comuns.</p></div><div class="events-hero-controls{% if event_category == "REUNIAO_TECNICA" %} events-hero-controls-rt{% endif %}"><div><label for="events-event">Evento em análise</label><select class="form-select" id="events-event"><option value="">Todos os eventos</option></select></div><div{% if event_category == "ENSAIO_REGIONAL" %} hidden{% endif %}><label for="events-type">Público / família</label><select id="events-type" class="form-select"><option value="">Todas as famílias</option><option value="RT_GERAL">RT Geral</option><option value="RT_CORDAS">RT · Cordas</option><option value="RT_MADEIRAS">RT · Madeiras</option><option value="RT_METAIS">RT · Metais</option></select></div></div><div class="music-scope text-md-end"><div class="small text-white-50 mb-1">Escopo desta visão</div><strong>{{ scope.nivel|title }}{% if scope.municipio %} · {{ scope.municipio }}{% endif %}{% if scope.comum %}<br>{{ scope.comum }}{% endif %}</strong><div class="small text-white-50 mt-1"></div></div></section>
@@ -52,7 +52,7 @@
     <div id="annual-message" class="px-3 small" role="status" aria-live="polite">Abra esta visão para consultar o ano completo. O município acompanha o filtro do painel; o ano desta visão considera todos os ensaios carregados.</div>
     <div id="annual-metrics" class="annual-metrics"></div>
     <div id="annual-city-reports" class="annual-city-reports" aria-label="Relatórios separados por município"></div>
-    <div class="table-responsive annual-table-scroll"><table class="table events-table annual-table mb-0"><thead id="annual-head"></thead><tbody id="annual-body"></tbody></table></div>
+    <div id="annual-tables"></div>
     <div id="annual-note" class="annual-note"></div>
   </section>
 </div>
@@ -101,4 +101,4 @@
 </div><div class="modal-footer"><button class="btn btn-white border" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success" type="submit" id="import-confirm" disabled>Confirmar importação</button></div>
 </form></div></div></div>
 {% endblock %}
-{% block js %}<script src="{% static 'js/musicalizacao-multiselect.js' %}"></script><script src="{% static 'js/music-events-attendance.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events-dashboard.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events-conductors.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events-executive.js' %}?v=20261101-2"></script>{% if event_category == 'ENSAIO_REGIONAL' %}<script src="{% static 'js/music-events-annual.js' %}?v=20261024-10"></script>{% endif %}{% endblock %}
+{% block js %}<script src="{% static 'js/musicalizacao-multiselect.js' %}"></script><script src="{% static 'js/music-events-attendance.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events-dashboard.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events.js' %}?v=20261101-2"></script><script src="{% static 'js/music-events-conductors.js' %}?v=20261103-1"></script><script src="{% static 'js/music-events-executive.js' %}?v=20261101-2"></script>{% if event_category == 'ENSAIO_REGIONAL' %}<script src="{% static 'js/music-events-annual.js' %}?v=20261103-2"></script>{% endif %}{% endblock %}

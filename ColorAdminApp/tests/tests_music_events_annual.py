@@ -48,6 +48,13 @@ def fixture():
 
 
 class AnnualMonitoringTests(SimpleTestCase):
+    def test_partial_invitations_do_not_remove_calendar_sessions(self):
+        e, r, s, registry, catalog = fixture()
+        invitations = [{'evento_id': event['id'], 'comum_codigo': 'BR-22-1'} for event in e[:3]]
+        data = annual_data(e, r, s, registry, catalog, [], [], invitations, 2026,
+                           {'level': 'regional'}, ['ITAPEVI'])
+        self.assertEqual([row['loaded_sessions'] for row in data['rows']], [3, 3])
+
     def test_comparison_uses_previous_loaded_date_from_the_same_circuit(self):
         from ColorAdminApp.modules.music_events_annual import annual_comparison
         e,r,s,registry,catalog=fixture()

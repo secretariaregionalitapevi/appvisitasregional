@@ -85,6 +85,9 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
         cities += sorted({x['city'] for x in all_rows if norm(x['city']) not in regional_names})
     common_options_rows = [x for x in all_rows if filters['origem']=='todos' or
                           ((norm(x['city']) in regional_names)==(filters['origem']=='regional'))]
+    if filters.get('municipios'):
+        selected_cities = {norm(regional_city(city)) for city in filters['municipios']}
+        common_options_rows = [row for row in common_options_rows if norm(row['city']) in selected_cities]
     common_options = sorted({(x['common_key'],x['common'],x['city']) for x in common_options_rows})
     def in_area(city, common):
         return (not filters.get('municipios') or norm(regional_city(city)) in {norm(regional_city(x)) for x in filters['municipios']}) and (

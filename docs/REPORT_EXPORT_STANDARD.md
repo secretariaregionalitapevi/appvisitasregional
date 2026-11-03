@@ -74,4 +74,4 @@ Antes de entregar uma alteração:
 - Datas pedagógicas de MSA, Método, Hinário, Provas, Escalas e Atividades devem usar `dd/mm/AAAA`, sem horário artificial.
 - O banco deve preservar os tipos `date` e `timestamp`; a formatação acontece somente na apresentação/exportação.
 - Não exportar datas ISO (`AAAA-mm-dd`) nem depender da formatação automática do Excel ou do navegador.
-- Em nomes de arquivo, nos quais `/` e `:` não são permitidos, usar o equivalente seguro `dd-mm-AAAA_HH-mm`.
+- Em nomes de arquivo, nos quais `/` e `:` não são permitidos, usar o equivalente seguro `dd_mm_AAAA_HH_mm` (ou `dd_mm_AAAA` quando não houver horário).

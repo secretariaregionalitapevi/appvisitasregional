@@ -77,7 +77,8 @@ def sidebar_menu(request):
 		'children': [
 			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' },
 			{ 'url': '/musica/ensaios-regionais/', 'title': 'Ensaios Regionais', 'name': 'musicEvents', 'active_prefixes': ['/musica/eventos/'] },
-			{ 'url': '/musica/reunioes-tecnicas/', 'title': 'Reuniões Técnicas', 'name': 'musicTechnicalMeetings' }
+			{ 'url': '/musica/reunioes-tecnicas/', 'title': 'Reuniões Técnicas', 'name': 'musicTechnicalMeetings' },
+			{ 'url': '/musica/ministerio/', 'title': 'Acompanhamento', 'name': 'musicMinistry' }
 		]
 	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-building-shield', 'title': 'Administração', 'name': 'administration',

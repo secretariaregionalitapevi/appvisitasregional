@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 from .access_control import can_access, service_headers, user_scope, common_catalog, scope_details
 from .gem import can_open_module
 from .music_events_import import parse_workbook, norm
-from .music_events_dashboard import aggregate, code, REGIONAL
+from .music_events_dashboard import aggregate, code, REGIONAL, regional_city
 from .music_events_identity import CommonResolver
 
 
@@ -271,6 +271,12 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     if filters['origem'] not in {'regional','visitantes','todos'}:
         raise ValueError('Origem inválida.')
     chosen = aggregate(events,[],[],[],filters)['events']
+    # Sem recorte manual, um ensaio regular acompanha somente os municípios do ciclo.
+    if chosen and not filters['municipios'] and filters['origem'] == 'regional':
+        from .music_events_calendar import regular_destinations
+        cycles = [regular_destinations(e['data_evento']) if e['tipo'] == 'ENSAIO_REGIONAL' else None for e in chosen]
+        if all(cycles):
+            filters['municipios'] = sorted({regional_city(city) for cycle in cycles for city in cycle})
     history_filters=dict(filters);history_filters.pop('evento',None)
     history_events=aggregate(events,[],[],[],history_filters)['events']
     if not include_history:
@@ -341,7 +347,9 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     result['conductors']['available']=review_available
     result['conductors']['catalog']=[{'key':code(x['comum']),'name':x['comum'],'city':x['cidade']}
         for x in catalog if norm(x.get('cidade')) in {norm(c) for c in REGIONAL}
-        and can_access(scope,x)]
+        and can_access(scope,x)
+        and (not filters['municipios'] or norm(regional_city(x['cidade'])) in {norm(regional_city(c)) for c in filters['municipios']})
+        and (not filters['comuns'] or code(x['comum']) in filters['comuns'])]
     result['conductors']['sites']=[{'id':x['id'],'evento_id':x['evento_id'],'nome':x['nome']} for x in locations if x['evento_id'] in {e['id'] for e in chosen}]
     if len(chosen)==1:
         by_key={r['comum_chave']:r for r in result['conductors']['rows']}

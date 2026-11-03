@@ -28,7 +28,7 @@
     $('#conductor-notice').textContent='SITUA\u00c7\u00c3O DO ENCARREGADO: PRESENTE, JUSTIFICOU, NJ, SEM ENCARREGADO OU ENFERMO.';table();
   });
   $('#conductor-filter').onchange=table;$('#conductor-city-filter').onchange=table;$('#conductor-add').onclick=()=>open(null);$('#conductor-body').onclick=e=>{const b=e.target.closest('[data-conductor]');if(b)open(current.rows[Number(b.dataset.conductor)]);};
-  const conductorExport=format=>window.MusicEventsDashboard.download(format,'encarregados',{municipio:$('#conductor-city-filter').value});
+  const conductorExport=format=>window.MusicEventsDashboard.download(format,'encarregados',$('#conductor-city-filter').value?{municipio:$('#conductor-city-filter').value}:{});
   $('#conductor-excel').onclick=()=>conductorExport('excel');
   $('#conductor-pdf').onclick=()=>conductorExport('pdf');
   $('#conductor-event').onchange=fillSites;$('#conductor-status').onchange=status;

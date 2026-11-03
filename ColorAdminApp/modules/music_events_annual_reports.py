@@ -17,6 +17,7 @@ from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
 from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
 from .music_events_identity import normalized_city
 from .music_events_import import norm
+from .music_events_filenames import report_scope
 from .music_events_closing import closing_for
 from .music_events_conductors import attendance_status, attendance_label
 
@@ -222,7 +223,7 @@ def model_header(place, date, actor='SECRETARIA MUSICAL', now=None, page=1):
              para('ENSAIOS REGIONAIS', ParagraphStyle('report-module', parent=BOLD, fontSize=12, leading=16, textColor=colors.HexColor('#1E4B7A'))),
              para('RELATÓRIO UNIFICADO ENSAIO REGIONAL', CENTER)]
     emitted = f'{now:%d/%m/%Y %H:%M}' if now else '—'
-    meta = para(f'PÁGINA: {page}\nMUNICÍPIO: {place}\nDATA DO ENSAIO: {date}\nEMISSÃO: {emitted}\nRESPONSÁVEL: {actor}',
+    meta = para(f'PÁGINA: {page}\nRECORTE: {place}\nENSAIO: {date}\nEMISSÃO: {emitted}\nRESPONSÁVEL: {actor}',
                 ParagraphStyle('report-context', parent=STYLE, alignment=2, fontSize=7, leading=10))
     institution = Table([['', title, meta]], colWidths=[190, USEFUL - 380, 190])
     institution.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -350,7 +351,7 @@ def build_model_pdf(data, actor='Secretaria Musical', now=None, include_summary=
     event = next(iter(data.get('events', [])), {})
     date = date_label(event['data_evento']) if event.get('data_evento') else 'Período selecionado'
     selected_cities = data.get('filters', {}).get('municipios', [])
-    place = ' E '.join(selected_cities) if selected_cities else ' E '.join(dict.fromkeys(x['nome'].upper() for x in data.get('locations', []))) or 'REGIONAL ITAPEVI'
+    place = report_scope(selected_cities)
     # O formato é por encontro: consolidado de vários encontros deve usar a visão anual.
     if len({e['data_evento'] for e in data.get('events', [])}) > 1:
         date = 'PERÍODO CONSOLIDADO'
@@ -514,7 +515,7 @@ def annual_matrix_pdf(data, actor, now):
                   para('Regional Itapevi - São Paulo', CENTER),
                   Paragraph('ENSAIOS REGIONAIS', ParagraphStyle('module', parent=BOLD, fontSize=12, leading=17, textColor=colors.HexColor('#1E4B7A'))),
                   para('Acompanhamento anual por comum', CENTER)]
-        recorte = ', '.join(data['selected_cities']) if len(data['selected_cities']) <= 2 else 'Regional / municípios selecionados'
+        recorte = report_scope(data['selected_cities'])
         meta = para(f'Página: {document.page}\nAno: {data["year"]}\nEmissão: {now:%d/%m/%Y %H:%M}\nMunicípio: {recorte}\nResponsável: {actor}',
                     ParagraphStyle('metadata', parent=STYLE, alignment=2, fontSize=8, leading=11))
         heading = Table([['', center, meta]], colWidths=[190, USEFUL - 380, 190])
@@ -564,10 +565,9 @@ def export_response(data, request):
     profile = request.session.get('user_profile') or {}
     actor = profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email') or 'Usuário'
     content = build_annual_pdf(data, actor, now, request.GET.get('data'))
-    cities = '_'.join(data['selected_cities']) or 'Regional'
-    safe = re.sub(r'[^A-Za-z0-9_-]', '_', cities)
+    safe = report_scope(data['selected_cities'], filename=True)
     response = HttpResponse(content, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="Ensaios_Regionais_{data["year"]}_{safe}_{now:%d-%m-%Y_%H-%M}.pdf"'
+    response['Content-Disposition'] = f'attachment; filename="Ensaios_{safe}_{data["year"]}.pdf"'
     if request.GET.get('data'):
         from .music_events_filenames import presence_filename, download_header
         response['Content-Disposition'] = download_header(presence_filename(data['selected_cities'], [request.GET['data']]))

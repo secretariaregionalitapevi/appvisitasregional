@@ -3,15 +3,26 @@ import re
 from urllib.parse import quote
 
 from .music_events_import import norm
+from .music_events_dashboard import REGIONAL, regional_city
 
-MONTHS = ('JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ')
+def report_scope(cities, *, filename=False):
+    cities = sorted({regional_city(city) for city in cities if city})
+    if not cities or {norm(city) for city in cities} == {norm(city) for city in REGIONAL}:
+        return 'Regional' if filename else 'REGIONAL ITAPEVI'
+    if filename:
+        return re.sub(r'[^A-Z0-9_-]+', '_', norm(cities[0])).strip('_') if len(cities) == 1 else 'Selecao'
+    if len(cities) <= 2:
+        short = {'PIRAPORA DO BOM JESUS': 'PIRAPORA', 'VARGEM GRANDE PAULISTA': 'VGP',
+                 'SANTANA DE PARNAÍBA': 'SANTANA', 'CAUCAIA DO ALTO': 'CAUCAIA'}
+        return ' / '.join(short.get(city, city) for city in cities)
+    return f'{len(cities)} MUNICÍPIOS SELECIONADOS'
 
 
 def presence_filename(cities, dates):
-    city = '_'.join(re.sub(r'[^A-Z0-9_-]+', '_', norm(value)).strip('_') for value in sorted(set(cities))) or 'REGIONAL'
-    periods = list(dict.fromkeys(MONTHS[int(day[5:7]) - 1] + day[2:4] for day in sorted(set(str(d)[:10] for d in dates))))
-    period = '-'.join(periods) or 'PERIODO_SELECIONADO'
-    return f'[RELATÓRIO] PRESENÇA_EnR_{city}_{period}.pdf'
+    days = sorted(set(str(day)[:10] for day in dates))
+    labels = [day[8:10] + '_' + day[5:7] + '_' + day[:4] for day in days]
+    period = labels[0] if len(labels) == 1 else f'{labels[0]}_a_{labels[-1]}' if labels else 'Periodo'
+    return f'Presencas_{report_scope(cities, filename=True)}_{period}.pdf'
 
 
 def download_header(filename):

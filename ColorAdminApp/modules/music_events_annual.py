@@ -134,7 +134,8 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                'loaded_sessions': 0, 'expected_sessions': EXPECTED_SESSIONS}
         for session in sessions:
             day, ids = session['date'], session['event_ids']
-            applicable = key in session['invited'] if session['invited'] else base['municipio'] in session['cities']
+            # Convocações parciais não substituem o calendário regional.
+            applicable = base['municipio'] in session['cities'] or key in session['invited']
             if not applicable:
                 continue
             people, seen = [], set()
