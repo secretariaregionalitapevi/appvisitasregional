@@ -302,6 +302,8 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     scope = user_scope(request)
     from .music_events_calendar import validated_sites
     locations = validated_sites(events, locations)
+    used_sites = {row.get('local_id') for row in records}
+    locations = [site for site in locations if not site.get('local_inconsistente') or site['id'] in used_sites]
     records=CommonResolver(catalog).records(records)
     if scope['level'] not in {'regional','global'}:
         canonical = {code(x.get('comum')):x for x in catalog}
@@ -319,12 +321,15 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     result = aggregate(events,records,locations,frequencies,filters,catalog,eligible)
     result['allow_original'] = scope['level'] in {'regional', 'global'}
     if result['allow_original']:
+        from .music_events_attendance import attendance_overview
+        result['attendance_overview'] = attendance_overview(events, records, locations, filters, catalog)
+    if result['allow_original']:
         from .music_events_closing import physical_closings
         result['physical_closings'] = physical_closings(result['events'], records, locations)
     from .music_events_registry import attach_registry
     if scope['level'] not in {'regional','global'}:
         registry=[r for r in registry if permitted({'comum_codigo':r.get('comum_congregacao'),'municipio_informado':r.get('municipio')})]
-    attach_registry(result,registry,catalog)
+    attach_registry(result,registry,catalog,include_zero=True)
     from .music_events_conductors import summarize
     if scope['level'] not in {'regional','global'}:
         reviews=[r for r in reviews if permitted({'comum_codigo':r['comum_chave'],'municipio_informado':r['municipio']})]
@@ -516,6 +521,11 @@ def export_dashboard(request, file_format):
     try:
         from .music_events_reports import export_response
         data = dashboard_data(request)
+        if request.GET.get('relatorio') == 'geral':
+            if not data.get('attendance_overview'):
+                return JsonResponse({'error': 'Relatório global restrito à administração regional.'}, status=403)
+            from .music_events_attendance import general_report
+            data = general_report(data)
         dates = {str(event['data_evento'])[:10] for event in data.get('events', [])}
         if (file_format == 'pdf' and request.GET.get('relatorio', 'comuns') == 'comuns' and len(dates) == 1
                 and all(event['tipo'] == 'ENSAIO_REGIONAL' for event in data['events'])

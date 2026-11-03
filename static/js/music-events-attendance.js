@@ -1,0 +1,24 @@
+(() => {
+  const number=value=>Number(value||0).toLocaleString('pt-BR');
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  document.addEventListener('music-events-data',event=>{
+    const data=event.detail,overview=data.attendance_overview;
+    const target=document.getElementById('events-attendance-overview');
+    if(!target)return;
+    target.hidden=!overview;
+    if(!overview)return;
+    const totals=overview.display_totals||overview.totals,regional=overview.origin_context.regional||0;
+    const official=overview.has_official;
+    const closing=overview.closings.map(row=>`<tr><td>${esc(row.date.split('-').reverse().join('/'))}</td><td>${esc(row.city)}</td><td>${number(row.total)}</td><td>${row.declared_total==null?'Não informado':number(row.declared_total)}</td><td>${row.difference==null?'—':number(row.difference)}</td><td>${row.difference?'Conciliação pendente':row.declared_total==null?'Sem fechamento declarado':'Conferido'}</td></tr>`).join('');
+    const cards=official?[['Total geral',totals.total],['Músicos',totals.MUSICO],['Organistas',totals.ORGANISTA],['Total musical',(totals.MUSICO||0)+(totals.ORGANISTA||0)],['Apoio',totals.APOIO],['Irmandade',totals.IRMANDADE]]:[['Total nominal',totals.total],['Músicos',totals.MUSICO],['Organistas',totals.ORGANISTA],['Ministério exclusivo',totals.MINISTERIO],['Apoio',totals.APOIO],['Irmandade',totals.IRMANDADE]];
+    const officialRows=overview.closings.map(row=>{const original=row.official;return `<tr><td>${esc(row.date.split('-').reverse().join('/'))}</td><td>${esc(row.city)}</td><td>${number(original?original.total:row.total)}</td><td>${number(original?original.musicians:row.musicians)}</td><td>${number(original?original.organists:row.organists)}</td><td>${original?'Relatório oficial':'Lista nominal'}</td></tr>`;}).join('');
+    const detail=overview.closings.filter(row=>row.official).map(row=>`<details class="px-3 py-2"><summary>Composição do fechamento oficial · ${esc(row.city)}</summary><p class="small">Fonte: ${esc(row.official.source_label)}. Cargos são informações sobrepostas e não devem ser somados novamente.</p>${[['Instrumentos',row.official.instruments],['Ministério e cargos',row.official.roles],['Irmandade e apoio',row.official.support]].map(([label,values])=>`<h3 class="h6 mt-3">${label}</h3><div class="table-responsive"><table class="table events-table"><tbody>${Object.entries(values||{}).map(([name,value])=>`<tr><td>${esc(name)}</td><td>${number(value)}</td></tr>`).join('')}</tbody></table></div>`).join('')}</details>`).join('');
+    target.innerHTML=`<div class="events-heading"><div><h2>Público geral do evento</h2><p>Todas as origens, incluindo visitantes, nos locais do município selecionado.${official?' Fechamento oficial do relatório original onde indicado.':''} Os quadros por comum detalham a origem pela lista nominal.</p></div><div class="d-flex gap-2"><button class="btn btn-sm btn-white border" data-general-export="pdf">PDF geral</button><button class="btn btn-sm btn-white border" data-general-export="excel">Excel geral</button></div></div>
+      <div class="attendance-totals">${cards.map(([label,value])=>`<div><span>${label}</span><strong>${number(value)}</strong></div>`).join('')}</div>
+      ${official?'<p class="px-3 small">Fonte dos totais: fechamento oficial nos locais identificados abaixo. A participação por município e comum utiliza os registros nominais, sem distribuir saldos entre origens.</p>':`<p class="px-3 small">Origem na Regional: <b>${number(regional)}</b> · Outras origens / pendentes: <b>${number((totals.total||0)-regional)}</b>. Cada registro entra em uma categoria; cargos de músicos e organistas não são somados novamente.</p>`}
+      <div class="table-responsive"><table class="table events-table mb-0"><thead><tr>${official?'<th>Data</th><th>Local do ensaio</th><th>Total geral</th><th>Músicos</th><th>Organistas</th><th>Fonte</th>':'<th>Data</th><th>Local do ensaio</th><th>Nominal</th><th>Declarado no fechamento</th><th>Diferença</th><th>Conciliação</th>'}</tr></thead><tbody>${(official?officialRows:closing)||'<tr><td colspan="6">Sem público físico neste recorte.</td></tr>'}</tbody></table></div>${detail}`;
+    target.querySelectorAll('[data-general-export]').forEach(button=>button.onclick=()=>window.MusicEventsDashboard.download(button.dataset.generalExport,'geral',{},button));
+    const note=document.getElementById('events-participation-note');
+    if(note)note.textContent=data.base_complete?'Percentuais sobre a base histórica validada do evento. Cargos são informações sobrepostas.':`${data.registry?.criterion||'Sem referência cadastral.'} Percentuais acima de 100% exigem conferência de cadastro, classificação ou duplicidade. Para vários eventos, consulte a participação de cada evento separadamente.`;
+  });
+})();

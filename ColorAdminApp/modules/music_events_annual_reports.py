@@ -55,7 +55,7 @@ def leader_text(row, locations=()):
 
 
 def presence_legend():
-    text = Paragraph('<font color="#008000"><b>J - JUSTIFICOU</b></font> &nbsp; '
+    text = Paragraph('<font color="#1E4B7A"><b>J - JUSTIFICOU</b></font> &nbsp; '
                      '<font color="#E00000"><b>NJ - NÃO JUSTIFICOU</b></font> &nbsp; '
                      '<font color="#85A4DC"><b>SE - SEM ENCARREGADO</b></font> &nbsp; '
                      '<font color="#C65B00"><b>EF - ENFERMO</b></font>',
@@ -257,7 +257,7 @@ def legacy_grid(rows):
     body = [['', '', para('PRESENTES NO ENSAIO', BOLD), '', '', '', para('CADASTRO SAM - COMUM DE ORIGEM', BOLD), '', '', ''], [para(h, head) for h in headers]]
     for row in rows:
         leader = leader_text(row, [row['encarregado_local']] if row.get('encarregado_local') else ())
-        color = '#008000' if leader == 'J' else '#E00000' if leader == 'NJ' else '#85A4DC' if leader == 'SE' else '#C65B00' if leader == 'EF' else '#000000'
+        color = '#14532D' if leader == 'PRESENTE' else '#1E4B7A' if leader == 'J' else '#E00000' if leader == 'NJ' else '#85A4DC' if leader == 'SE' else '#C65B00' if leader == 'EF' else '#000000'
         leader_style = ParagraphStyle('model-state', parent=BOLD, textColor=colors.HexColor(color))
         bm, bo = row.get('cadastro_musicos'), row.get('cadastro_organistas')
         m, o = row['MUSICO'], row['ORGANISTA']

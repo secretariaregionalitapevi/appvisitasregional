@@ -6,6 +6,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const date=v=>v?String(v).slice(0,10).split('-').reverse().join('/'):'—';
   function downloadName(response,fallback){const header=response.headers.get('Content-Disposition')||'',utf8=header.match(/filename\*=UTF-8''([^;]+)/i);if(utf8){try{return decodeURIComponent(utf8[1]);}catch{}}return header.match(/filename="([^"]+)"/)?.[1]||fallback;}
+  const participation=(row,field)=>{const value=state.data?.base_complete?row['percentual_'+field]:row['percentual_cadastro_'+field];return value==null?'Sem base':Number(value).toLocaleString('pt-BR',{maximumFractionDigits:2})+'%';};
   const number=v=>Number(v||0).toLocaleString('pt-BR');
   const kind=e=>e.tipo==='ENSAIO_REGIONAL'?'Ensaio Regional':e.familia==='GERAL'?'RT Geral':`RT · ${e.familia.charAt(0)+e.familia.slice(1).toLocaleLowerCase('pt-BR')}`;
   function eventLabel(e){const day=date(e.data_evento);let title=String(e.titulo||kind(e)).replace(/\bensaio regional\b/gi,'Ensaio Regional');title=title.split(day).join('').split(String(e.data_evento).slice(0,10)).join('').replace(/^[\s·|–—:-]+|[\s·|–—:-]+$/g,'').trim();return `${title||kind(e)} · ${day}`;}
@@ -36,10 +37,10 @@
 
   }
   function table(){const data=state.data;if(!data)return;const rows=data.rows.slice(state.page*20,(state.page+1)*20);let city=null,html='';
-    for(const r of rows){if(city!==r.municipio){city=r.municipio;html+=`<tr class="events-city-group"><td colspan="6">${esc(city)}</td></tr>`;}const m=r.musicos_base??r.cadastro_musicos,o=r.organistas_base??r.cadastro_organistas,status=r.encarregado_status||(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO'].includes(r.encarregado_situacao)?r.encarregado_situacao:'NAO_JUSTIFICOU'),label={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO'}[status];html+=`<tr><td><strong>${esc(r.comum)}</strong></td><td>${number(r.MUSICO)}</td><td>${number(r.ORGANISTA)}</td><td><b>${number(r.MUSICO+r.ORGANISTA)}</b></td><td class="events-registered-leader"><strong>${esc(r.encarregado_nome||'Não localizado no cadastro')}</strong><small><span class="conductor-status ${esc(status)}">${esc(label)}</span>${r.encarregado_local?` <span>${esc(r.encarregado_local)}</span>`:''}</small>${r.encarregado_nomes?.length>1?'<small class="text-warning">Mais de um encarregado cadastrado · conferir</small>':''}</td><td>${m==null?'—':number(m)} / ${o==null?'—':number(o)}</td></tr>`;}
-    $('#events-frequency-body').innerHTML=html||'<tr><td colspan="6" class="events-empty">Sem comuns neste recorte.</td></tr>';
-    const t=data.totals;$('#events-base-musicians').textContent=data.base_complete?'Base histórica':'Cadastro atual';$('#events-frequency-foot').innerHTML=`<tr><td>Total · ${number(t.comuns)} comuns</td><td>${number(t.MUSICO)}</td><td>${number(t.ORGANISTA)}</td><td>${number((t.MUSICO||0)+(t.ORGANISTA||0))}</td><td colspan="2">${data.base_complete?'Referência histórica':'Referência cadastral atual'}</td></tr>`;
-    $('#events-commons-count').textContent=`${number(t.comuns)} comuns`;
+    for(const r of rows){if(city!==r.municipio){city=r.municipio;html+=`<tr class="events-city-group"><td colspan="7">${esc(city)}</td></tr>`;}const m=r.musicos_base??r.cadastro_musicos,o=r.organistas_base??r.cadastro_organistas,status=r.encarregado_status||(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO'].includes(r.encarregado_situacao)?r.encarregado_situacao:'NAO_JUSTIFICOU'),label={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO'}[status];html+=`<tr><td><strong>${esc(r.comum)}</strong></td><td>${number(r.MUSICO)}</td><td>${number(r.ORGANISTA)}</td><td><b>${number(r.MUSICO+r.ORGANISTA)}</b></td><td class="events-registered-leader"><strong>${esc(r.encarregado_nome||'Não localizado no cadastro')}</strong><small><span class="conductor-status ${esc(status)}">${esc(label)}</span>${r.encarregado_local?` <span>${esc(r.encarregado_local)}</span>`:''}</small>${r.encarregado_nomes?.length>1?'<small class="text-warning">Mais de um encarregado cadastrado · conferir</small>':''}</td><td>${m==null?'—':number(m)} / ${o==null?'—':number(o)}</td><td>${esc(participation(r,'musicos'))} / ${esc(participation(r,'organistas'))}${r.cadastro_divergente?'<small>Conferir base / duplicidade</small>':''}</td></tr>`;}
+    $('#events-frequency-body').innerHTML=html||'<tr><td colspan="7" class="events-empty">Sem comuns neste recorte.</td></tr>';
+    const t=data.totals;$('#events-base-musicians').textContent=data.base_complete?'Base histórica':'Cadastro atual';$('#events-frequency-foot').innerHTML=`<tr><td>Total · ${number(t.comuns)} comuns</td><td>${number(t.MUSICO)}</td><td>${number(t.ORGANISTA)}</td><td>${number((t.MUSICO||0)+(t.ORGANISTA||0))}</td><td colspan="3">${data.base_complete?'Referência histórica':'Referência cadastral atual'}</td></tr>`;
+    $('#events-commons-count').textContent=`${number(data.rows.length)} comuns acompanhadas`;
     $('#events-page-reading').textContent=data.rows.length?`${state.page*20+1}–${Math.min((state.page+1)*20,data.rows.length)} de ${data.rows.length}`:'0 comuns';$('#events-page-prev').disabled=state.page===0;$('#events-page-next').disabled=(state.page+1)*20>=data.rows.length;
   }
   function render(data){state.data=data;state.page=0;const t=data.totals;
@@ -62,17 +63,17 @@
       document.dispatchEvent(new CustomEvent('music-events-history',{detail:history}));
     }catch(error){if(version===state.version&&error.name!=='AbortError')document.dispatchEvent(new CustomEvent('music-events-history',{detail:{error:error.message}}));}
   }
-  async function load(preloaded){const version=++state.version;dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
+  async function load(preloaded){const version=++state.version;state.data=null;$('.music-events').classList.add('events-data-pending');$('.music-events').setAttribute('aria-busy','true');$('#events-metrics').innerHTML='';$('#events-attendance-overview').hidden=true;$('#events-scope-reading').textContent='Carregando o recorte selecionado...';dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
     try{const d=preloaded?.totals?preloaded:await request('/musica/eventos/api/painel/?'+params,{signal:dashboardController.signal});if(version!==state.version)return;
       multi.setOptions($('#events-city'),d.options.cities,'Todos os municípios');
       const selected=multi.values($('#events-common'));const cities=multi.normalizedValues($('#events-city'));
       const commons=d.options.commons.filter(x=>!cities.length||cities.includes(multi.normalize(x.city)));
       const c=$('#events-common');c.innerHTML='';commons.forEach(x=>c.add(new Option(x.label,x.value)));multi.setValues(c,selected);multi.refresh(c);
       options($('#events-local'),d.options.locations.map(x=>[x.id,x.nome]),'Todos os locais');
-      render(d);feedback('');$('#events-excel').disabled=$('#events-pdf').disabled=false;
+      render(d);$('.music-events').classList.remove('events-data-pending');feedback('');$('#events-excel').disabled=$('#events-pdf').disabled=false;
       void loadHistory(params,version);
-    }catch(error){if(version===state.version){feedback(error.message);$('#events-management-note').textContent='Não foi possível atualizar o recorte. Use Atualizar para tentar novamente.';}}
-    finally{if(version===state.version)$('#events-refresh').disabled=false;}
+    }catch(error){if(version===state.version){feedback(error.message);$('#events-scope-reading').textContent='Recorte indisponivel. Tente atualizar novamente.';$('#events-management-note').textContent='Não foi possível atualizar o recorte. Use Atualizar para tentar novamente.';}}
+    finally{if(version===state.version){$('#events-refresh').disabled=false;$('.music-events').setAttribute('aria-busy','false');}}
   }
   async function initialize(selectedId){try{const initialParams=query();initialParams.delete('evento');initialParams.set('inicial','1');if(typeof selectedId==='string')initialParams.set('evento',selectedId);
     const [data,initialDashboard]=await Promise.all([request('/musica/eventos/api/eventos/'),request('/musica/eventos/api/painel/?'+initialParams)]);state.items=data.items;

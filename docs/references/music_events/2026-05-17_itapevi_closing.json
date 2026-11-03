@@ -1,6 +1,8 @@
 {
   "date": "2026-05-17",
   "city": "ITAPEVI",
+  "use_as_official_closing": true,
+  "approval_note": "Responsável solicitou apresentar os resultados do relatório original como fechamento oficial deste evento histórico. A lista nominal permanece preservada para participação por origem.",
   "source": "2026-05-17_itapevi_original.pdf",
   "source_label": "RELATÓRIO ORIGINAL DO ENSAIO - ITAPEVI - 17/05/2026",
   "musicians": 1201,

@@ -31,9 +31,15 @@ def vertical_label(text,height):
 
 
 def report_note(data):
+    if data.get('report')=='geral':
+        if data.get('attendance_overview',{}).get('has_official'):
+            return 'Resultados do fechamento oficial onde indicado, conforme relatório original. Os cargos podem se sobrepor à participação musical. O detalhamento por comum utiliza a lista nominal preservada.'
+        return 'Público nominal do evento, todas as origens. Cargos podem coincidir com músicos e organistas e não devem ser somados novamente. Fechamentos declarados são apresentados para conciliação.'
     if data.get('report')=='encarregados':
         return 'Presença confirmada pela correspondência entre o encarregado cadastrado e a lista nominal do ensaio.'
     if data.get('registry',{}).get('available') and not data['base_complete']:
+        if len(data['events']) != 1:
+            return 'Cadastro musical atual como referência. Percentuais omitidos neste consolidado: consulte um evento por vez para comparar presenças e cadastro da comum.'
         return 'Base SAM atual: Ativo, Alerta e Concluído, todos os níveis. Percentual = presentes da comum ÷ cadastro SAM atual; referência válida na data de emissão.'
     return 'Sem referência cadastral para este recorte.' if not data['base_complete'] else 'Percentuais sobre a base histórica SAM e presenças elegíveis vinculadas.'
 
@@ -52,15 +58,45 @@ def scope_label(data):
 
 
 def sheets(data):
+    if data.get('report')=='geral':
+        overview=data['attendance_overview']
+        if overview.get('has_official'):
+            summary=[];instruments=[];roles=[];support=[]
+            for row in overview['closings']:
+                original=row.get('official')
+                day=datetime.strptime(row['date'],'%Y-%m-%d').strftime('%d/%m/%Y')
+                m=original['musicians'] if original else row['musicians']
+                o=original['organists'] if original else row['organists']
+                total=original['total'] if original else row['total']
+                summary.append([day,row['city'],m,o,m+o,total,'Relatório oficial' if original else 'Lista nominal'])
+                if original:
+                    instruments.extend([[row['city'],key,value] for key,value in original.get('instruments',{}).items()])
+                    roles.extend([[row['city'],key,value] for key,value in original.get('roles',{}).items()])
+                    support.extend([[row['city'],key,value] for key,value in original.get('support',{}).items()])
+            return [('Fechamento do ensaio',['Data','Local','Músicos','Organistas','Total musical','Total geral','Fonte'],summary,[18,32,18,18,20,18,30]),
+                    ('Instrumentos do fechamento',['Local','Instrumento','Quantidade'],instruments,[36,65,24]),
+                    ('Cargos do fechamento',['Local','Cargo (não aditivo)','Quantidade'],roles,[36,65,24]),
+                    ('Irmandade e apoio',['Local','Público','Quantidade'],support,[36,65,24])]
+        fields=['MUSICO','ORGANISTA','MINISTERIO','APOIO','IRMANDADE','total']
+        headers=['Município de origem','Músicos','Organistas','Ministério exclusivo','Apoio','Irmandade','Total']
+        municipal=[[row['municipio']]+[row.get(key,0) for key in fields] for row in data['municipalities']]
+        municipal.append(['TOTAL GERAL']+[data['totals'].get(key,0) for key in fields])
+        locations=[[row['nome']]+[row.get(key,0) for key in fields] for row in data['locations']]
+        closings=[[datetime.strptime(row['date'],'%Y-%m-%d').strftime('%d/%m/%Y'),row['city'],row['total'],
+            row.get('declared_total'),row.get('difference'),'Pendente' if row.get('difference') else 'Conferido' if row.get('declared_total') is not None else 'Sem fechamento declarado']
+            for row in data['attendance_overview']['closings']]
+        return [('Público por origem',headers,municipal,[36,18,18,24,16,18,18]),
+                ('Público por local',['Local do ensaio']+headers[1:],locations,[36,18,18,24,16,18,18]),
+                ('Conciliação do fechamento',['Data','Local','Nominal','Declarado','Diferença','Situação'],closings,[18,30,18,18,18,42])]
     current=not data['base_complete'] and data.get('registry',{}).get('available')
     frequency=[]
     def subtotal(rows,label):
         m=sum(r['MUSICO'] for r in rows);o=sum(r['ORGANISTA'] for r in rows)
         validated=data['base_complete'] and any(r['musicos_base'] is not None for r in rows)
-        bm=sum(r.get('cadastro_musicos') or 0 for r in rows) if current else sum(r['musicos_base'] or 0 for r in rows) if validated else None
-        bo=sum(r.get('cadastro_organistas') or 0 for r in rows) if current else sum(r['organistas_base'] or 0 for r in rows) if validated else None
-        pm=(m/bm if current else sum(r.get('_musicos_elegiveis',0) for r in rows)/bm) if bm else None
-        po=(o/bo if current else sum(r.get('_organistas_elegiveis',0) for r in rows)/bo) if bo else None
+        bm=(sum(r['cadastro_musicos'] for r in rows) if all(r.get('cadastro_musicos') is not None for r in rows) else None) if current else sum(r['musicos_base'] or 0 for r in rows) if validated else None
+        bo=(sum(r['cadastro_organistas'] for r in rows) if all(r.get('cadastro_organistas') is not None for r in rows) else None) if current else sum(r['organistas_base'] or 0 for r in rows) if validated else None
+        pm=(m/bm if current else sum(r.get('_musicos_elegiveis',0) for r in rows)/bm) if bm and (not current or len(data['events'])==1) else None
+        po=(o/bo if current else sum(r.get('_organistas_elegiveis',0) for r in rows)/bo) if bo and (not current or len(data['events'])==1) else None
         return [label,'SUBTOTAL' if label!='TOTAL GERAL' else '','',m,o,m+o,bm,bo,pm,po]
     city_rows=[]
     for r in data['rows']:
@@ -69,8 +105,8 @@ def sheets(data):
         city_rows.append(r)
         bm=r.get('cadastro_musicos') if current else r.get('musicos_base')
         bo=r.get('cadastro_organistas') if current else r.get('organistas_base')
-        pm=(r['MUSICO']/bm if bm else None) if current else (r['percentual_musicos']/100 if r['percentual_musicos'] is not None else None)
-        po=(r['ORGANISTA']/bo if bo else None) if current else (r['percentual_organistas']/100 if r['percentual_organistas'] is not None else None)
+        pm=(r['MUSICO']/bm if bm and len(data['events'])==1 else None) if current else (r['percentual_musicos']/100 if r['percentual_musicos'] is not None else None)
+        po=(r['ORGANISTA']/bo if bo and len(data['events'])==1 else None) if current else (r['percentual_organistas']/100 if r['percentual_organistas'] is not None else None)
         leader=(r['encarregado_nome']+'\n'+r.get('encarregado_situacao_label',r['encarregado'])) if r.get('encarregado_nome') else r['encarregado']
         frequency.append([r['municipio'],r['comum'],leader,r['MUSICO'],r['ORGANISTA'],r['MUSICO']+r['ORGANISTA'],
                           bm,bo,pm,po])
@@ -317,7 +353,7 @@ def build_pdf(data,actor,now):
         canvas.setFillColor(colors.black);canvas.setFont('Helvetica-Bold',15);canvas.drawCentredString(center,page_height-29,'CONGREGAÇÃO CRISTÃ NO BRASIL')
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-43,'Regional Itapevi - São Paulo')
         canvas.setFillColor(colors.HexColor('#1e4b7a'));canvas.setFont('Helvetica-Bold',12);canvas.drawCentredString(center,page_height-60,'ENSAIOS REGIONAIS E RTs')
-        title={'executivo':'Resumo executivo de presença','encarregados':'Presença dos Encarregados Locais','comuns':'Frequência musical por comum','composicao':'Composição musical e cargos'}.get(data.get('report'),'Relatório administrativo de frequência')
+        title={'geral':'Público geral e conciliação do ensaio','executivo':'Resumo executivo de presença','encarregados':'Presença dos Encarregados Locais','comuns':'Frequência musical por comum','composicao':'Composição musical e cargos'}.get(data.get('report'),'Relatório administrativo de frequência')
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-74,title)
         f=data['filters'];identity=data.get('report_identity',{})
         recorte=', '.join(f.get('municipios',[])) or ('Regional Itapevi' if f.get('origem','regional')=='regional' else 'Visitantes' if f.get('origem')=='visitantes' else 'Regional e visitantes')
@@ -378,7 +414,7 @@ def export_response(data,request,file_format):
     data['report_identity']={'scope':' · '.join(filter(None,[{'global':'Global','regional':'Regional','municipal':'Municipal','local':'Local'}.get(scope['level']),scope.get('municipio')])),
                              'common':scope.get('comum') or ''}
     requested=request.GET.get('relatorio')
-    data['report']=requested if requested in {'executivo','encarregados','comuns','composicao'} else ('comuns' if file_format=='pdf' else 'completo')
+    data['report']=requested if requested in {'geral','executivo','encarregados','comuns','composicao'} else ('comuns' if file_format=='pdf' else 'completo')
     content=build_excel(data,actor,now) if file_format=='excel' else build_pdf(data,actor,now)
     ext='xlsx' if file_format=='excel' else 'pdf'
     response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext=='xlsx' else 'application/pdf')
