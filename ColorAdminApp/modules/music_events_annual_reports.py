@@ -217,13 +217,21 @@ class CityLabel(Flowable):
         self.canv.restoreState()
 
 
+def metadata_paragraph(text, style):
+    lines = []
+    for line in text.upper().split('\n'):
+        label, separator, value = line.partition(':')
+        lines.append('<b>' + escape(label) + ':</b> ' + escape(value.strip()) if separator else escape(line))
+    return Paragraph('<br/>'.join(lines), style)
+
+
 def model_header(place, date, actor='SECRETARIA MUSICAL', now=None, page=1):
     title = [para('CONGREGAÇÃO CRISTÃ NO BRASIL', ParagraphStyle('report-entity', parent=BOLD, fontSize=15, leading=18)),
              para('REGIONAL ITAPEVI - SÃO PAULO', CENTER),
              para('ENSAIOS REGIONAIS', ParagraphStyle('report-module', parent=BOLD, fontSize=12, leading=16, textColor=colors.HexColor('#1E4B7A'))),
              para('RELATÓRIO UNIFICADO ENSAIO REGIONAL', CENTER)]
     emitted = f'{now:%d/%m/%Y %H:%M}' if now else '—'
-    meta = para(f'PÁGINA: {page}\nRECORTE: {place}\nENSAIO: {date}\nEMISSÃO: {emitted}\nRESPONSÁVEL: {actor}',
+    meta = metadata_paragraph(f'PÁGINA: {page}\nRECORTE: {place}\nENSAIO: {date}\nEMISSÃO: {emitted}\nIMPRESSO POR: {actor}',
                 ParagraphStyle('report-context', parent=STYLE, alignment=2, fontSize=7, leading=10))
     institution = Table([['', title, meta]], colWidths=[190, USEFUL - 380, 190])
     institution.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -516,7 +524,7 @@ def annual_matrix_pdf(data, actor, now):
                   Paragraph('ENSAIOS REGIONAIS', ParagraphStyle('module', parent=BOLD, fontSize=12, leading=17, textColor=colors.HexColor('#1E4B7A'))),
                   para('Acompanhamento anual por comum', CENTER)]
         recorte = report_scope(data['selected_cities'])
-        meta = para(f'Página: {document.page}\nAno: {data["year"]}\nEmissão: {now:%d/%m/%Y %H:%M}\nMunicípio: {recorte}\nResponsável: {actor}',
+        meta = metadata_paragraph(f'Página: {document.page}\nAno: {data["year"]}\nEmissão: {now:%d/%m/%Y %H:%M}\nMunicípio: {recorte}\nImpresso por: {actor}',
                     ParagraphStyle('metadata', parent=STYLE, alignment=2, fontSize=8, leading=11))
         heading = Table([['', center, meta]], colWidths=[190, USEFUL - 380, 190])
         heading.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0),

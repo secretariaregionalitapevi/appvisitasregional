@@ -33,28 +33,37 @@
   }
   function render(){
     const summary=data.summary;
-    $('#ministry-metrics').innerHTML=[['Pessoas no recorte',summary.people,'blue','fa-users'],['Presenças confirmadas',summary.present,'green','fa-user-check'],['Sem presença nos encontros conferidos',summary.without_presence,'red','fa-user-minus'],['Participações pendentes',summary.pending,'amber','fa-clock']].map(([label,value,tone,icon])=>`<article class="ministry-metric ${tone}"><div><span>${label}</span><strong>${value.toLocaleString('pt-BR')}</strong></div><i class="fa ${icon}" aria-hidden="true"></i></article>`).join('');
+    const commons=summary.commons??new Set(data.rows.map(row=>`${row.municipio}:${row.comum}`)).size;
+    $('#ministry-metrics').innerHTML=[['Comuns no recorte',commons,'blue','fa-location-dot'],['Pessoas com presença no recorte',summary.people_present??data.rows.filter(row=>row.present>0).length,'green','fa-user-check'],['Pessoas sem nenhuma presença registrada',summary.without_presence,'red','fa-user-minus'],['Participações a conferir',summary.pending,'amber','fa-clock']].map(([label,value,tone,icon])=>`<article class="ministry-metric ${tone}"><div><span>${label}</span><strong>${value.toLocaleString('pt-BR')}</strong></div><i class="fa ${icon}" aria-hidden="true"></i></article>`).join('');
+    $('#ministry-totals').textContent=`${commons} comuns · ${summary.people} pessoas distintas · ${summary.present} presenças somadas por pessoa e encontro. Os cards resumem o período completo; o filtro de situação seleciona as pessoas da lista. Uma comum com dois encarregados conta uma única vez como comum. Pendências não são presenças confirmadas.${summary.commons_present!==undefined?` Comuns com alguma presença: ${summary.commons_present}; sem presença: ${summary.commons_without_presence}; sem conclusão: ${summary.commons_pending}.`:''}`;
+
     const selectedCities=multi.values($('#ministry-city'));
     $('#ministry-cities').innerHTML=`<button type="button" data-city="" class="${selectedCities.length?'':'active'}" aria-pressed="${!selectedCities.length}">Toda a Regional</button>`+data.options.cities.map(city=>`<button type="button" data-city="${esc(city)}" class="${selectedCities.includes(city)?'active':''}" aria-pressed="${selectedCities.includes(city)}"><i class="fa fa-location-dot" aria-hidden="true"></i>${esc(city)}</button>`).join('');
-    $('#ministry-count').textContent=`${summary.people} pessoas`;
+    $('#ministry-count').textContent=`${data.rows.length} pessoas na lista`;
     const selectedEvent=$('#ministry-event').value;
     const columns=data.event_options.filter(event=>data.rows.some(row=>row.cells.some(cell=>cell.event_id===event.id)));
     const count=selectedEvent?4:columns.length+3;
     const selectedInfo=data.event_options.find(event=>event.id===selectedEvent);
+    $('#ministry-state').querySelectorAll('option').forEach(option=>{if(option.value==='SEM_REGISTRO')option.textContent=selectedEvent?'N\u00e3o participou deste evento':'Sem presen\u00e7a em nenhum evento do per\u00edodo';});
+    $('#ministry-event-shortcuts').innerHTML=[{id:'',titulo:'Todos os eventos do ano'},...data.event_options].map(event=>`<button type="button" data-select-event="${esc(event.id)}" class="${event.id===selectedEvent?'active':''}" aria-pressed="${event.id===selectedEvent}">${event.date?`<strong>${day(event.date)}</strong>`:''}<span>${esc(event.titulo)}</span></button>`).join('');
+    $('#ministry-view-context').textContent=selectedInfo?`Exibindo somente: ${selectedInfo.titulo} | ${day(selectedInfo.date)}. Os totais, a lista e as exportações seguem este encontro e os filtros abaixo.`:`Visão anual de ${data.year}: ${columns.length} encontro(s). As presenças são somadas entre eventos. Selecione um encontro para ver presentes e ausentes daquela data.`;
+
     $('#ministry-list-title').textContent=selectedEvent?(data.filters.situacao==='PRESENTE'?'Presentes no encontro':'Participação no encontro'):'Acompanhamento anual por pessoa';
     $('#ministry-list-hint').textContent=selectedInfo?`${selectedInfo.titulo} · ${day(selectedInfo.date)}`:'Cada coluna representa um encontro. Abra o nome para consultar o histórico.';
     $('#ministry-head').innerHTML=selectedEvent?'<tr><th>Pessoa / comum</th><th>Ministério / cargo</th><th>Situação</th><th>Local de participação</th></tr>':`<tr><th>Pessoa / comum</th><th>Ministério / cargo</th>${columns.map(event=>`<th><strong>${day(event.date)}</strong><small>${esc(event.titulo)}</small><button class="btn btn-sm btn-white border" type="button" data-header-export="${esc(event.id)}">PDF de presentes</button></th>`).join('')}<th>Presenças no recorte</th></tr>`;
-    let city=null;
+    let city=null, common=null;
     $('#ministry-body').innerHTML=data.rows.map((row,index)=>{
       const group=city!==row.municipio?`<tr class="ministry-city-group"><td colspan="${count}"><i class="fa fa-location-dot me-2" aria-hidden="true"></i>${esc(row.municipio)}</td></tr>`:'';
-      city=row.municipio;
+      const commonKey=`${row.municipio}:${row.comum}`;
+      const commonGroup=common!==commonKey?`<tr class="ministry-common-group"><td colspan="${count}">${esc(row.comum)} <span class="ministry-role-badge">${data.rows.filter(p=>p.municipio===row.municipio&&p.comum===row.comum).length} pessoa(s)</span></td></tr>`:'';
+      city=row.municipio;common=commonKey;
       const byId=new Map(row.cells.map(cell=>[cell.event_id,cell]));
       const status=cell=>cell?`<span class="ministry-status ${cell.situacao}">${esc(data.states[cell.situacao])}</span>`:'<span class="ministry-neutral">Não se aplica</span>';
       const cells=selectedEvent?`<td>${status(byId.get(selectedEvent))}</td><td>${esc(byId.get(selectedEvent)?.local||'—')}</td>`:columns.map(event=>`<td>${status(byId.get(event.id))}${byId.get(event.id)?.situacao==='PRESENTE'?`<small>${esc(byId.get(event.id).local)}</small>`:''}</td>`).join('')+`<td>${ratio(row.cells)}</td>`;
-      return group+`<tr><td><button type="button" class="ministry-person" data-person="${index}" aria-haspopup="dialog">${esc(row.nome)}</button><small>${esc(row.comum)}</small></td><td>${row.roles.map(role=>`<span class="ministry-role-badge">${esc(data.roles[role]||role)}</span>`).join(' ')}</td>${cells}</tr>`;
+      return group+commonGroup+`<tr><td><button type="button" class="ministry-person" data-person="${index}" aria-haspopup="dialog">${esc(row.nome)}</button><small>${esc(row.comum)}</small></td><td>${row.roles.map(role=>`<span class="ministry-role-badge">${esc(data.roles[role]||role)}</span>`).join(' ')}</td>${cells}</tr>`;
     }).join('')||`<tr><td colspan="${count}" class="events-empty">Nenhuma pessoa para os filtros selecionados.</td></tr>`;
     $('#ministry-events').innerHTML=data.events.map(event=>`<article><div class="ministry-event-top"><span class="ministry-event-date">${day(event.data_evento)}</span><span class="ministry-status ${event.arquivo_sha256?'PRESENTE':'SEM_DADOS'}">${event.arquivo_sha256?'Lista carregada':'Sem lista'}</span></div><h3>${esc(event.titulo)}</h3><p>${esc(event.local)} · ${esc(event.modalidade)}</p><div class="ministry-event-actions"><button class="btn btn-sm btn-primary" type="button" data-event-present="${esc(event.id)}">Ver presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="pdf" data-export-event="${esc(event.id)}">PDF de presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="excel" data-export-event="${esc(event.id)}">Excel de presentes</button>${data.can_manage&&!event.arquivo_sha256?`<button class="btn btn-sm btn-outline-primary" type="button" data-event-import="${esc(event.id)}">Carregar lista</button>`:''}</div></article>`).join('')||'<p class="text-muted mb-0">Nenhum encontro individual cadastrado neste recorte. Selecione um ensaio ou RT no campo “Evento em análise”.</p>';
-    $('#ministry-scope').textContent=`Ano ${data.year} · ${multi.labels($('#ministry-city'),'Toda a Regional')} · ${$('#ministry-role').selectedOptions[0].textContent}`;
+    $('#ministry-scope').textContent=`${selectedInfo?selectedInfo.titulo+' | '+day(selectedInfo.date):'Todos os eventos do ano'} · Ano ${data.year} · ${multi.labels($('#ministry-city'),'Toda a Regional')} · ${$('#ministry-role').selectedOptions[0].textContent}`;
     if(!data.available)feedback('A consulta dos ensaios e RTs está disponível. Para cadastrar os novos encontros, é necessário aplicar a migração 036 no banco.','warning');
     else if(data.unmatched)feedback(`${data.unmatched} registros de cargos nos ensaios/RTs não têm uma identidade individual inequívoca no cadastro. Eles não foram atribuídos por aproximação.`,'warning');
     else feedback('');
@@ -80,7 +89,7 @@
       $('#ministry-common').innerHTML=data.options.commons.map(c=>`<option value="${esc(c.key)}">${esc(c.name)}</option>`).join('');
       multi.setValues($('#ministry-common'),selected);multi.refresh($('#ministry-common'));
       const chosenEvent=$('#ministry-event').value;
-      $('#ministry-event').innerHTML='<option value="">Acompanhamento anual</option>'+data.event_options.map(event=>`<option value="${esc(event.id)}">${esc(event.titulo)} · ${day(event.date)}</option>`).join('');
+      $('#ministry-event').innerHTML='<option value="">Todos os eventos do ano</option>'+data.event_options.map(event=>`<option value="${esc(event.id)}">${esc(event.titulo)} · ${day(event.date)}</option>`).join('');
       if(chosenEvent&&!data.event_options.some(event=>event.id===chosenEvent))$('#ministry-event').add(new Option('Encontro sem pessoas neste recorte',chosenEvent));
       $('#ministry-event').value=chosenEvent;
       render();$('#ministry-pdf').disabled=$('#ministry-excel').disabled=false;
@@ -96,7 +105,7 @@
       if(!response.ok||response.redirected)throw Error('Não foi possível exportar o acompanhamento.');
       const url=URL.createObjectURL(await response.blob());
       const link=document.createElement('a');link.href=url;
-      link.download=response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]||`Ministerio_${data.year}.${format==='pdf'?'pdf':'xlsx'}`;
+      link.download=decodeURIComponent(response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]||response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]||'')||`Ministerio_${data.year}.${format==='pdf'?'pdf':'xlsx'}`;
       link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(error){feedback(error.message);}finally{button.innerHTML=original;button.disabled=!data;}
   }
@@ -105,6 +114,8 @@
   ['#ministry-role','#ministry-common','#ministry-state'].forEach(selector=>$(selector).addEventListener('change',()=>load()));
   ['#ministry-year','#ministry-kind'].forEach(selector=>$(selector).addEventListener('change',()=>{$('#ministry-event').value='';void load();}));
   $('#ministry-event').onchange=()=>load();
+  $('#ministry-event-shortcuts').onclick=event=>{const button=event.target.closest('[data-select-event]');if(button){$('#ministry-event').value=button.dataset.selectEvent;void load();}};
+
   $('#ministry-cities').onclick=event=>{const button=event.target.closest('[data-city]');if(button){multi.setValues($('#ministry-city'),button.dataset.city?[button.dataset.city]:[]);multi.refresh($('#ministry-city'));multi.clear($('#ministry-common'));void load();}};
   $('#ministry-city').addEventListener('change',()=>{multi.clear($('#ministry-common'));void load();});
   let timer;$('#ministry-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>load(),350);};

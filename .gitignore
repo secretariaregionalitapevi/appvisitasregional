@@ -49,3 +49,4 @@ Thumbs.db
 
 # Acervo pessoal; nunca versionar dados dos alunos
 /.backups/
+/tmp/conciliacao_bras_confirmada/

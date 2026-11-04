@@ -22,8 +22,16 @@ USEFUL = WIDTH - 56
 STYLE = ParagraphStyle('ministry-body', fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#263238'))
 
 
+def status_colors(value):
+    if value in ('Presente', 'Justificou'):
+        return '167853', 'E5F4EC'
+    if value in (STATES['SEM_REGISTRO'], 'NJ'):
+        return 'B4233D', 'FCE8EC'
+    return None
+
+
 def p(text, style=STYLE):
-    return Paragraph(escape('' if text is None else str(text)).replace('\n', '<br/>'), style)
+    return Paragraph(escape('' if text is None else str(text).replace('Encarregado local', 'Encarregado Local')).replace('\n', '<br/>'), style)
 
 
 def scope_text(data):
@@ -92,8 +100,9 @@ def build_pdf(data, actor, now):
         module = ParagraphStyle('module', parent=bold, fontSize=11, leading=13, alignment=1)
         meta = ParagraphStyle('meta', parent=STYLE, alignment=2, fontSize=7, leading=10)
         title = [p('CONGREGAÇÃO CRISTÃ NO BRASIL', entity), p('Regional Itapevi - São Paulo', centered),
-                 p(TITLE, module), p(report_title if by_event else 'Histórico anual de participação', centered)]
-        metadata = p(f'Página: {document.page}\nEmissão: {now:%d/%m/%Y %H:%M}\nRecorte: {scope_text(data)[0]}\nResponsável: {actor}', meta)
+                 p('Relatório de Presença', module), p(report_title if by_event else 'Histórico anual de participação', centered)]
+        metadata = Paragraph(f'<b>Página:</b> {document.page}<br/><b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/><b>Recorte:</b> {escape(scope_text(data)[0])}<br/><b>Impresso por:</b> {escape(actor)}', meta)
+
         table = Table([['', title, metadata]], colWidths=[190, USEFUL - 380, 190])
         table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0),
                                    ('RIGHTPADDING', (0, 0), (-1, -1), 0)]))
@@ -107,7 +116,8 @@ def build_pdf(data, actor, now):
     def table(labels, rows, widths):
         body = [[p(label, heading) for label in labels]]
         absent = ParagraphStyle('absence', parent=STYLE, textColor=colors.HexColor('#B4233D'), fontName='Helvetica-Bold')
-        body += [[p(value, absent if labels == SUMMARY and col == 4 and str(value).startswith('0/') else STYLE)
+        status_col = 4 if labels == EVENT else 7 if labels == DETAIL else -1
+        body += [[p(value, ParagraphStyle('status', parent=STYLE, fontName='Helvetica-Bold', textColor=colors.HexColor('#' + status_colors(value)[0])) if col == status_col and status_colors(value) else absent if labels == SUMMARY and col == 4 and str(value).startswith('0/') else STYLE)
                   for col, value in enumerate(row)] for row in rows]
         if not rows:
             body.append([p('Nenhum registro para o recorte.')] + [''] * (len(labels) - 1))
@@ -118,7 +128,16 @@ def build_pdf(data, actor, now):
             ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6)]))
         return result
-    band = Table([[p(context(data), bold)]], colWidths=[USEFUL])
+    event = selected_event(data)
+    event_title = event['titulo'] if event else 'Todos os eventos do ano'
+    event_date = '/'.join(str(event['date'])[:10].split('-')[::-1]) if event else str(data['year'])
+    selected_common_count = len({(r['municipio'], r['comum'].split(' - ')[0]) for r in data['rows']})
+    band_text = (f'<b>Evento:</b> {escape(event_title)}<br/>'
+                 f'<b>Data / período:</b> {event_date} &nbsp; | &nbsp; <b>Municípios:</b> {escape(scope_text(data)[1])}<br/>'
+                 f'<b>Cargo:</b> {escape(ROLES.get(data.get("filters", {}).get("cargo"), "Todos os cargos").replace("Encarregado local", "Encarregado Local"))} &nbsp; | &nbsp; '
+                 f'<b>Situação:</b> {escape(STATES.get(data.get("filters", {}).get("situacao"), "Todas as situações"))}<br/>'
+                 f'<b>Pessoas na lista:</b> {len(data["rows"])} &nbsp; | &nbsp; <b>Comuns na lista:</b> {selected_common_count}')
+    band = Table([[Paragraph(band_text, STYLE)]], colWidths=[USEFUL])
     band.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#EAF2F8')),
                              ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8)]))
     if by_event:
@@ -149,7 +168,7 @@ def build_excel(data, actor, now):
         sheet.title = name
         last = get_column_letter(len(headers))
         for row_no, value in [(1, 'CONGREGAÇÃO CRISTÃ NO BRASIL'), (2, 'Regional Itapevi - São Paulo'),
-                              (3, TITLE), (4, context(data)), (5, f'Emissão: {now:%d/%m/%Y %H:%M} · Responsável: {actor}')]:
+                              (3, TITLE), (4, context(data)), (5, f'Emissão: {now:%d/%m/%Y %H:%M} · Impresso por: {actor}')]:
             sheet.merge_cells(f'A{row_no}:{last}{row_no}')
             cell = sheet.cell(row_no, 1, value)
             cell.font = Font(size=15 if row_no == 1 else 10, bold=row_no <= 3, color='FFFFFF' if row_no <= 2 else NAVY)
@@ -207,14 +226,17 @@ def export_response(data, request, file_format):
     response = HttpResponse(content, content_type='application/pdf' if extension == 'pdf' else
                             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     event = selected_event(data)
+    from .music_events_filenames import download_header
     if event:
-        from .music_events_import import norm
-        label = 'Bras' if norm(event.get('local')) == 'BRAS' else 'Encontro'
-        prefix = 'Presentes' if data['filters'].get('situacao') == 'PRESENTE' else 'Participacao'
+        labels = {'REUNIAO_MINISTERIO': 'REUNIÃO_MUSICAL', 'ENSAIO_REGIONAL': 'ENSAIO_REGIONAL',
+                  'ENSAIO_MUNICIPAL': 'ENSAIO_MUNICIPAL', 'REUNIAO_TECNICA': 'REUNIÃO_TÉCNICA', 'CAPACITACAO': 'CAPACITAÇÃO'}
+        label = labels.get(event.get('tipo'), 'PRESENÇA')
+        if str(event.get('local', '')).upper() in ('BRÁS', 'BRAS'):
+            label += '_BRÁS'
         stamp = '_'.join(str(event['date'])[:10].split('-')[::-1])
-        filename = f'{prefix}_{label}_{stamp}.{extension}'
+        filename = f'[RELATÓRIO] {label}_{stamp}.{extension}'
     else:
-        filename = f'Acompanhamento_{scope}_{data["year"]}.{extension}'
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        filename = f'[RELATÓRIO] PRESENÇA_{scope.upper()}_{data["year"]}.{extension}'
+    response['Content-Disposition'] = download_header(filename)
     response['Cache-Control'] = 'private, no-store'
     return response

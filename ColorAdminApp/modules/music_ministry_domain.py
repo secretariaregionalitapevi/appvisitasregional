@@ -78,7 +78,7 @@ def match_person(row, people):
     exact = [p for p in people if aliases.intersection(p['aliases'])]
     if len(exact) == 1:
         return exact
-    return [p for p in people if norm(p['nome']) == norm(row.get('nome'))
+    return [p for p in people if norm(row.get('nome')) in {norm(name) for name in [p['nome'], *p.get('confirmed_names', [])]}
             and code(p['comum']) == code(row.get('comum') or row.get('comum_codigo') or row.get('comum_informada'))]
 
 
@@ -87,7 +87,8 @@ def person_matcher(people):
     for person in people:
         for alias in person['aliases']:
             aliases[alias].append(person)
-        names[(norm(person['nome']), code(person['comum']))].append(person)
+        for name in {norm(name) for name in [person['nome'], *person.get('confirmed_names', [])]}:
+            names[(name, code(person['comum']))].append(person)
     def match(row):
         keys = [f'sam:{row["sam_pessoa_id"]}'] if row.get('sam_pessoa_id') else []
         if row.get('person_key'):
@@ -99,15 +100,29 @@ def person_matcher(people):
     return match
 
 
-def include_directory(people, directory):
-    people = list(people)
+def include_directory(people, directory, confirmed_entries=()):
+    people = [dict(p, aliases=list(p['aliases']), confirmed_names=list(p.get('confirmed_names', []))) for p in people]
     known = {alias for person in people for alias in person['aliases']}
     for entry in directory:
+        if not entry['roles']:
+            continue
         if entry['person_key'] not in known:
             people.append({'key': entry['person_key'], 'aliases': [entry['person_key']], 'nome': entry['nome'],
                            'comum': entry['comum'], 'municipio': regional_city(entry['municipio']),
-                           'roles': entry['roles'], 'source': 'arquivo', 'families': []})
-    return people
+                           'roles': entry['roles'], 'source': 'arquivo', 'families': [], 'confirmed_names': []})
+    indexed = {alias: person for person in people for alias in person['aliases']}
+    linked = set()
+    for entry in confirmed_entries:
+        canonical = entry.get('source', {}).get('canonical_person_key')
+        if canonical in indexed:
+            person = indexed[canonical]
+            if entry['person_key'] not in person['aliases']:
+                person['aliases'].append(entry['person_key'])
+            if entry['nome'] not in person['confirmed_names']:
+                person['confirmed_names'].append(entry['nome'])
+            if indexed.get(entry['person_key']) is not person:
+                linked.add(entry['person_key'])
+    return [p for p in people if p['key'] not in linked]
 
 
 def parse_meeting(content, catalog):
@@ -176,11 +191,29 @@ def parse_meeting(content, catalog):
             'duplicate_rows': [r['row'] for r in result if names[(norm(r['nome']), code(r['comum']))] > 1]}
 
 
+def attendance_summary(rows):
+    """Count places independently of people and repeated event participations."""
+    groups = defaultdict(list)
+    for person in rows:
+        groups[(norm(person['municipio']), code(person['comum']) or norm(person['comum']))].append(person)
+    represented = sum(any(p['present'] for p in group) for group in groups.values())
+    unresolved = sum(not any(p['present'] for p in group) and
+                     (any(p['pending'] for p in group) or not any(p['verified'] for p in group))
+                     for group in groups.values())
+    return {'commons': len(groups), 'commons_present': represented,
+            'commons_pending': unresolved, 'commons_without_presence': len(groups) - represented - unresolved,
+            'people': len(rows), 'people_present': sum(p['present'] > 0 for p in rows),
+            'present': sum(p['present'] for p in rows), 'pending': sum(p['pending'] for p in rows),
+            'without_presence': sum(p['verified'] > 0 and p['present'] == 0 for p in rows)}
+
+
 def history(people, events, entries, legacy_events, legacy_records, catalog, scope, filters, legacy_reviews=(), legacy_sites=()):
     """Histórico nominal; listas carregadas determinam ausências dos encarregados locais."""
-    people = [dict(p, aliases=list(p['aliases'])) for p in people]
+    people = include_directory(people, [], entries)
     known = {alias: p for p in people for alias in p['aliases']}
     for item in [*entries, *legacy_reviews]:
+        if item.get('source', {}).get('canonical_person_key'):
+            continue
         if item['person_key'] not in known:
             person = {'key': item['person_key'], 'aliases': [item['person_key']], 'nome': item['nome'],
                       'comum': item['comum'], 'municipio': item['municipio'], 'roles': item['roles'], 'source': 'evento'}
@@ -199,6 +232,8 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
     own_events = {e['id']: e for e in events}
     cells = defaultdict(dict)
     for item in entries:
+        if item.get('source', {}).get('canonical_person_key'):
+            continue
         if item['event_id'] not in own_events:
             continue
         person = known[item['person_key']]
@@ -224,7 +259,15 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
             site = sites.get(row.get('local_id'))
             if site:
                 matched_locations[(matches[0]['key'], event['id'])].add(site['nome'])
-        elif roles_of(row.get('cargo')) and can_access(scope, {'comum': row.get('comum_informada'), 'cidade': row.get('municipio_informado')}):
+        elif (roles_of(row.get('cargo'))
+              and (not filters.get('cargo') or filters['cargo'] in roles_of(row.get('cargo')))
+              and (not cities or norm(row.get('municipio_informado')) in cities)
+              and (not commons or code(row.get('comum_informada')) in commons)
+              and (not filters.get('tipo') or event['tipo'] == filters['tipo'])
+              and (not filters.get('evento') or filters['evento'] == 'legado:' + event['id'])
+              and (not filters.get('situacao') or filters['situacao'] == 'PRESENTE')
+              and (not filters.get('busca') or norm(filters['busca']) in norm(str(row.get('nome', '')) + ' ' + str(row.get('comum_informada', ''))))
+              and can_access(scope, {'comum': row.get('comum_informada'), 'cidade': row.get('municipio_informado')})):
             unmatched += 1
     review_map = {(r['event_id'], r['person_key']): r for r in legacy_reviews}
     for person in visible:
@@ -247,6 +290,7 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
                 'roles': review['roles'] if review else person['roles'],
                 'comum': review['comum'] if review else person['comum'], 'municipio': review['municipio'] if review else person['municipio']}
     output = []
+    summary_people = []
     event_options = {}
     for person in visible:
         items = [c for c in cells[person['key']].values() if not filters.get('tipo') or c['tipo'] == filters['tipo']]
@@ -254,21 +298,26 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
         for cell in items:
             event_options[cell['event_id']] = {'id': cell['event_id'], 'date': cell['date'], 'titulo': cell['titulo'],
                                              'tipo': cell['tipo'], 'local': own_events.get(cell['event_id'], {}).get('local', '')}
-        items = [c for c in items if (not filters.get('evento') or c['event_id'] == filters['evento'])
-                 and (not filters.get('situacao') or c['situacao'] == filters['situacao'])]
-        if (filters.get('evento') or filters.get('situacao')) and not items:
+        items = [c for c in items if not filters.get('evento') or c['event_id'] == filters['evento']]
+        if filters.get('evento') and not items:
             continue
         states = Counter(c['situacao'] for c in items)
         count = sum(states[state] for state in VERIFIED)
-        output.append({**person, 'cells': items, 'present': states['PRESENTE'], 'verified': count,
-                       'pending': states['CONFERIR'] + states['SEM_DADOS'], 'states': dict(states)})
-    output.sort(key=lambda p: (norm(p['municipio']), norm(p['comum']), norm(p['nome'])))
+        result = {**person, 'cells': items, 'present': states['PRESENTE'], 'verified': count,
+                  'pending': states['CONFERIR'] + states['SEM_DADOS'], 'states': dict(states)}
+        summary_people.append(result)
+        state = filters.get('situacao')
+        if state and not states[state]:
+            continue
+        # In annual mode, absence means no presence anywhere in the selected period.
+        if state == 'SEM_REGISTRO' and not filters.get('evento') and states['PRESENTE']:
+            continue
+        output.append(result)
+    output.sort(key=lambda p: (norm(p['municipio']), norm(p['comum'].split(' - ', 1)[-1]), norm(p['nome']), p['key']))
     return {'rows': output, 'options': options, 'year': filters['ano'], 'unmatched': unmatched,
             'event_options': sorted(event_options.values(), key=lambda e: (e['date'], e['titulo'])),
             'selected_cities': sorted({p['municipio'] for p in output}), 'roles': ROLES, 'kinds': KINDS, 'states': STATES,
-            'summary': {'people': len(output), 'present': sum(p['present'] for p in output),
-                        'pending': sum(p['pending'] for p in output),
-                        'without_presence': sum(p['verified'] > 0 and p['present'] == 0 for p in output)}}
+            'summary': attendance_summary(summary_people)}
 
 
 def event_payload(raw, people, records=(), mappings=None):

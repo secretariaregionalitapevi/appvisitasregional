@@ -163,7 +163,7 @@ def build_pdf(rows, scope, actor, now):
                     self.drawCentredString(center, y, text)
                 details = Paragraph(f'<b>Página {self._pageNumber} de {total}</b><br/>'
                                     f'Emissão: {now:%d/%m/%Y %H:%M}<br/>'
-                                    f'Recorte: {escape(scope)}<br/>Responsável: {escape(actor)}', metadata)
+                                    f'<b>Recorte:</b> {escape(scope)}<br/><b>Impresso por:</b> {escape(actor)}', metadata)
                 _, height = details.wrap(210, 90)
                 details.drawOn(self, page_width - 238, page_height - 16 - height)
                 self.setFont('Helvetica', 7)

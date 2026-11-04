@@ -10,7 +10,7 @@ from pypdf import PdfReader
 
 from ColorAdminApp.modules import music_ministry as api
 from ColorAdminApp.modules.music_ministry_domain import (roster, history, event_payload, parse_meeting,
-                                                        match_person, include_directory, person_matcher)
+                                                        match_person, include_directory, person_matcher, attendance_summary)
 from ColorAdminApp.modules.music_ministry_reports import build_pdf, build_excel
 
 
@@ -43,6 +43,22 @@ class MinistryDomainTests(SimpleTestCase):
         self.catalog, self.registry, self.members = fixture()
         self.people = roster(self.registry, self.members, self.catalog)
 
+    def test_common_with_two_leaders_counts_once_and_preserves_both_people(self):
+        rows = [dict(municipio='ITAPEVI', comum='BR-22-1 - Central', present=3, verified=4, pending=0),
+                dict(municipio='ITAPEVI', comum='BR-22-1 - Central', present=0, verified=4, pending=0),
+                dict(municipio='ITAPEVI', comum='BR-22-2 - Vila', present=0, verified=2, pending=1),
+                dict(municipio='COTIA', comum='BR-22-3 - Centro', present=0, verified=4, pending=0)]
+        result = attendance_summary(rows)
+        self.assertEqual(result['commons'], 3)
+        self.assertEqual(result['people'], 4)
+        self.assertEqual(result['people_present'], 1)
+        self.assertEqual(result['without_presence'], 3)
+        self.assertEqual(result['present'], 3)
+        self.assertEqual(result['commons_present'], 1)
+        self.assertEqual(result['commons_without_presence'], 1)
+        self.assertEqual(result['commons_pending'], 1)
+        self.assertEqual(sum(result[k] for k in ['commons_present', 'commons_without_presence', 'commons_pending']), result['commons'])
+
     def test_two_sources_share_one_identity_with_aliases(self):
         self.assertEqual(len(self.people), 2)
         person = next(p for p in self.people if p['nome'] == 'José Silva')
@@ -74,6 +90,24 @@ class MinistryDomainTests(SimpleTestCase):
                   'situacao': 'PRESENTE', 'original': {}}
         result = event_payload(raw_event(lista_completa=False), self.people, [source], [{'row': 5, 'key': maria['key']}])
         self.assertEqual(next(r for r in result['registros'] if r['nome'] == 'José Silva')['situacao'], 'SEM_REGISTRO')
+
+    def test_annual_absence_filter_does_not_turn_occasional_absence_into_zero_presence(self):
+        events = [dict(id='jan', titulo='January', tipo='ENSAIO_REGIONAL', data_evento='2026-01-18'),
+                  dict(id='may', titulo='May', tipo='ENSAIO_REGIONAL', data_evento='2026-05-17')]
+        people = roster([*self.registry, dict(self.registry[0], id='second', nome_aluno='Outro encarregado')], self.members, self.catalog)
+        records = [dict(evento_id='jan', sam_pessoa_id='1', nome='Present', comum_codigo='BR-22-1', situacao='PRESENTE'),
+                   dict(evento_id='may', nome='Unknown', comum_codigo='BR-22-1', situacao='PRESENTE')]
+        args = (people, [], [], events, records, self.catalog, {'level': 'regional'})
+        annual = history(*args, {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL'})
+        absent = history(*args, {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL', 'situacao': 'SEM_REGISTRO'})
+        self.assertEqual(absent['summary'], annual['summary'])
+        self.assertEqual(absent['summary']['people'], 2)
+        self.assertEqual(absent['summary']['people_present'], 1)
+        self.assertEqual(absent['summary']['without_presence'], 1)
+        self.assertEqual([p['key'] for p in absent['rows']], ['sam:second'])
+        may = history(*args, {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL', 'evento': 'legado:may', 'situacao': 'SEM_REGISTRO'})
+        self.assertEqual(len(may['rows']), 2)
+        self.assertEqual(may['summary']['without_presence'], 2)
 
     def test_loaded_legacy_list_marks_missing_registered_local_leader_absent(self):
         event = {'id': 'jan', 'titulo': 'Ensaio', 'tipo': 'ENSAIO_REGIONAL', 'data_evento': '2026-01-18'}
@@ -137,6 +171,25 @@ class MinistryDomainTests(SimpleTestCase):
         people = include_directory(self.people, directory)
         matches = match_person({'nome': 'Outra pessoa', 'comum': self.catalog[0]['comum']}, people)
         self.assertEqual(matches[0]['key'], 'importado:stable')
+
+    def test_confirmed_alias_uses_registry_name_and_counts_presence_once(self):
+        canonical = next(p for p in self.people if p['nome'] == 'José Silva')
+        old = {'event_id': 'bras', 'person_key': 'importado:old', 'nome': 'José da Silva',
+               'comum': canonical['comum'], 'municipio': canonical['municipio'], 'roles': canonical['roles'],
+               'situacao': 'NAO_APLICA', 'observacoes': '', 'source': {'canonical_person_key': canonical['key']}}
+        current = {**old, 'person_key': canonical['key'], 'nome': canonical['nome'], 'situacao': 'PRESENTE', 'source': {}}
+        directory = [{'person_key': 'importado:old', 'nome': old['nome'], 'comum': old['comum'],
+                      'municipio': old['municipio'], 'roles': []}]
+        people = include_directory(self.people, directory, [old])
+        self.assertEqual(match_person({'nome': old['nome'], 'comum': old['comum']}, people)[0]['key'], canonical['key'])
+        event = dict(id='bras', titulo='Reunião no Brás', tipo='REUNIAO_MINISTERIO', data_evento='2026-10-06',
+                     local='Brás', modalidade='PRESENCIAL')
+        result = history(people, [event], [old, current], [], [], self.catalog, {'level': 'regional'},
+                         {'ano': 2026, 'evento': 'bras', 'situacao': 'PRESENTE'})
+        self.assertEqual(len(result['rows']), 1)
+        self.assertEqual(result['rows'][0]['nome'], 'José Silva')
+        self.assertEqual(result['rows'][0]['present'], 1)
+        self.assertNotIn('importado:old', [p['key'] for p in result['rows']])
 
     def workbook(self, formula=False):
         workbook = Workbook()
@@ -259,7 +312,7 @@ class MinistryApiTests(SimpleTestCase):
             excel = api.export(request, 'excel')
         self.assertEqual([p['nome'] for p in data['rows']], ['José Silva'])
         self.assertEqual(data['event_options'][0]['id'], 'bras')
-        self.assertIn('Presentes_Bras_06_10_2026.pdf', pdf['Content-Disposition'])
+        self.assertIn('REUNIÃO_MUSICAL_BRÁS_06_10_2026.pdf', pdf['Content-Disposition'])
         text = '\n'.join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
         self.assertIn('Lista de presentes', text)
         self.assertIn('06/10/2026', text)

@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from . import music_events
-from .access_control import can_access, common_catalog, service_headers, user_scope
+from .access_control import can_access, common_catalog, service_headers, user_scope, scope_details
 from .music_ministry_domain import TITLE, ROLES, KINDS, STATES, roster, history, parse_meeting, match_person, event_payload, include_directory
 
 
@@ -27,7 +27,7 @@ def _actor(request):
 
 
 def _sources(year, refresh=False):
-    key = f'music-ministry:sources:v2:{year}'
+    key = f'music-ministry:sources:v3:{year}'
     cached = None if refresh else cache.get(key)
     if cached is not None:
         return cached
@@ -43,6 +43,7 @@ def _sources(year, refresh=False):
         own = executor.submit(read, 'musica_ministerio_eventos', data_evento=f'gte.{year}-01-01',
                               **{'and': f'(data_evento.lt.{year + 1}-01-01)'}, order='data_evento.asc,id.asc')
         directory_future = executor.submit(read, 'musica_ministerio_pessoas', order='person_key.asc')
+        identity_future = executor.submit(read, 'musica_ministerio_participacoes', select='person_key,nome,source', **{'source->>canonical_person_key': 'not.is.null'}, order='event_id.asc,person_key.asc')
         events = legacy.result()
         available = True
         try:
@@ -52,6 +53,7 @@ def _sources(year, refresh=False):
                 raise
             own_events, available = [], False
         directory = directory_future.result() if available else []
+        identity_links = identity_future.result() if available else []
         records, entries, legacy_reviews, legacy_sites = [], [], [], []
         pending = []
         for table, ids, target, select in [
@@ -76,7 +78,7 @@ def _sources(year, refresh=False):
         result = {'catalog': catalog.result(), 'registry': registry.result(), 'members': members.result(),
                   'events': own_events, 'entries': entries, 'legacy_events': events,
                   'legacy_records': records, 'available': available, 'directory': directory, 'legacy_reviews': legacy_reviews,
-                  'legacy_sites': validated_sites(events, legacy_sites)}
+                  'legacy_sites': validated_sites(events, legacy_sites), 'identity_links': identity_links}
     cache.set(key, result, 60)
     return result
 
@@ -91,7 +93,7 @@ def dashboard_data(request):
     if role and role not in ROLES or kind and kind not in KINDS or state and state not in STATES:
         raise ValueError('Filtro de cargo ou evento inválido.')
     sources = _sources(year, request.GET.get('atualizar') == '1')
-    people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'])
+    people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
     filters = {'ano': year, 'municipios': request.GET.getlist('municipio'), 'comuns': request.GET.getlist('comum'),
                'cargo': role, 'tipo': kind, 'busca': request.GET.get('busca', '')[:120],
                'evento': request.GET.get('evento', ''), 'situacao': state}
@@ -110,7 +112,7 @@ def page(request):
         return render(request, 'pages/403.html', status=403)
     return render(request, 'pages/music_ministry.html', {'page_title': TITLE, 'year': timezone.localdate().year,
         'can_manage': user_scope(request)['level'] in {'regional', 'global'},
-        'roles': ROLES, 'kinds': KINDS, 'states': STATES})
+        'roles': ROLES, 'kinds': KINDS, 'states': STATES, 'scope': scope_details(user_scope(request))})
 
 
 @require_GET
@@ -145,7 +147,7 @@ def api_manage(request, action):
                 raise ValueError('Selecione um arquivo .xlsx de até 15 MB.')
             sources = _sources(timezone.localdate().year)
             result = parse_meeting(upload.read(), sources['catalog'])
-            people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'])
+            people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
             token = uuid4().hex
             cache.set(f'music-ministry:preview:{identity}:{token}', {**result, 'filename': upload.name[:180]}, 1800)
             return JsonResponse({'token': token, 'count': result['count'], 'duplicates': result['duplicate_rows'], 'suggested_date': result['suggested_date'],
@@ -165,7 +167,7 @@ def api_manage(request, action):
                     raise ValueError('Encontro não encontrado.')
                 year = int(str(event[0]['data_evento'])[:4])
                 sources = _sources(year, True)
-                people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'])
+                people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
                 person = next((p for p in people if raw['person_key'] in p['aliases']), None)
                 if person is None:
                     raise ValueError('Pessoa não encontrada no cadastro individual.')
@@ -179,7 +181,7 @@ def api_manage(request, action):
                                  'municipio': person['municipio'], 'roles': person['roles'],
                                  'situacao': raw['situacao'], 'observacoes': str(raw.get('observacoes') or '').strip()},
                     'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
-                cache.delete(f'music-ministry:sources:v2:{year}')
+                cache.delete(f'music-ministry:sources:v3:{year}')
                 return JsonResponse({'item': result})
             records = music_events._read('musica_ministerio_participacoes', event_id=f'eq.{raw["event_id"]}',
                                         person_key=f'eq.{raw["person_key"]}')
@@ -189,7 +191,7 @@ def api_manage(request, action):
                 'p_situacao': raw['situacao'], 'p_observacoes': str(raw.get('observacoes') or '').strip(),
                 'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
             event = music_events._read('musica_ministerio_eventos', id=f'eq.{raw["event_id"]}')[0]
-            cache.delete(f'music-ministry:sources:v2:{str(event["data_evento"])[:4]}')
+            cache.delete(f'music-ministry:sources:v3:{str(event["data_evento"])[:4]}')
             return JsonResponse({'item': result})
         if action != 'salvar':
             return JsonResponse({'error': 'Operação inválida.'}, status=404)
@@ -197,7 +199,7 @@ def api_manage(request, action):
         if not 2000 <= year <= 2100 or raw.get('conferido') is not True:
             raise ValueError('Confira o evento e confirme a conferência antes de salvar.')
         sources = _sources(year, True)
-        people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'])
+        people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
         preview = None
         if raw.get('token'):
             preview = cache.get(f'music-ministry:preview:{identity}:{raw["token"]}')
@@ -241,7 +243,7 @@ def api_manage(request, action):
             raise ValueError('Nenhuma pessoa foi encontrada para o público selecionado.')
         result = _rpc('musica_ministerio_salvar', {'p_evento': payload, 'p_hash': preview['sha256'] if preview else None,
             'p_arquivo': preview['filename'] if preview else None, 'p_usuario_id': identity, 'p_usuario_nome': actor})
-        cache.delete(f'music-ministry:sources:v2:{year}')
+        cache.delete(f'music-ministry:sources:v3:{year}')
         return JsonResponse(result)
     except (ValueError, TypeError, KeyError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)

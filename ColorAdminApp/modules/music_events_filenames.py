@@ -19,10 +19,23 @@ def report_scope(cities, *, filename=False):
 
 
 def presence_filename(cities, dates):
+    months = ('JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ')
     days = sorted(set(str(day)[:10] for day in dates))
-    labels = [day[8:10] + '_' + day[5:7] + '_' + day[:4] for day in days]
-    period = labels[0] if len(labels) == 1 else f'{labels[0]}_a_{labels[-1]}' if labels else 'Periodo'
-    return f'Presencas_{report_scope(cities, filename=True)}_{period}.pdf'
+    labels = list(dict.fromkeys(months[int(day[5:7]) - 1] + day[2:4] for day in days))
+    period = labels[0] if len(labels) == 1 else f'{labels[0]}_A_{labels[-1]}' if labels else 'PERIODO'
+    places = sorted({re.sub(r'[^A-Z0-9]+', '_', norm(city)).strip('_') for city in cities if city})
+    place = '_E_'.join(places) or 'REGIONAL'
+    return f'[RELATÓRIO] EnR_{place}_{period}.pdf'
+
+
+def rehearsal_places(data):
+    options = data.get('options', {}).get('locations', [])
+    local = data.get('filters', {}).get('local')
+    if local:
+        return [site['nome'] for site in options if site['id'] == local]
+    cities = data.get('filters', {}).get('municipios', [])
+    selected = [site['nome'] for site in options if norm(site['nome']) in {norm(city) for city in cities}]
+    return selected or [site['nome'] for site in data.get('locations', [])] or [site['nome'] for site in options]
 
 
 def download_header(filename):

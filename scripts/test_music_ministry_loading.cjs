@@ -29,6 +29,19 @@ vm.runInContext(source,sandbox);
   assert.ok($('#ministry-body').innerHTML.includes('Carregando'));
   finish();await new Promise(resolve=>setTimeout(resolve,20));
   assert.ok($('#ministry-body').innerHTML.includes('Pessoa de teste'));
+  assert.ok($('#ministry-metrics').innerHTML.includes('Comuns no recorte'));
+  assert.ok($('#ministry-event-shortcuts').innerHTML.includes('data-select-event="bras"'));
+  assert.ok($('#ministry-event-shortcuts').innerHTML.includes('06/10/2026'));
+  assert.ok($('#ministry-view-context').textContent.includes('1 encontro(s)'));
+
+  assert.ok($('#ministry-metrics').innerHTML.includes('Pessoas com presen\u00e7a no recorte'));
+  assert.ok($('#ministry-metrics').innerHTML.includes('Participa\u00e7\u00f5es a conferir'));
+  assert.ok($('#ministry-totals').textContent.includes('presen\u00e7as confirmadas'));
+  assert.ok(!$('#ministry-totals').textContent.includes('?'));
+
+  assert.ok($('#ministry-totals').textContent.includes('1 comuns'));
+  assert.ok($('#ministry-body').innerHTML.includes('ministry-common-group'));
+
   assert.ok($('#ministry-body').innerHTML.includes('ministry-status PRESENTE'));
   assert.ok($('#ministry-head').innerHTML.includes('06/10/2026'));
   assert.ok($('#ministry-head').innerHTML.includes('Reunião do Ministério da Música'));

@@ -14,7 +14,7 @@ class DashboardTests(SimpleTestCase):
     def test_regional_report_has_short_filename_and_header_scope(self):
         from ColorAdminApp.modules.music_events_dashboard import REGIONAL
         from ColorAdminApp.modules.music_events_filenames import presence_filename, report_scope
-        self.assertEqual(presence_filename(REGIONAL, ['2026-01-18']), 'Presencas_Regional_18_01_2026.pdf')
+        self.assertEqual(presence_filename(['ITAPEVI'], ['2026-05-17']), '[RELATÓRIO] EnR_ITAPEVI_MAI26.pdf')
         self.assertEqual(report_scope(REGIONAL), 'REGIONAL ITAPEVI')
         self.assertEqual(report_scope(['ITAPEVI', 'PIRAPORA']), 'ITAPEVI / PIRAPORA')
         self.assertEqual(report_scope(['COTIA', 'CAUCAIA', 'VGP']), '3 MUNICÍPIOS SELECIONADOS')
@@ -190,14 +190,14 @@ class DashboardTests(SimpleTestCase):
         req=RequestFactory().get('/musica/eventos/exportar-pdf/')
         req.session={'user_profile':{'full_name':'Teste','role_id':1}}
         response=export_response(d,req,'pdf')
-        self.assertIn('Presencas_Selecao_20_09_2026.pdf',response['Content-Disposition'])
+        self.assertIn('EnR_ITAPEVI_E_PIRAPORA_SET26.pdf',response['Content-Disposition'])
         text='\n'.join(p.extract_text() for p in PdfReader(io.BytesIO(response.content)).pages)
         self.assertIn('RELATÓRIO UNIFICADO ENSAIO REGIONAL',text)
         from urllib.parse import unquote
         d['filters']['municipios'] = ['ITAPEVI']
         d['events'][0]['data_evento'] = '2026-05-17'
         renamed = export_response(d,req,'pdf')
-        self.assertIn("filename*=UTF-8''Presencas_ITAPEVI_17_05_2026.pdf", unquote(renamed['Content-Disposition']))
+        self.assertIn("filename*=UTF-8''[RELATÓRIO] EnR_ITAPEVI_MAI26.pdf", unquote(renamed['Content-Disposition']))
         req=RequestFactory().get('/musica/eventos/exportar-pdf/?relatorio=comuns')
         req.session={'user_profile':{'full_name':'Teste','role_id':1}}
         response=export_response(d,req,'pdf')

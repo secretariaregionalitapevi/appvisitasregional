@@ -3,12 +3,13 @@
 {% block css %}
 <link rel="stylesheet" href="{% static 'css/musicalizacao-multiselect.css' %}">
 <link rel="stylesheet" href="{% static 'css/music-events.css' %}?v=20261101-2">
-<link rel="stylesheet" href="{% static 'css/music-ministry.css' %}?v=20261103-4">
+<link rel="stylesheet" href="{% static 'css/music-ministry.css' %}?v=20261103-10">
 {% endblock %}
 {% block content %}
 <div id="ministry-app" class="music-events" data-manage="{{ can_manage|yesno:'true,false' }}">
   {% csrf_token %}
-  <section class="events-hero mb-4"><div><div class="small fw-bold text-uppercase mb-2">Painel de gestão · Administração musical</div><h1>{{ page_title }}</h1><p class="mb-0">Presenças e histórico dos eventos de música.</p></div><div class="ministry-event-picker"><label for="ministry-event">Evento em análise</label><select id="ministry-event" class="form-select"><option value="">Acompanhamento anual</option></select></div></section>
+  <section class="events-hero mb-4"><div><div class="small fw-bold text-uppercase mb-2">Painel de gestão · Administração musical</div><h1>{{ page_title }}</h1><p class="mb-0">Presenças e histórico dos eventos de música.</p></div><div class="ministry-event-picker"><label for="ministry-event">Selecionar evento</label><select id="ministry-event" class="form-select"><option value="">Todos os eventos do ano</option></select></div><div class="music-scope ministry-login-scope text-md-end"><div class="small text-white-50 mb-1">Escopo desta visão</div><strong>Regional Itapevi</strong><div class="small mt-1">{{ scope.nivel|title }}{% if scope.municipio %} · {{ scope.municipio }}{% endif %}</div>{% if scope.comum %}<strong class="d-block mt-1">{{ scope.comum }}</strong>{% endif %}</div></section>
+  <section class="events-panel ministry-event-navigation mb-3" aria-label="Selecionar evento"><h2>Qual evento deseja acompanhar?</h2><p>Escolha um encontro pela data ou consulte todos os eventos do ano.</p><div id="ministry-event-shortcuts" class="ministry-event-shortcuts"></div><div id="ministry-view-context" class="ministry-view-context" aria-live="polite"></div></section>
   <div id="ministry-feedback" role="status" aria-live="polite"></div>
   <section class="events-panel ministry-toolbar mb-3" aria-label="Filtros e exportação">
     <div class="ministry-field-year"><label for="ministry-year">Ano</label><input id="ministry-year" type="number" min="2000" max="2100" class="form-control" value="{{ year }}"></div>
@@ -23,6 +24,7 @@
   </section>
   <div id="ministry-scope" class="events-active-scope" aria-live="polite"></div>
   <section id="ministry-metrics" class="ministry-metrics mb-3" aria-label="Resumo do acompanhamento"></section>
+  <p id="ministry-totals" class="ministry-explanation mb-3" aria-live="polite"></p>
   <section class="events-panel mb-3"><div class="events-heading"><div><h2>Municípios</h2><p>Selecione um município ou combine vários pelo filtro acima.</p></div></div><nav id="ministry-cities" class="ministry-city-nav" aria-label="Selecionar município"></nav></section>
   <section class="events-panel mb-3"><div class="events-heading"><div><h2>Encontros e listas de presença</h2><p>Consulte ou exporte os presentes de cada encontro.</p></div></div><div id="ministry-events" class="ministry-event-list"></div></section>
   <section class="events-panel mb-3"><div class="events-heading"><div><h2 id="ministry-list-title">Acompanhamento anual por pessoa</h2><p id="ministry-list-hint">As datas aparecem por encontro. Abra o nome para consultar o histórico.</p></div><span class="events-pill" id="ministry-count"></span></div><div class="ministry-explanation" id="ministry-explanation">Presenças confirmadas em verde; ausência conferida em vermelho; pendências em amarelo; eventos sem dados em cinza.</div><div class="table-responsive ministry-table-scroll"><table class="table events-table ministry-table mb-0"><thead id="ministry-head"></thead><tbody id="ministry-body"><tr><td colspan="8" class="events-empty">Carregando acompanhamento…</td></tr></tbody></table></div></section>
@@ -49,4 +51,4 @@
   <dialog id="ministry-review-dialog" class="ministry-dialog ministry-dialog-small"><form id="ministry-review-form"><div class="ministry-dialog-head"><h2>Conferir participação</h2><button type="button" class="btn btn-white border" data-close="ministry-review-dialog">Fechar</button></div><p id="review-context"></p><label for="review-state">Situação</label><select id="review-state" class="form-select mb-3">{% for key,label in states.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select><label for="review-note">Justificativa / observações</label><textarea id="review-note" class="form-control mb-3" maxlength="1000" rows="3"></textarea><div id="review-error" role="alert" class="text-danger mb-2"></div><button id="review-save" class="btn btn-primary">Salvar conferência</button></form></dialog>
 </div>
 {% endblock %}
-{% block js %}<script src="{% static 'js/musicalizacao-multiselect.js' %}"></script><script src="{% static 'js/music-ministry.js' %}?v=20261103-4"></script>{% endblock %}
+{% block js %}<script src="{% static 'js/musicalizacao-multiselect.js' %}"></script><script src="{% static 'js/music-ministry.js' %}?v=20261103-10"></script>{% endblock %}

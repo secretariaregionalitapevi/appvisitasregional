@@ -357,10 +357,10 @@ def build_pdf(data,actor,now):
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-74,title)
         f=data['filters'];identity=data.get('report_identity',{})
         recorte=', '.join(f.get('municipios',[])) or ('Regional Itapevi' if f.get('origem','regional')=='regional' else 'Visitantes' if f.get('origem')=='visitantes' else 'Regional e visitantes')
-        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}','Recorte: '+recorte,'Comuns: '+(', '.join(f.get('comuns',[])) or 'Todas'),'Responsável: '+actor]
+        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}','Recorte: '+recorte,'Comuns: '+(', '.join(f.get('comuns',[])) or 'Todas'),'Impresso por: '+actor]
         if identity.get('scope'):lines.append('Escopo: '+identity['scope'])
         if identity.get('common'):lines.append(identity['common'])
-        meta=Paragraph('<br/>'.join(escape(x) for x in lines),ParagraphStyle('meta',parent=style,alignment=2,fontSize=7,leading=9))
+        meta=Paragraph('<br/>'.join('<b>'+escape(x.partition(':')[0])+':</b> '+escape(x.partition(':')[2].strip()) if ':' in x else escape(x) for x in lines),ParagraphStyle('meta',parent=style,alignment=2,fontSize=7,leading=9))
         _,height=meta.wrap(190,100);meta.drawOn(canvas,page_width-218,page_height-34-height)
         canvas.restoreState()
     story=[Paragraph(escape('RECORTE DO RELATÓRIO · '+scope_label(data)),context),Spacer(1,12),
@@ -421,9 +421,9 @@ def export_response(data,request,file_format):
     prefix={'executivo':'Resumo_Executivo_Ensaios_RTs','encarregados':'Encarregados_Locais','comuns':'Participacao_por_Comum','composicao':'Composicao_Musical'}.get(data.get('report'),'Ensaios_RTs')
     response['Content-Disposition']=f'attachment; filename="{prefix}_{now:%d-%m-%Y_%H-%M}.{ext}"'
     events = data.get('events', [])
-    if file_format == 'pdf' and data['report'] == 'comuns' and events and all(e.get('tipo') == 'ENSAIO_REGIONAL' for e in events):
-        from .music_events_filenames import presence_filename, download_header
-        cities = data.get('filters', {}).get('municipios') or sorted({r['municipio'] for r in data.get('rows', [])})
+    if file_format == 'pdf' and events and all(e.get('tipo') == 'ENSAIO_REGIONAL' for e in events):
+        from .music_events_filenames import presence_filename, download_header, rehearsal_places
+        cities = rehearsal_places(data)
         response['Content-Disposition'] = download_header(presence_filename(cities, [e['data_evento'] for e in events]))
     response['Cache-Control']='private, no-store'
     return response

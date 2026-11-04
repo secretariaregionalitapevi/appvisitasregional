@@ -60,6 +60,11 @@ IDs SAM e da irmandade são preservados como aliases quando a correspondência e
 por nome, comum e cargo. Homônimos com IDs diferentes na mesma fonte permanecem separados.
 O número da linha da planilha é uma referência da fonte, não um identificador universal da pessoa.
 
+Identidades conciliadas por confirmação do usuário mantêm o nome correto do cadastro. A grafia da
+lista permanece no registro original e na auditoria, ligada ao identificador canônico. A presença
+é contada uma única vez, e a identidade importada duplicada deixa de compor o público ativo.
+As grafias confirmadas também são reconhecidas nas próximas importações, sempre na mesma comum.
+
 Os encontros novos congelam nome, comum, município e cargos do público conferido. O cadastro atual
 apenas sugere o público; o operador deve conferir a situação na data histórica. Cadastros preservados
 de listas antigas não geram ausência em novos encontros sem conferência. Em RTs por família,
@@ -83,3 +88,7 @@ python manage.py check
 O script `scripts/validation/validate_music_ministry.py`, executado pelo shell Django,
 gera arquivos de validação com dados fictícios para a Regional e para dois municípios.
 As imagens e documentos ficam em `tmp/pdfs/ministerio/`.
+
+### Contagens de comuns e pessoas
+
+Comuns são contadas por município e código da comum, independentemente do número de encarregados. Os históricos individuais continuam separados. A soma de presenças conta participações por pessoa e encontro; não representa pessoas distintas. Comuns com alguma presença, sem presença e sem conclusão formam uma divisão do total de comuns no recorte. Uma comum fica representada quando pelo menos uma pessoa tem presença. Pendências e eventos sem dados não confirmam presença nem ausência. Os avisos de vínculos não identificados respeitam os filtros selecionados.

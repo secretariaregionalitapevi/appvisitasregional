@@ -75,3 +75,11 @@ Antes de entregar uma alteração:
 - O banco deve preservar os tipos `date` e `timestamp`; a formatação acontece somente na apresentação/exportação.
 - Não exportar datas ISO (`AAAA-mm-dd`) nem depender da formatação automática do Excel ou do navegador.
 - Em nomes de arquivo, nos quais `/` e `:` não são permitidos, usar o equivalente seguro `dd_mm_AAAA_HH_mm` (ou `dd_mm_AAAA` quando não houver horário).
+
+### Relatorios de presenca musical
+
+Por solicitacao do usuario, os PDFs de presenca musical usam o titulo Relatório de Presença e a identificacao Impresso por. A faixa de contexto apresenta evento, data, municipios, cargo, situacao e quantidades, com rotulos em negrito. Nomes de download: [RELATÓRIO] TIPO_DO_EVENTO_dd_mm_AAAA, preservando os acentos via filename* UTF-8.
+
+Cabecalhos PDF: usar **Impresso por:** para o usuario que gera o arquivo, com rotulos dos metadados em negrito e valores regulares. Preservar campos de responsaveis por pessoas e atividades.
+
+Excecao solicitada para nomes de PDFs de ensaios regionais: [RELATÓRIO] EnR_LOCAL_MMMaa.pdf, usando o local de realizacao e mes/ano do evento (exemplo EnR_ITAPEVI_MAI26).
