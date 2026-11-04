@@ -20,7 +20,8 @@ from .sam_history_sync import SOURCE_CONFIG
 TABLES = (
     "visitas_comuns", "sam_gem_groups", "sam_gem_enrollments", "sam_gem_classes",
     "sam_gem_attendance", "musica_acompanhamento_aluno", "sam_student_sync_state",
-    "sam_level_history", "sam_audit_events", *(table for table, _ in SOURCE_CONFIG.values()),
+    "sam_level_history", "sam_audit_events", "sam_cadastro_historico", "sam_cadastro_transicoes",
+    *(table for table, _ in SOURCE_CONFIG.values()),
 )
 PAGE_SIZE = 1000
 SCHEMA_VERSION = 1
@@ -115,7 +116,8 @@ def verify(document):
         raise BackupError("Versão de backup não suportada.")
     if document.get("sha256") != seal(document)["sha256"]:
         raise BackupError("A assinatura de integridade não confere; cópia recusada.")
-    if set(document.get("tables", {})) != set(TABLES):
+    legacy_tables = set(TABLES) - {'sam_cadastro_historico', 'sam_cadastro_transicoes'}
+    if set(document.get("tables", {})) not in (set(TABLES), legacy_tables):
         raise BackupError("A cópia não contém todas as tabelas previstas.")
     if any(not isinstance(rows, list) for rows in document["tables"].values()):
         raise BackupError("Estrutura de tabelas inválida.")

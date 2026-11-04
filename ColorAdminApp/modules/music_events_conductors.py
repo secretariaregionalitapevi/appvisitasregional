@@ -1,5 +1,5 @@
 """Uma conferência por evento e comum; não confundir com contagem de pessoas."""
-from collections import Counter
+from collections import Counter, defaultdict
 from .music_events_dashboard import code, REGIONAL, regional_city
 from .music_events_import import norm
 from .music_events_identity import CommonResolver
@@ -19,22 +19,37 @@ def attendance_label(row):
             'SEM_ENCARREGADO': 'SEM ENCARREGADO', 'ENFERMO': 'ENFERMO'}[attendance_status(row)]
 
 
-def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leaders=()):
+def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leaders=(),transitions=None):
     resolver=CommonResolver(catalog)
     registered_leaders={};leaders_by_city_name={}
-    for person in leaders:
+    changes_by_person = defaultdict(list)
+    for row in transitions or []:
+        changes_by_person[str(row['aluno_id'])].append(row)
+    dated_leaders = []
+    for event in events:
+        for person in leaders:
+            changes = changes_by_person.get(str(person.get('id')), [])
+            if 'ENCARREGADO LOCAL' not in norm(person.get('cargo_ministerio')) and not any(
+                r['campo'] == 'cargo_ministerio' and any('ENCARREGADO LOCAL' in norm(v)
+                    for v in (r['anterior'], r['posterior'])) for r in changes):
+                continue
+            if transitions is not None:
+                from .sam_temporal import state_at
+                person = state_at(person, changes, event['data_evento'])
+            dated_leaders.append((event['id'], person))
+    for event_id, person in dated_leaders:
         roles={norm(x) for x in str(person.get('cargo_ministerio') or '').split(',')}
         if 'ENCARREGADO LOCAL' not in roles or norm(person.get('status')) in {'INATIVO','EXCLUIR'}:continue
         common=resolver.resolve(person.get('codigo_comum') or person.get('comum_congregacao'),person.get('municipio'))
         name=norm(person.get('nome_aluno'))
         if not common or not name:continue
-        key=code(common['comum']);registered_leaders.setdefault(key,set()).add(name)
-        leaders_by_city_name.setdefault((norm(regional_city(common['cidade'])),name),set()).add(key)
+        key=code(common['comum']);registered_leaders.setdefault((event_id,key),set()).add(name)
+        leaders_by_city_name.setdefault((event_id,norm(regional_city(common['cidade'])),name),set()).add(key)
     records=resolver.records(records)
     canonical_by_code={code(x.get('comum')):x for x in catalog}
     for row in records:
         if not row.get('comum_nao_reconhecida'):continue
-        matches=leaders_by_city_name.get((norm(regional_city(row.get('municipio_informado'))),norm(row.get('nome'))),set())
+        matches=leaders_by_city_name.get((row['evento_id'],norm(regional_city(row.get('municipio_informado'))),norm(row.get('nome'))),set())
         if len(matches)!=1:continue
         canonical=canonical_by_code[next(iter(matches))]
         row['comum_codigo']=code(canonical['comum']);row['comum_informada']=canonical['comum']
@@ -73,7 +88,7 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
             'data':event['data_evento'],'comum_chave':key,'comum':c.get('comum') or ('A conferir: '+common if row.get('comum_nao_reconhecida') else common),'municipio':city,
             'situacao':'NAO_INFORMADO','locais':[],'nomes':[],'observacoes':'','fonte':'Não conferido'})
         imported_local_conductor='ENCARREGADO LOCAL' in norm(row.get('cargo'))
-        registered_identity=norm(row.get('nome')) in registered_leaders.get(key,set())
+        registered_identity=norm(row.get('nome')) in registered_leaders.get((event['id'],key),set())
         if imported_local_conductor or registered_identity:
             group['consta_lista']=True
             group['situacao']='PRESENTE';group['fonte']='Presença nominal importada'

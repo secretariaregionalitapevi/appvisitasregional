@@ -292,12 +292,26 @@ def _build_timeline(student, datasets):
         "escalas": ("data", "Escala", "fa-wave-square", "escala", None, None),
     }
     events = []
+    if student.get('data_inicio_gem'):
+        events.append({'date': _event_date(student['data_inicio_gem']), 'type': 'ingresso',
+                       'title': 'Ingresso no GEM', 'description': 'Data de ingresso informada no cadastro.',
+                       'icon': 'fa-user-plus', 'source': 'Cadastro'})
     if student.get("created_at"):
         events.append({
             "date": _event_date(student["created_at"]), "type": "cadastro", "title": "Início do acompanhamento",
             "description": "Aluno incluído no acompanhamento do GEM.", "icon": "fa-user-plus", "source": "Cadastro",
         })
     for source, rows in datasets.items():
+        if source == 'transicoes':
+            for row in rows:
+                confirmed = row['date_basis'] in {'sam', 'manual'}
+                events.append({'date': _event_date(row['effective_at']), 'type': 'transicao',
+                    'title': 'Mudança de ' + row['campo'].replace('_', ' '),
+                    'description': f"{row.get('anterior') or 'Não informado'} → {row.get('posterior') or 'Não informado'}" +
+                        ('' if confirmed else ' · Data de detecção; vigência no SAM não confirmada.'),
+                    'icon': 'fa-history', 'source': 'SAM' if confirmed else 'Sincronização',
+                    'date_basis': row['date_basis'], 'source_ref': row['source_ref']})
+            continue
         if source == "atividades":
             for row in rows:
                 events.append({
@@ -508,12 +522,9 @@ def api_students(request):
                 params[column] = f"eq.{values[0]}" if len(values) == 1 else 'in.(' + ','.join(json.dumps(value) for value in values) + ')'
         query = request.GET.get("q", "").strip()
         if query:
-            safe_query = "".join(char for char in query if char not in "(),.*")[:80]
-            if safe_query:
-                params["or"] = "(" + ",".join(
-                    f"{column}.ilike.*{safe_query}*" for column in
-                    ("nome_aluno", "comum_congregacao", "municipio", "instrumento", "nivel")
-                ) + ")"
+            from .gem_search import database_filter, terms
+            if terms(query):
+                params['and'] = database_filter(query)
         response = requests.get(
             f"{settings.SUPABASE_URL}/rest/v1/{TABLE}",
             headers=service_headers("count=exact"), params=params, timeout=15,
@@ -536,8 +547,10 @@ def api_students(request):
             total = int(response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
         except ValueError:
             total = len(rows)
+        from .gem_darpe import enrich
+        darpe_available = enrich(rows)
         return JsonResponse({
-            "items": rows,
+            "items": rows, 'darpe_disponivel': darpe_available,
             "pagination": {
                 "page": page_number,
                 "page_size": page_size,
@@ -550,6 +563,7 @@ def api_students(request):
 
 
 def _report_rows(request):
+    from .gem_search import matches
     _scope, rows = _visible_students(request, include_activity=True)
     category = request.GET.get('situacao', 'formacao')
     selected = {key: set(request.GET.getlist(key)) for key in ('nivel', 'municipio', 'comum', 'instrumento')}
@@ -571,8 +585,7 @@ def _report_rows(request):
             continue
         if selected['instrumento'] and row.get('instrumento') not in selected['instrumento']:
             continue
-        searchable = ' '.join(str(row.get(field) or '') for field in ('nome_aluno', 'comum_congregacao', 'municipio', 'instrumento', 'nivel'))
-        if query and query not in _norm(searchable):
+        if query and not matches(row, query):
             continue
         result.append(row)
     return sorted(result, key=lambda row: _norm(row.get('nome_aluno')))
@@ -657,6 +670,7 @@ def api_student_timeline(request, student_id):
             "provas": ("musica_acompanhamento_provas", "data_prova.desc"),
             "escalas": ("musica_acompanhamento_escala", "data.desc"),
             "atividades": ("musica_acompanhamento_atividades", "data_atividade.desc"),
+            "transicoes": ("sam_cadastro_transicoes", "effective_at.desc,id.desc"),
         }
 
         def fetch(item):

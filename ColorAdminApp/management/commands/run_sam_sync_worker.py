@@ -48,6 +48,7 @@ class Command(BaseCommand):
             headers=service_headers(), params={
                 "select": "id,source_key,source_name,aluno_id", "sync_status": "in.(pending,failed)",
                 "aluno_id": "not.is.null", "missing_since": "is.null",
+                "and": '(or(source_payload->>history_available.is.null,source_payload->>history_available.eq.true))',
                 "order": "sync_status.desc,updated_at.asc", "limit": limit,
             }, timeout=30,
         )
@@ -64,6 +65,7 @@ class Command(BaseCommand):
             headers=service_headers(), params={
                 "select": "id,source_key,source_name,aluno_id", "sync_status": "eq.synced",
                 "aluno_id": "not.is.null", "missing_since": "is.null",
+                "and": '(or(source_payload->>history_available.is.null,source_payload->>history_available.eq.true))',
                 "or": f"(last_history_sync_at.is.null,last_history_sync_at.lt.{cutoff})",
                 "order": "last_history_sync_at.asc.nullsfirst,id.asc", "limit": limit - len(rows),
             }, timeout=30,
@@ -178,7 +180,11 @@ class Command(BaseCommand):
             self._heartbeat(total_students=len(pending), processed_students=0, current_student=None, last_message="Fila calculada; processando históricos")
             self.stdout.write(f"Históricos pendentes selecionados neste ciclo: {len(pending)}")
             consecutive_failures = 0
+            history_batch_started = time.monotonic()
             for index, state in enumerate(pending, 1):
+                if index > 1 and time.monotonic() - history_batch_started >= getattr(self, 'catalog_refresh_seconds', DEFAULT_IDLE_INTERVAL_SECONDS):
+                    self.stdout.write('Retomando a conferência do cadastro completo antes de continuar os históricos.')
+                    return index - 1
                 if self._control().get("desired_state") != "running":
                     self._heartbeat(current_student=None, worker_status="paused", last_message="Sincronização pausada por solicitação administrativa")
                     return index - 1
@@ -230,8 +236,12 @@ class Command(BaseCommand):
         if os.name == "nt":
             handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
             if handle:
-                ctypes.windll.kernel32.CloseHandle(handle)
-                return True
+                try:
+                    exit_code = ctypes.c_ulong()
+                    return bool(ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+                                and exit_code.value == 259)  # STILL_ACTIVE
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(handle)
             return False
         try:
             os.kill(int(pid), 0)
@@ -245,6 +255,7 @@ class Command(BaseCommand):
             raise CommandError("Configure SAM_SCRAPER_DIR ou informe --scraper-dir.")
         self.history_refresh_hours = max(1, options["history_refresh_hours"])
         interval = max(MIN_IDLE_INTERVAL_SECONDS, options["interval"])
+        self.catalog_refresh_seconds = interval
         classes_interval = max(MIN_CLASSES_INTERVAL_SECONDS, options["classes_interval"])
         lock_path = Path(tempfile.gettempdir()) / "app_visitas_sam_sync.lock"
         if lock_path.exists():
@@ -325,14 +336,14 @@ class Command(BaseCommand):
                         except Exception:
                             pass
                     session = None
-                    refresh_catalog = False
+                    refresh_catalog = True
                     time.sleep(10)
                     continue
                 if options["once"]:
                     break
                 if processed >= max(1, options["history_limit"]):
                     self.stdout.write("Há mais históricos pendentes; continuando na mesma sessão SAM.")
-                    refresh_catalog = False
+                    refresh_catalog = True
                     continue
                 refresh_catalog = True
                 wait = max(1, interval - int(time.monotonic() - started))

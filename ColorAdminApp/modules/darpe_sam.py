@@ -31,6 +31,7 @@ LABELS = {
 
 # Identidade explicitamente confirmada pelo responsável, limitada à mesma comum.
 CONFIRMED_NAMES = {
+    ('ALCIDES COELHO DE SOUSA', 'BR-22-0673'): 'ALCIDES COELHO DE SOUZA',
     ('DANIEL LUIZ DA SILVA SANTOS', 'BR-21-1020'): 'DANIEL LUIZ DA SILVA DOS SANTOS',
 }
 CONFIRMED_MINISTRIES = {

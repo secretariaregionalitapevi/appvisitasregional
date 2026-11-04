@@ -6,6 +6,8 @@ from .music_events_import import norm
 
 
 def attach_leaders(data,registry,catalog,members=()):
+    from .music_registry_current import current_members
+    members = current_members(registry, members)
     resolver=CommonResolver(catalog);leaders=defaultdict(dict);sources={}
     for rows,source,name_field,role_field,common_field in [
         (registry,'Cadastro SAM','nome_aluno','cargo_ministerio','comum_congregacao'),

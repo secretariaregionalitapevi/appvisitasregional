@@ -15,6 +15,15 @@ from django.views.decorators.http import require_GET, require_POST
 from . import music_events
 from .access_control import can_access, common_catalog, service_headers, user_scope, scope_details
 from .music_ministry_domain import TITLE, ROLES, KINDS, STATES, roster, history, parse_meeting, match_person, event_payload, include_directory
+from .sam_temporal import temporal_roster
+
+
+def _people(sources):
+    people = temporal_roster(sources['registry'], sources['members'], sources['catalog'], sources.get('transitions', []))
+    people = include_directory(people, sources.get('directory', []), [*sources['entries'], *sources.get('identity_links', [])])
+    for person in people:
+        person['temporal'] = True
+    return people
 
 
 def _actor(request):
@@ -27,7 +36,7 @@ def _actor(request):
 
 
 def _sources(year, refresh=False):
-    key = f'music-ministry:sources:v3:{year}'
+    key = f'music-ministry:sources:v4:{year}'
     cached = None if refresh else cache.get(key)
     if cached is not None:
         return cached
@@ -44,6 +53,7 @@ def _sources(year, refresh=False):
                               **{'and': f'(data_evento.lt.{year + 1}-01-01)'}, order='data_evento.asc,id.asc')
         directory_future = executor.submit(read, 'musica_ministerio_pessoas', order='person_key.asc')
         identity_future = executor.submit(read, 'musica_ministerio_participacoes', select='person_key,nome,source', **{'source->>canonical_person_key': 'not.is.null'}, order='event_id.asc,person_key.asc')
+        transitions_future = executor.submit(read, 'sam_cadastro_transicoes', order='effective_at.asc,id.asc')
         events = legacy.result()
         available = True
         try:
@@ -78,7 +88,8 @@ def _sources(year, refresh=False):
         result = {'catalog': catalog.result(), 'registry': registry.result(), 'members': members.result(),
                   'events': own_events, 'entries': entries, 'legacy_events': events,
                   'legacy_records': records, 'available': available, 'directory': directory, 'legacy_reviews': legacy_reviews,
-                  'legacy_sites': validated_sites(events, legacy_sites), 'identity_links': identity_links}
+                  'legacy_sites': validated_sites(events, legacy_sites), 'identity_links': identity_links,
+                  'transitions': transitions_future.result()}
     cache.set(key, result, 60)
     return result
 
@@ -93,7 +104,7 @@ def dashboard_data(request):
     if role and role not in ROLES or kind and kind not in KINDS or state and state not in STATES:
         raise ValueError('Filtro de cargo ou evento inválido.')
     sources = _sources(year, request.GET.get('atualizar') == '1')
-    people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
+    people = _people(sources)
     filters = {'ano': year, 'municipios': request.GET.getlist('municipio'), 'comuns': request.GET.getlist('comum'),
                'cargo': role, 'tipo': kind, 'busca': request.GET.get('busca', '')[:120],
                'evento': request.GET.get('evento', ''), 'situacao': state}
@@ -147,7 +158,7 @@ def api_manage(request, action):
                 raise ValueError('Selecione um arquivo .xlsx de até 15 MB.')
             sources = _sources(timezone.localdate().year)
             result = parse_meeting(upload.read(), sources['catalog'])
-            people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
+            people = _people(sources)
             token = uuid4().hex
             cache.set(f'music-ministry:preview:{identity}:{token}', {**result, 'filename': upload.name[:180]}, 1800)
             return JsonResponse({'token': token, 'count': result['count'], 'duplicates': result['duplicate_rows'], 'suggested_date': result['suggested_date'],
@@ -167,7 +178,7 @@ def api_manage(request, action):
                     raise ValueError('Encontro não encontrado.')
                 year = int(str(event[0]['data_evento'])[:4])
                 sources = _sources(year, True)
-                people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
+                people = _people(sources)
                 person = next((p for p in people if raw['person_key'] in p['aliases']), None)
                 if person is None:
                     raise ValueError('Pessoa não encontrada no cadastro individual.')
@@ -176,12 +187,14 @@ def api_manage(request, action):
                 cell = next((c for p in current['rows'] if p['key'] == person['key'] for c in p['cells'] if c['event_id'] == raw['event_id']), None)
                 if cell and cell['nominal_present'] and raw['situacao'] != 'PRESENTE':
                     raise ValueError('Há presença nominal importada. Corrija a fonte do evento antes de registrar outra situação.')
+                if not cell or not cell.get('historical_role_known', True):
+                    raise ValueError('Confirme o cargo e a comum vigentes na data do evento antes de registrar a conferência.')
                 result = _rpc('musica_ministerio_conferir_legado', {'p_evento': event_id,
-                    'p_pessoa': {'person_key': raw['person_key'], 'nome': person['nome'], 'comum': person['comum'],
-                                 'municipio': person['municipio'], 'roles': person['roles'],
+                    'p_pessoa': {'person_key': raw['person_key'], 'nome': person['nome'], 'comum': cell['comum'],
+                                 'municipio': cell['municipio'], 'roles': cell['roles'],
                                  'situacao': raw['situacao'], 'observacoes': str(raw.get('observacoes') or '').strip()},
                     'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
-                cache.delete(f'music-ministry:sources:v3:{year}')
+                cache.delete(f'music-ministry:sources:v4:{year}')
                 return JsonResponse({'item': result})
             records = music_events._read('musica_ministerio_participacoes', event_id=f'eq.{raw["event_id"]}',
                                         person_key=f'eq.{raw["person_key"]}')
@@ -191,7 +204,7 @@ def api_manage(request, action):
                 'p_situacao': raw['situacao'], 'p_observacoes': str(raw.get('observacoes') or '').strip(),
                 'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
             event = music_events._read('musica_ministerio_eventos', id=f'eq.{raw["event_id"]}')[0]
-            cache.delete(f'music-ministry:sources:v3:{str(event["data_evento"])[:4]}')
+            cache.delete(f'music-ministry:sources:v4:{str(event["data_evento"])[:4]}')
             return JsonResponse({'item': result})
         if action != 'salvar':
             return JsonResponse({'error': 'Operação inválida.'}, status=404)
@@ -199,7 +212,7 @@ def api_manage(request, action):
         if not 2000 <= year <= 2100 or raw.get('conferido') is not True:
             raise ValueError('Confira o evento e confirme a conferência antes de salvar.')
         sources = _sources(year, True)
-        people = include_directory(roster(sources['registry'], sources['members'], sources['catalog']), sources['directory'], [*sources['entries'], *sources.get('identity_links', [])])
+        people = _people(sources)
         preview = None
         if raw.get('token'):
             preview = cache.get(f'music-ministry:preview:{identity}:{raw["token"]}')
@@ -236,6 +249,11 @@ def api_manage(request, action):
                     payload['registros'].append({**snapshot, 'situacao': 'CONFERIR', 'observacoes': 'Cadastro atual divergente do público histórico. Conferir.'})
             for entry in payload['registros']:
                 previous = snapshots.get(entry['person_key'])
+                if previous:
+                    # Reimporting attendance must retain the public captured for
+                    # this event, even if the current directory has changed.
+                    for field in ('roles', 'comum', 'municipio'):
+                        entry[field] = previous[field]
                 if previous and previous['situacao'] == 'PRESENTE' and entry['situacao'] != 'PRESENTE':
                     entry.update(situacao='PRESENTE', observacoes=previous['observacoes'])
             payload['event_id'] = target['id']
@@ -243,7 +261,7 @@ def api_manage(request, action):
             raise ValueError('Nenhuma pessoa foi encontrada para o público selecionado.')
         result = _rpc('musica_ministerio_salvar', {'p_evento': payload, 'p_hash': preview['sha256'] if preview else None,
             'p_arquivo': preview['filename'] if preview else None, 'p_usuario_id': identity, 'p_usuario_nome': actor})
-        cache.delete(f'music-ministry:sources:v3:{year}')
+        cache.delete(f'music-ministry:sources:v4:{year}')
         return JsonResponse(result)
     except (ValueError, TypeError, KeyError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)

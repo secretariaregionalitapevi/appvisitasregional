@@ -11,6 +11,7 @@ from ColorAdminApp.sam_audit_parser import parse_log_row
 from ColorAdminApp.sam_audit_mirror import mirror_referenced_classes
 from ColorAdminApp.sam_audit_source import fetch_audit_logs
 from ColorAdminApp.sam_live_session import SamLiveSession
+from ColorAdminApp.modules.sam_temporal import transitions_from_audit
 
 
 class Command(BaseCommand):
@@ -66,6 +67,12 @@ class Command(BaseCommand):
                                       f"{mirrored['attendance']} chamada(s) vinculada(s).")
                 for index in range(0, len(events), 500):
                     imported += len(self._upsert("sam_audit_events", events[index:index + 500], "source_fingerprint", ignore=False))
+                for event in events:
+                    for transition in transitions_from_audit(event):
+                        response = requests.post(
+                            f'{settings.SUPABASE_URL}/rest/v1/rpc/sam_registrar_transicao',
+                            headers=service_headers(), json=transition, timeout=30)
+                        response.raise_for_status()
                 received = len(page.get("rows") or [])
                 start += received
                 if not received or start >= int(page.get("total") or 0):
@@ -81,3 +88,4 @@ class Command(BaseCommand):
             cursor["last_full_sync_at"] = now
         self._upsert("sam_audit_sync_cursor", [cursor], "source", ignore=False)
         self.stdout.write(self.style.SUCCESS(f"Historico SAM sincronizado: {imported} novo(s) evento(s)."))
+        self.stdout.write('Este comando copia logs. Para atualizar o cadastro completo: python manage.py sync_sam_members --commit')

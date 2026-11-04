@@ -53,7 +53,7 @@ def annual_comparison(data, day):
 
 
 def annual_data(events, records, sites, registry, catalog, reviews, members, invitations,
-                year, scope, cities=(), commons=(), review_available=True):
+                year, scope, cities=(), commons=(), review_available=True, transitions=None):
     """Zeros só pertencem a datas carregadas; ausência de conferência nunca vira NJ."""
     events = [e for e in events if e['tipo'] == 'ENSAIO_REGIONAL'
               and str(e['data_evento'])[:4] == str(year) and e.get('status') != 'RASCUNHO']
@@ -93,7 +93,7 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                                      comum_congregacao=r.get('codigo_comum') or r.get('comum'),
                                      municipio=r.get('cidade')) for r in members]
     conductors = summarize(events, records, list(site_map.values()), reviews, {'origem': 'regional'},
-                           catalog, leaders=leader_registry)
+                           catalog, leaders=leader_registry, transitions=transitions)
     reviews_by_key = {(r['evento_id'], r['comum_chave']): r for r in conductors['rows']}
     by_date = defaultdict(list)
     for event in events:

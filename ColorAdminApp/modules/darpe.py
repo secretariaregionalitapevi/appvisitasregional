@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -358,6 +359,7 @@ def import_cadastros(request):
             response = requests.delete(url, headers=service_headers("return=minimal"),
                                        params={"id": "in.(" + ",".join(stale[start:start + 100]) + ")"}, timeout=30)
             response.raise_for_status()
+        cache.delete('gem:darpe-membership:v1')
         return JsonResponse({"message": "Importação concluída.", "total": len(rows)})
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -492,12 +494,16 @@ def api_resource(request, resource, record_id=None):
             response = (_write_cadastro(method, reference=current, **options) if resource == 'cadastros'
                         else method(_url(config), **options))
             response.raise_for_status()
+            if resource == 'cadastros':
+                cache.delete('gem:darpe-membership:v1')
             return JsonResponse({"item": response.json()[0]}, status=200 if record_id else 201)
 
         if request.method == "DELETE" and record_id:
             response = requests.delete(_url(config), headers=service_headers("return=minimal"),
                                        params={"id": f"eq.{record_id}"}, timeout=15)
             response.raise_for_status()
+            if resource == 'cadastros':
+                cache.delete('gem:darpe-membership:v1')
             return JsonResponse({}, status=204)
         return JsonResponse({"error": "Método não permitido."}, status=405)
     except json.JSONDecodeError:

@@ -47,7 +47,7 @@ class SamCatalogTests(SimpleTestCase):
         self.assertFalse(Command._catalog_size_is_safe(500, 4500))
 
     def test_catalog_reconciliation_uses_sam_id_and_source_location_fallback(self):
-        command = Path(__file__).parent / "management" / "commands" / "sync_sam_catalog.py"
+        command = Path(__file__).parents[1] / "management" / "commands" / "sync_sam_catalog.py"
         content = command.read_text(encoding="utf-8")
 
         self.assertIn("targets_by_sam_id", content)

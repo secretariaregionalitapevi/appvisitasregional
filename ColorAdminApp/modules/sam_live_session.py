@@ -97,33 +97,8 @@ class SamLiveSession:
             raise RuntimeError("Não foi possível recuperar a sessão do SAM.")
 
     def catalog(self):
-        if not self._open_students() or not self.scraper._wait_for_students_datatable():
-            self.recover()
-        try:
-            self.scraper.page.wait_for_function("""() => {
-                const table = jQuery('#table-grp').DataTable();
-                return table.page.info().recordsTotal > 0;
-            }""", timeout=30000)
-        except Exception:
-            pass
-        self.scraper.page.wait_for_timeout(1000)
-        return self.scraper.page.evaluate("""async () => {
-            const table = jQuery('#table-grp').DataTable();
-            const headers = [...document.querySelectorAll('#table-grp thead th')].map(th => (th.innerText || '').trim());
-            const params = {...(table.ajax.params() || {})};
-            params.start = 0;
-            params.length = table.page.info().recordsDisplay || table.page.info().recordsTotal || 10000;
-            const response = await fetch(table.ajax.url() + '?' + new URLSearchParams(params).toString(), {
-                credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}
-            });
-            if (!response.ok) throw new Error(`Falha HTTP ${response.status} ao ler catálogo`);
-            const payload = await response.json();
-            const raw = payload.data || payload.aaData || [];
-            const rows = raw.map((item, index) => Array.isArray(item)
-                ? {index, cells: item.map(value => String(value ?? ''))}
-                : {index, data: item});
-            return {headers, rows, total: payload.recordsTotal ?? payload.iTotalRecords ?? rows.length};
-        }""")
+        from .sam_member_catalog import full_catalog
+        return full_catalog(self)
 
     def _open_history_by_key(self, student, source_key):
         if not source_key or not self.scraper._wait_for_students_datatable():

@@ -48,7 +48,7 @@ class GemTests(SimpleTestCase):
         assessment.assert_not_called()
 
     def test_student_panel_restores_filter_options_before_loading_rows(self):
-        template = Path(__file__).with_name("templates").joinpath("pages", "gem.html").read_text(encoding="utf-8")
+        template = Path(__file__).parents[1].joinpath("templates", "pages", "gem.html").read_text(encoding="utf-8")
 
         self.assertIn("if(all){try{await loadSummary()}", template)
         self.assertIn("try{await loadStudents()}", template)

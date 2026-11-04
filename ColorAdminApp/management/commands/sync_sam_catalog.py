@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from ColorAdminApp.access_control import common_catalog, service_headers
-from ColorAdminApp.sam_catalog import norm, parse_catalog
+from ColorAdminApp.sam_catalog import norm, parse_catalog, match_local_common
 
 
 class Command(BaseCommand):
@@ -69,6 +69,25 @@ class Command(BaseCommand):
             )
             response.raise_for_status()
 
+    def _apply_students(self, jobs, targets):
+        if len(jobs) <= 50:
+            with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as executor:
+                list(executor.map(lambda job: self._patch('musica_acompanhamento_aluno', job[0], job[1]), jobs))
+            return
+        # Upsert updates only these SAM-owned columns on existing primary keys;
+        # telephone, birth date, consent and educational records are untouched.
+        fields = ('id', 'nome_aluno', 'comum_congregacao', 'municipio', 'instrumento',
+                  'nivel', 'cargo_ministerio', 'status', 'registro_msa')
+        with requests.Session() as client:
+            for start in range(0, len(jobs), 200):
+                rows = [{**{key: targets[str(identity)].get(key) for key in fields}, **update}
+                        for identity, update in jobs[start:start + 200]]
+                response = client.post(f'{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno',
+                    headers=service_headers('resolution=merge-duplicates,return=minimal'),
+                    params={'on_conflict': 'id'}, json=rows, timeout=60)
+                response.raise_for_status()
+                self.stdout.write(f'Cadastros atualizados: {min(start + 200, len(jobs))}/{len(jobs)}')
+
     @staticmethod
     def _missing_states(states, observed_keys):
         observed = {str(key) for key in observed_keys}
@@ -83,7 +102,10 @@ class Command(BaseCommand):
         if not path.is_file():
             raise CommandError(f"Catálogo não encontrado: {path}")
         try:
-            students = parse_catalog(json.loads(path.read_text(encoding="utf-8-sig")))
+            document = json.loads(path.read_text(encoding="utf-8-sig"))
+            students = parse_catalog(document)
+            if document.get('complete') and len(students) != document.get('total'):
+                raise ValueError('Contagem de identidades válidas diverge do catálogo completo')
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise CommandError(f"Catálogo inválido: {exc}") from exc
         if not students:
@@ -94,7 +116,7 @@ class Command(BaseCommand):
                 "musica_acompanhamento_aluno",
                 "id,nome_aluno,comum_congregacao,municipio,instrumento,nivel,cargo_ministerio,status,registro_msa",
             )
-            states = self._all("sam_student_sync_state") if options["commit"] else []
+            states = self._all("sam_student_sync_state")
             commons = common_catalog()
         except requests.RequestException as exc:
             raise CommandError(
@@ -104,6 +126,8 @@ class Command(BaseCommand):
         state_by_key = {str(row.get("source_key")): row for row in states}
         target_by_id = {str(row.get("id")): row for row in targets}
         targets_by_sam_id = {str(row.get("registro_msa")): row for row in targets if row.get("registro_msa")}
+        if len(targets_by_sam_id) != sum(bool(row.get('registro_msa')) for row in targets):
+            raise CommandError('Identificador SAM duplicado no cadastro local; concilie antes de sincronizar.')
         targets_by_name = {}
         for row in targets:
             targets_by_name.setdefault(norm(row.get("nome_aluno")), []).append(row)
@@ -111,6 +135,12 @@ class Command(BaseCommand):
         for row in commons:
             description = str(row.get("comum") or "").split(" - ", 1)[-1]
             commons_by_location.setdefault((norm(description), norm(row.get("cidade"))), []).append(row)
+        common_cache = {}
+        def resolve_common(student):
+            key = (norm(student['common_name']), norm(student['city']))
+            if key not in common_cache:
+                common_cache[key] = match_local_common(student, commons)
+            return common_cache[key]
         now = datetime.now(timezone.utc).isoformat()
         observed_keys = {student["source_key"] for student in students}
         previous_active = sum(1 for state in states if not state.get("missing_since"))
@@ -131,10 +161,11 @@ class Command(BaseCommand):
                 for student in students:
                     state = state_by_key.get(student["source_key"]) or {}
                     if (state.get("aluno_id") or targets_by_sam_id.get(str(student["source_key"]))
-                            or targets_by_name.get(norm(student["name"]))):
+                            or any(not r.get('registro_msa') or str(r['registro_msa']) == str(student['source_key'])
+                                   for r in targets_by_name.get(norm(student['name']), []))):
                         continue
                     common_matches = commons_by_location.get((norm(student["common_name"]), norm(student["city"])), [])
-                    local_common = common_matches[0] if len(common_matches) == 1 else None
+                    local_common = resolve_common(student)
                     new_payloads.append({
                         "nome_aluno": student["name"], "status": "Ativo", "registro_msa": student["source_key"],
                         "comum_congregacao": local_common["comum"] if local_common else student["common_name"],
@@ -153,26 +184,36 @@ class Command(BaseCommand):
                 stats["new_students"] = len(new_payloads)
 
             patch_jobs = []
+            claimed_targets = {}
+            level_evidence = None
             for student in students:
                 state = state_by_key.get(student["source_key"]) or {}
                 target = target_by_id.get(str(state.get("aluno_id"))) if state.get("aluno_id") else None
                 target = target or targets_by_sam_id.get(str(student["source_key"]))
-                named = targets_by_name.get(norm(student["name"]), []) if not target else []
+                local_common = resolve_common(student)
+                named = [r for r in targets_by_name.get(norm(student['name']), [])
+                         if not r.get('registro_msa') or str(r['registro_msa']) == str(student['source_key'])] if not target else []
+                same_common = [r for r in named if local_common and norm(r.get('comum_congregacao')) == norm(local_common['comum'])]
+                source_city = (local_common or {}).get('cidade') or student.get('city')
                 contextual = [row for row in named if (
-                    (not student.get("city") or norm(row.get("municipio")) == norm(student["city"]))
+                    (not source_city or norm(row.get("municipio")) == norm(source_city))
                     and (not student.get("instrument") or norm(row.get("instrumento")) == norm(student["instrument"]))
                 )]
-                match_status = ("linked" if target else "matched_context" if len(contextual) == 1
+                match_status = ("linked" if target else "matched_common" if len(same_common) == 1 else "matched_context" if len(contextual) == 1
                                 else "matched_name" if len(named) == 1 else "unmatched" if not named else "ambiguous")
-                target = target or (contextual[0] if len(contextual) == 1 else named[0] if len(named) == 1 else None)
+                target = target or (same_common[0] if len(same_common) == 1 else contextual[0] if len(contextual) == 1 else named[0] if len(named) == 1 else None)
+                if target and str(target['id']) in claimed_targets and claimed_targets[str(target['id'])] != student['source_key']:
+                    target, match_status = None, 'ambiguous'
+                if target:
+                    claimed_targets[str(target['id'])] = student['source_key']
                 if target:
                     stats[match_status] += 1
                 common_matches = commons_by_location.get((norm(student["common_name"]), norm(student["city"])), [])
-                local_common = common_matches[0] if len(common_matches) == 1 else None
+                local_common = resolve_common(student)
                 is_changed = state.get("source_fingerprint") != student["fingerprint"]
                 previous_level = state.get("source_level")
 
-                if not target and match_status == "unmatched" and local_common:
+                if not target and match_status == "unmatched":
                     if not options["commit"]:
                         stats["new_students"] += 1
                 if not target:
@@ -180,17 +221,22 @@ class Command(BaseCommand):
                     unresolved.append({"source_key": student["source_key"], "name": student["name"], "reason": match_status})
 
                 target_id = target.get("id") if target else None
-                if target and is_changed:
+                # Reconcile against the actual row even when the source fingerprint
+                # is unchanged: older syncs or local edits may have left stale data.
+                if target:
                     update = {}
                     for source_field, target_field in (
-                        ("instrument", "instrumento"), ("level", "nivel"), ("ministry", "cargo_ministerio")
+                        ("name", "nome_aluno"), ("instrument", "instrumento"), ("level", "nivel"), ("ministry", "cargo_ministerio")
                     ):
                         source_value = student[source_field]
                         if source_field == "instrument" and norm(source_value) == "A DEFINIR" and target.get(target_field):
                             continue
                         if source_value and source_value != (target.get(target_field) or ""):
                             update[target_field] = source_value
-                    if local_common and local_common["comum"] != target.get("comum_congregacao"):
+                    if not target.get('registro_msa'):
+                        update['registro_msa'] = student['source_key']
+                    if local_common and (local_common["comum"] != target.get("comum_congregacao")
+                                         or local_common.get("cidade") != target.get("municipio")):
                         update.update({"comum_congregacao": local_common["comum"], "municipio": local_common.get("cidade")})
                     if update:
                         changes.append({"source_key": student["source_key"], "aluno_id": target_id, "fields": update})
@@ -201,18 +247,25 @@ class Command(BaseCommand):
                 if target and previous_level and previous_level != student["level"]:
                     stats["level_changes"] += 1
                     if options["commit"]:
-                        self._post("sam_level_history", {
-                            "aluno_id": target_id, "sync_state_id": state.get("id"),
-                            "previous_level": previous_level, "new_level": student["level"],
-                            "effective_at": now, "source_date": None, "date_basis": "detected_at_sync",
-                            "detected_at": now, "sync_run_id": run_id,
-                            "evidence": {"source_key": student["source_key"], "catalog_fingerprint": student["fingerprint"]},
-                        }, "return=minimal")
+                        if level_evidence is None:
+                            level_evidence = {(str(r['aluno_id']), (r.get('evidence') or {}).get('catalog_fingerprint'), r['new_level'])
+                                for r in self._all('sam_level_history', 'id,aluno_id,new_level,evidence')}
+                        evidence_key = (str(target_id), student['fingerprint'], student['level'])
+                        if evidence_key not in level_evidence:
+                            self._post("sam_level_history", {
+                                "aluno_id": target_id, "sync_state_id": state.get("id"),
+                                "previous_level": previous_level, "new_level": student["level"],
+                                "effective_at": now, "source_date": None, "date_basis": "detected_at_sync",
+                                "detected_at": now, "sync_run_id": run_id,
+                                "evidence": {"source_key": student["source_key"], "catalog_fingerprint": student["fingerprint"]},
+                            }, "return=minimal")
+                            level_evidence.add(evidence_key)
 
                 if options["commit"]:
                     history_is_current = (state.get("sync_status") == "synced"
                                           and bool(state.get("last_history_sync_at")) and not is_changed)
-                    sync_status = "synced" if target and history_is_current else "pending" if target else match_status
+                    catalog_only = student.get('history_available') is False
+                    sync_status = "synced" if target and (history_is_current or catalog_only) else "pending" if target else match_status
                     state_payload = {
                         "source_key": student["source_key"], "aluno_id": target_id,
                         "source_name": student["name"], "source_common": student["common_name"],
@@ -220,14 +273,15 @@ class Command(BaseCommand):
                         "source_fingerprint": student["fingerprint"], "last_seen_at": now,
                         "last_changed_at": now if is_changed else state.get("last_changed_at") or now,
                         "missing_since": None, "sync_status": sync_status, "last_error": None,
-                        "source_payload": student, "updated_at": now,
+                        "source_payload": {**student, 'source_city': student['city'],
+                            'city': local_common.get('cidade') if local_common else student['city'],
+                            'resolved_common': local_common['comum'] if local_common else None}, "updated_at": now,
                     }
                     state_upserts.append(state_payload)
 
             if options["commit"] and patch_jobs:
-                self.stdout.write(f"Aplicando {len(patch_jobs)} atualizações de alunos em paralelo...")
-                with ThreadPoolExecutor(max_workers=min(8, len(patch_jobs))) as executor:
-                    list(executor.map(lambda job: self._patch("musica_acompanhamento_aluno", job[0], job[1]), patch_jobs))
+                self.stdout.write(f"Aplicando {len(patch_jobs)} atualizações de cadastros...")
+                self._apply_students(patch_jobs, target_by_id)
             if options["commit"]:
                 self.stdout.write(f"Gravando {len(state_upserts)} estados SAM em lotes...")
                 self._upsert_states(state_upserts)
@@ -245,6 +299,7 @@ class Command(BaseCommand):
                         ))
 
             stats["catalog_students"] = len(students)
+            stats['coverage'] = document.get('coverage', {})
             stats["missing_students"] = len(missing_states)
             report = {"mode": "commit" if options["commit"] else "preview", "statistics": dict(stats), "changes": changes, "unresolved": unresolved}
             if options.get("report"):
@@ -257,6 +312,10 @@ class Command(BaseCommand):
                     "changed_students": stats["changed_students"], "error_count": len(unresolved),
                     "details": {"new_students": stats["new_students"], "level_changes": stats["level_changes"]},
                 })
+                from django.core.cache import cache
+                cache.delete_many(['gem:students:v7', 'music-events:registry:v2', 'darpe:sam-reference:v3', 'sam:transitions:v1'])
+                from ColorAdminApp.music_events import _invalidate_annual
+                _invalidate_annual()
             else:
                 self.stdout.write(self.style.WARNING("Prévia concluída; nenhuma alteração foi gravada."))
         except Exception as exc:

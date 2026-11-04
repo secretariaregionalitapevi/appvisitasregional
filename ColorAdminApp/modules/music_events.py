@@ -48,6 +48,14 @@ def _registry():
     return registry
 
 
+def _transitions():
+    rows = cache.get('sam:transitions:v1')
+    if rows is None:
+        rows = _read('sam_cadastro_transicoes', order='effective_at.asc,id.asc')
+        cache.set('sam:transitions:v1', rows, 60)
+    return rows
+
+
 def _leaders():
     members = cache.get('music-events:registered-leaders:v1')
     if members is None:
@@ -339,7 +347,7 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     from .music_events_conductors import summarize
     if scope['level'] not in {'regional','global'}:
         reviews=[r for r in reviews if permitted({'comum_codigo':r['comum_chave'],'municipio_informado':r['municipio']})]
-    result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry)
+    result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry,transitions=_transitions())
     from .music_events_leaders import attach_leaders
     if scope['level'] not in {'regional','global'}:
         members=[r for r in members if permitted({'comum_codigo':r.get('codigo_comum') or r.get('comum'),'municipio_informado':r.get('cidade')})]
@@ -447,6 +455,7 @@ def _annual_sources(year):
     with ThreadPoolExecutor(max_workers=8) as executor:
         registry_future = executor.submit(_registry)
         leaders_future = executor.submit(_leaders)
+        transitions_future = executor.submit(_transitions)
         catalog_future = executor.submit(common_catalog)
         review_future = executor.submit(_reviews, events)
         pending = []
@@ -465,7 +474,7 @@ def _annual_sources(year):
         reviews, available = review_future.result()
         return {'events': events, 'records': records, 'sites': sites, 'registry': registry_future.result(),
                 'catalog': catalog_future.result(), 'reviews': reviews, 'members': leaders_future.result(),
-                'invitations': invitations, 'review_available': available}
+                'invitations': invitations, 'review_available': available, 'transitions': transitions_future.result()}
 
 
 def _invalidate_annual():

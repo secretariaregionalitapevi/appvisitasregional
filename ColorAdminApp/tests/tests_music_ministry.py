@@ -236,7 +236,12 @@ class MinistryApiTests(SimpleTestCase):
         self.assertEqual(api.api_manage(request, 'salvar').status_code, 403)
 
     @patch.object(api, '_sources', return_value=source_data())
-    def test_filters_are_shared_with_exports(self, _):
+    def test_filters_are_shared_with_exports(self, sources):
+        sources.return_value = {**source_data(),
+            'events': [dict(id='meeting', titulo='Reunião', tipo='REUNIAO_MINISTERIO', data_evento='2026-10-06', local='Brás', modalidade='PRESENCIAL')],
+            'entries': [dict(event_id='meeting', person_key='sam:2', nome='Maria Souza',
+                comum=fixture()[0][1]['comum'], municipio='COTIA', roles=['EXAMINADORA'],
+                situacao='PRESENTE', observacoes='', source={})]}
         data = api.dashboard_data(self.request(data={'municipio': ['COTIA'], 'cargo': ''}))
         self.assertEqual(data['selected_cities'], ['COTIA'])
         self.assertEqual(data['summary']['people'], 1)
@@ -266,7 +271,13 @@ class MinistryApiTests(SimpleTestCase):
     @patch.object(api.music_events, '_allowed', return_value=True)
     @patch.object(api, '_sources', return_value=source_data())
     @patch.object(api, '_rpc', return_value={'id': 'event', 'existing': False})
-    def test_planned_meeting_is_saved_with_no_data_states(self, rpc, *_):
+    def test_planned_meeting_is_saved_with_no_data_states(self, rpc, sources, *_):
+        data = source_data()
+        data['transitions'] = [dict(aluno_id='1', campo=field, anterior=None, posterior=value,
+            effective_at='2026-01-01', date_basis='sam', source_ref='test:' + field)
+            for field, value in [('cargo_ministerio', 'Encarregado Local'),
+                ('comum_congregacao', fixture()[0][0]['comum']), ('municipio', 'ITAPEVI')]]
+        sources.return_value = data
         raw = raw_event(conferido=True)
         request = self.factory.post('/', json.dumps(raw), content_type='application/json')
         request.session = self.request().session

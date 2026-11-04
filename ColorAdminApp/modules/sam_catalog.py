@@ -42,6 +42,9 @@ def parse_catalog(document):
         }
         serialized = json.dumps(student, ensure_ascii=False, sort_keys=True)
         student["fingerprint"] = sha256(serialized.encode("utf-8")).hexdigest()
+        if 'history_available' in raw:
+            student['history_available'] = raw['history_available']
+            student['source_kind'] = raw.get('source_kind')
         students.append(student)
     return students
 
@@ -57,7 +60,12 @@ def match_local_common(student, commons):
         if wanted_city and norm(row.get("cidade")) != wanted_city:
             continue
         matches.append(row)
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    # Membros informa o nome da comum sem município. Só usar um nome global
+    # quando ele identifica uma única comum no catálogo regional.
+    exact = [row for row in commons if norm(str(row.get('comum') or '').split(' - ', 1)[-1]) == wanted_name]
+    return exact[0] if len(exact) == 1 else None
 
 
 def match_target(student, targets, linked_id=None):
