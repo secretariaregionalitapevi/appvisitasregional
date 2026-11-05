@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}D.A.R.P.E · Biblioteca{% endblock %}
-{% block css %}<link rel="stylesheet" href="{% static 'css/music-management.css' %}?v=20261105-fm1-3"><link rel="stylesheet" href="{% static 'css/darpe-library.css' %}?v=20261105-fm1"><link rel="stylesheet" href="{% static 'css/darpe-library-dashboard.css' %}?v=20261105-fm1"><link rel="stylesheet" href="{% static 'css/darpe-file-manager.css' %}?v=20261105-fm1">{% endblock %}
+{% block css %}<link rel="stylesheet" href="{% static 'css/music-management.css' %}?v=20261105-fm1-3"><link rel="stylesheet" href="{% static 'css/darpe-library.css' %}?v=20261105-fm1"><link rel="stylesheet" href="{% static 'css/darpe-library-dashboard.css' %}?v=20261105-fm1"><link rel="stylesheet" href="{% static 'css/darpe-file-manager.css' %}?v=20261105-actions1">{% endblock %}
 {% block content %}
 <div class="darpe-library music-management" data-section="{{ section }}">
  <header class="management-hero library-hero"><div class="management-heading"><div class="management-eyebrow">PAINEL DE GESTÃO · D.A.R.P.E.</div><h1>{% if section == 'instrumentos' %}Instrumentos permitidos{% elif section == 'setores' %}Setores de atendimento{% else %}Documentos{% endif %}</h1><p>Orientações e arquivos para o atendimento do D.A.R.P.E.</p></div>{% include 'partial/music-management-scope.html' %}</header>
@@ -16,4 +16,4 @@
 
 </div>
 {% endblock %}
-{% block js %}<script src="{% static 'js/darpe-library.js' %}?v=20261105-fm1"></script>{% if section == 'setores' %}<script src="{% static 'js/darpe-statistics.js' %}?v=20261105-fm1"></script>{% endif %}{% endblock %}
+{% block js %}<script src="{% static 'js/darpe-library.js' %}?v=20261105-actions1"></script>{% if section == 'setores' %}<script src="{% static 'js/darpe-statistics.js' %}?v=20261105-fm1"></script>{% endif %}{% endblock %}

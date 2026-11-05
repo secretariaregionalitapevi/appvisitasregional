@@ -17,7 +17,7 @@
   const rowTotal = row => num(row.total_visitas || row.total) || categories.reduce((sum, category) => sum + catValue(row, category), 0);
   const agendaDate = row => moment(row.data_inicio || row.data || row.inicio);
   const card = title => $('b').filter(function () { return $(this).text().trim() === title; }).first().closest('.card');
-  let allVisits = [], allAgenda = [], allPeople = [], allCommons = [], mainChart, cityMap;
+  let allVisits = [], allAgenda = [], allPeople = [], allCommons = [], mainChart, cityMap, cityMapFailed = false;
   let start = moment('2026-07-29'), end = moment('2026-08-05');
 
   function setAnimated(selector, value) {
@@ -73,6 +73,20 @@
     mainChart.render();
   }
 
+  function showMapUnavailable() {
+    cityMapFailed = true;
+    const failedMap = cityMap; cityMap = null;
+    if (failedMap) { try { failedMap.remove(); } catch (_) {} }
+    const container = document.getElementById('visitors-map');
+    if (!container) return;
+    container.replaceChildren();
+    const notice = document.createElement('div');
+    notice.className = 'h-100 d-flex align-items-center justify-content-center text-center text-gray-500 small p-4';
+    notice.setAttribute('role', 'status');
+    notice.textContent = 'Mapa indisponível neste navegador. Os totais por município continuam disponíveis abaixo.';
+    container.append(notice);
+  }
+
   function renderCities(rows) {
     const cityByCommon = Object.fromEntries(allCommons.map(item => [norm(item.comum), item.cidade || item.municipio || 'Não informado']));
     const referenceMonth = end.clone().startOf('month');
@@ -105,29 +119,39 @@
     };
     const features = ranking.map(([name, value, trend]) => ({ type: 'Feature', properties: { name, value, trend: trend.direction, percent: trend.percent }, geometry: { type: 'Point', coordinates: coordinates[norm(name)] } })).filter(feature => feature.geometry.coordinates);
     const geojson = { type: 'FeatureCollection', features };
-    if (!window.maplibregl) return;
-    if (!cityMap) {
-      cityMap = new maplibregl.Map({
-        container: 'visitors-map',
-        style: { version: 8, sources: { basemap: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '(c) Esri, HERE, Garmin, FAO, NOAA, USGS | (c) OpenStreetMap contributors' } }, layers: [{ id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-saturation': 0, 'raster-brightness-min': .08, 'raster-brightness-max': 1 } }] },
-        center: [-46.93, -23.55], zoom: 9.4, minZoom: 8, maxZoom: 15, attributionControl: true
-      });
-      cityMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-      cityMap.on('load', () => {
-        cityMap.addSource('municipios-visitas', { type: 'geojson', data: geojson });
-        cityMap.addLayer({ id: 'municipios-halo', type: 'circle', source: 'municipios-visitas', paint: { 'circle-radius': ['interpolate',['linear'],['get','value'],0,12,500,28], 'circle-color': '#ff3b30', 'circle-opacity': .18, 'circle-stroke-width': 0 } });
-        cityMap.addLayer({ id: 'municipios-atividade', type: 'circle', source: 'municipios-visitas', paint: { 'circle-radius': ['interpolate',['linear'],['get','value'],0,5,500,12], 'circle-color': '#ff3b30', 'circle-opacity': .92, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
-        cityMap.on('mouseenter','municipios-atividade',event => { cityMap.getCanvas().style.cursor='pointer'; const feature=event.features[0]; const trendLabel=feature.properties.trend==='up'?'aumento':feature.properties.trend==='down'?'redução':'estabilidade'; cityMap._visitasPopup=new maplibregl.Popup({ closeButton:false, closeOnClick:false, className:'map-visitas-popup', offset:12 }).setLngLat(feature.geometry.coordinates).setHTML(`<strong>${esc(feature.properties.name)}</strong><br><span>${fmt(feature.properties.value)} visitas · ${trendLabel}</span>`).addTo(cityMap); });
-        cityMap.on('mouseleave','municipios-atividade',() => { cityMap.getCanvas().style.cursor=''; if(cityMap._visitasPopup) cityMap._visitasPopup.remove(); });
-        fitMunicipalBounds(features);
-      });
-    } else if (cityMap.isStyleLoaded() && cityMap.getSource('municipios-visitas')) {
-      cityMap.getSource('municipios-visitas').setData(geojson); fitMunicipalBounds(features);
-    }
-    function fitMunicipalBounds(items) {
-      if (!items.length) return;
-      const bounds=new maplibregl.LngLatBounds(); items.forEach(item => bounds.extend(item.geometry.coordinates));
-      cityMap.fitBounds(bounds,{padding:35,maxZoom:11.3,duration:650});
+    if (!window.maplibregl || cityMapFailed) {
+      showMapUnavailable();
+    } else {
+      try {
+        if (!cityMap) {
+          cityMap = new maplibregl.Map({
+            container: 'visitors-map',
+            style: { version: 8, sources: { basemap: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '(c) Esri, HERE, Garmin, FAO, NOAA, USGS | (c) OpenStreetMap contributors' } }, layers: [{ id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-saturation': 0, 'raster-brightness-min': .08, 'raster-brightness-max': 1 } }] },
+            center: [-46.93, -23.55], zoom: 9.4, minZoom: 8, maxZoom: 15, attributionControl: true
+          });
+          cityMap.on('error', event => { if (/webgl|context/i.test(event.error?.message || '')) showMapUnavailable(); });
+          cityMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+          cityMap.on('load', () => {
+            try {
+              cityMap.addSource('municipios-visitas', { type: 'geojson', data: geojson });
+              cityMap.addLayer({ id: 'municipios-halo', type: 'circle', source: 'municipios-visitas', paint: { 'circle-radius': ['interpolate',['linear'],['get','value'],0,12,500,28], 'circle-color': '#ff3b30', 'circle-opacity': .18, 'circle-stroke-width': 0 } });
+              cityMap.addLayer({ id: 'municipios-atividade', type: 'circle', source: 'municipios-visitas', paint: { 'circle-radius': ['interpolate',['linear'],['get','value'],0,5,500,12], 'circle-color': '#ff3b30', 'circle-opacity': .92, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+              cityMap.on('mouseenter','municipios-atividade',event => { cityMap.getCanvas().style.cursor='pointer'; const feature=event.features[0]; const trendLabel=feature.properties.trend==='up'?'aumento':feature.properties.trend==='down'?'redução':'estabilidade'; cityMap._visitasPopup=new maplibregl.Popup({ closeButton:false, closeOnClick:false, className:'map-visitas-popup', offset:12 }).setLngLat(feature.geometry.coordinates).setHTML(`<strong>${esc(feature.properties.name)}</strong><br><span>${fmt(feature.properties.value)} visitas · ${trendLabel}</span>`).addTo(cityMap); });
+              cityMap.on('mouseleave','municipios-atividade',() => { cityMap.getCanvas().style.cursor=''; if(cityMap._visitasPopup) cityMap._visitasPopup.remove(); });
+              fitMunicipalBounds(features);
+            } catch (_) { showMapUnavailable(); }
+          });
+        } else if (cityMap.isStyleLoaded() && cityMap.getSource('municipios-visitas')) {
+          cityMap.getSource('municipios-visitas').setData(geojson); fitMunicipalBounds(features);
+        }
+        function fitMunicipalBounds(items) {
+          if (!items.length) return;
+          const bounds=new maplibregl.LngLatBounds(); items.forEach(item => bounds.extend(item.geometry.coordinates));
+          cityMap.fitBounds(bounds,{padding:35,maxZoom:11.3,duration:650});
+        }
+      } catch (_) {
+        showMapUnavailable();
+      }
     }
     const locationCard = card('ATIVIDADE POR MUNICÍPIO');
     const list = locationCard.find('#visitors-map').next('div');
@@ -241,6 +265,6 @@
       [allVisits,allAgenda,allPeople,allCommons]=await Promise.all(responses.map(response=>response.json()));
       render();
       $('#dashboard-data-content').removeClass('dashboard-is-loading').attr('aria-busy', 'false');
-    } catch(error) { console.error('Falha ao carregar dashboard:',error); $('<div class="alert alert-danger">Não foi possível carregar os indicadores do dashboard.</div>').insertAfter('.page-header'); }
+    } catch(error) { $('#dashboard-data-content').removeClass('dashboard-is-loading').addClass('dashboard-load-error').attr('aria-busy', 'false'); console.error('Falha ao carregar dashboard:',error); $('<div class="alert alert-danger">Não foi possível carregar os indicadores do dashboard.</div>').insertAfter('.page-header'); }
   });
 })();
