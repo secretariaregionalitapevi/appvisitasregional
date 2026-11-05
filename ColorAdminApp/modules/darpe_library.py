@@ -5,7 +5,6 @@ from uuid import uuid4
 from urllib.parse import quote
 
 import requests
-from pypdf import PdfReader
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -62,6 +61,9 @@ def endpoint():
 
 
 def validate_pdf(upload):
+    # O parser pertence ao fluxo de upload, não à inicialização de todas as rotas.
+    from pypdf import PdfReader
+
     if not upload or not upload.name.lower().endswith('.pdf'):
         raise ValueError('Selecione um arquivo PDF.')
     if upload.size > MAX_BYTES:
