@@ -5,6 +5,7 @@
 {% block title %}Dashboard de Visitas{% endblock %}
 
 {% block css %}
+	<link href="{% static 'plugins/leaflet/leaflet.css' %}" rel="stylesheet" />
 	<link href="{% static 'plugins/nvd3/build/nv.d3.css' %}" rel="stylesheet" />
 	<link href="{% static 'plugins/bootstrap-daterangepicker/daterangepicker.css' %}" rel="stylesheet" />
 	<link href="https://unpkg.com/maplibre-gl@5.16.0/dist/maplibre-gl.css" rel="stylesheet" />
@@ -14,6 +15,8 @@
 		#visitors-map .maplibregl-ctrl-attrib { font-size: 9px; background: rgba(31, 39, 47, .78); color: #adb5bd; }
 		#visitors-map .maplibregl-ctrl-attrib a { color: #49b6d6; }
 		.map-visitas-popup .maplibregl-popup-content { background: #202830; color: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+		#visitors-map .leaflet-tooltip { background: #202830; color: #fff; border: 0; font-size: 12px; }
+		#visitors-map .leaflet-control-attribution { font-size: 9px; }
 		.map-visitas-popup .maplibregl-popup-tip { border-top-color: #202830; }
 		#dashboard-data-content { position: relative; min-height: 240px; }
 		#dashboard-data-content.dashboard-is-loading > *,
@@ -32,6 +35,7 @@
 {% endblock %}
 
 {% block js %}
+	<script src="{% static 'plugins/leaflet/leaflet.js' %}"></script>
 	<script src="{% static 'plugins/d3/d3.min.js' %}"></script>
 	<script src="{% static 'plugins/nvd3/build/nv.d3.min.js' %}"></script>
 	<script src="{% static 'plugins/apexcharts/dist/apexcharts.min.js' %}"></script>
@@ -39,7 +43,7 @@
 	<script src="{% static 'plugins/moment/locale/pt-br.js' %}"></script>
 	<script src="{% static 'plugins/bootstrap-daterangepicker/daterangepicker.js' %}"></script>
 	<script src="https://unpkg.com/maplibre-gl@5.16.0/dist/maplibre-gl.js"></script>
-	<script src="{% static 'js/demo/dashboard-visitas-original.js' %}?v=20261105-webgl1"></script>
+	<script src="{% static 'js/demo/dashboard-visitas-original.js' %}?v=20261105-map2d1"></script>
 {% endblock %}
 
 {% block content %}

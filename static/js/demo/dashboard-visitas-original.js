@@ -17,7 +17,7 @@
   const rowTotal = row => num(row.total_visitas || row.total) || categories.reduce((sum, category) => sum + catValue(row, category), 0);
   const agendaDate = row => moment(row.data_inicio || row.data || row.inicio);
   const card = title => $('b').filter(function () { return $(this).text().trim() === title; }).first().closest('.card');
-  let allVisits = [], allAgenda = [], allPeople = [], allCommons = [], mainChart, cityMap, cityMapFailed = false;
+  let allVisits = [], allAgenda = [], allPeople = [], allCommons = [], mainChart, cityMap, cityMapFailed = false, rasterMap, rasterPoints, latestCityFeatures = [];
   let start = moment('2026-07-29'), end = moment('2026-08-05');
 
   function setAnimated(selector, value) {
@@ -79,12 +79,34 @@
     if (failedMap) { try { failedMap.remove(); } catch (_) {} }
     const container = document.getElementById('visitors-map');
     if (!container) return;
-    container.replaceChildren();
-    const notice = document.createElement('div');
-    notice.className = 'h-100 d-flex align-items-center justify-content-center text-center text-gray-500 small p-4';
-    notice.setAttribute('role', 'status');
-    notice.textContent = 'Mapa indisponível neste navegador. Os totais por município continuam disponíveis abaixo.';
-    container.append(notice);
+    if (!window.L) {
+      container.textContent = 'Não foi possível carregar os arquivos do mapa. Atualize a página para tentar novamente.';
+      return;
+    }
+    if (!rasterMap) {
+      container.replaceChildren();
+      rasterMap = L.map(container, { zoomControl: true, attributionControl: true, preferCanvas: false, zoomSnap: .1 }).setView([-23.55, -46.93], 9.4);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 15, minZoom: 8,
+        attribution: 'Esri, HERE, Garmin, FAO, NOAA, USGS | &copy; OpenStreetMap contributors'
+      }).addTo(rasterMap);
+      rasterPoints = L.layerGroup().addTo(rasterMap);
+    }
+    rasterPoints.clearLayers();
+    latestCityFeatures.forEach(feature => {
+      const { name, value, trend } = feature.properties;
+      const latlng = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
+      const ratio = Math.min(Math.max(num(value) / 500, 0), 1);
+      L.circleMarker(latlng, { radius: 12 + 16 * ratio, stroke: false, fillColor: '#ff3b30', fillOpacity: .18, interactive: false }).addTo(rasterPoints);
+      const trendLabel = trend === 'up' ? 'aumento' : trend === 'down' ? 'redução' : 'estabilidade';
+      L.circleMarker(latlng, { radius: 5 + 7 * ratio, color: '#fff', weight: 2, fillColor: '#ff3b30', fillOpacity: .92 })
+        .bindTooltip(`<strong>${esc(name)}</strong><br>${fmt(value)} visitas · ${trendLabel}`, { direction: 'top', opacity: 1 })
+        .addTo(rasterPoints);
+    });
+    requestAnimationFrame(() => {
+      rasterMap.invalidateSize();
+      if (latestCityFeatures.length) rasterMap.fitBounds(latestCityFeatures.map(feature => [feature.geometry.coordinates[1], feature.geometry.coordinates[0]]), { padding: [35, 35], maxZoom: 11.3, animate: false });
+    });
   }
 
   function renderCities(rows) {
@@ -119,6 +141,7 @@
     };
     const features = ranking.map(([name, value, trend]) => ({ type: 'Feature', properties: { name, value, trend: trend.direction, percent: trend.percent }, geometry: { type: 'Point', coordinates: coordinates[norm(name)] } })).filter(feature => feature.geometry.coordinates);
     const geojson = { type: 'FeatureCollection', features };
+    latestCityFeatures = features;
     if (!window.maplibregl || cityMapFailed) {
       showMapUnavailable();
     } else {
