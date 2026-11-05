@@ -73,7 +73,7 @@ class SupabaseAuthMiddleware:
 
             if revoke_reason:
                 request.session.flush()
-                if path.startswith(('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/administracao/api/')):
+                if path.startswith(('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/biblioteca/', '/administracao/api/')):
                     return JsonResponse({
                         'error': 'Sua sessão foi encerrada porque este acesso não está mais ativo.',
                         'code': revoke_reason,
@@ -88,7 +88,7 @@ class SupabaseAuthMiddleware:
             )
             if requested_module and not can_access_module(request, requested_module):
                 message = 'Seu perfil não possui autorização para esta pasta.'
-                if '/api/' in path:
+                if '/api/' in path or path.startswith('/darpe/biblioteca/'):
                     return JsonResponse({'error': message, 'code': 'module_access_denied'}, status=403)
                 from django.shortcuts import render
                 return render(request, 'pages/403.html', {'message': message}, status=403)
@@ -97,7 +97,7 @@ class SupabaseAuthMiddleware:
 
         # Registra utilização real sem gerar ruído para APIs e arquivos estáticos.
         if request.method == 'GET' and request.session.get('user_id') and not any(
-            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/administracao/api/', '/static/')
+            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/biblioteca/', '/administracao/api/', '/static/')
         ):
             try:
                 from .views import log_audit

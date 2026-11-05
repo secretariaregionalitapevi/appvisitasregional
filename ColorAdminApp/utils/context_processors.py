@@ -60,6 +60,9 @@ def sidebar_menu(request):
 			{ 'url': '/darpe/', 'title': 'Visão geral', 'name': 'darpeDashboard' },
 			{ 'url': '/darpe/cadastros/', 'title': 'Cadastros', 'name': 'darpeSection' },
 			{ 'url': '/darpe/conferencia-sam/', 'title': 'Conferência SAM', 'name': 'darpeSam' },
+			{ 'url': '/darpe/documentos/', 'title': 'Documentos', 'name': 'darpeDocumentos' },
+			{ 'url': '/darpe/instrumentos/', 'title': 'Instrumentos', 'name': 'darpeInstrumentos' },
+			{ 'url': '/darpe/setores/', 'title': 'Setores', 'name': 'darpeSetores' },
 			{ 'url': '/darpe/eventos/', 'title': 'Eventos', 'name': 'darpeSection' }
 		]
 	},
@@ -76,6 +79,7 @@ def sidebar_menu(request):
 	{ 'url': '/musica/', 'icon': 'fa fa-music', 'title': 'Música',
 		'children': [
 			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' },
+			{ 'url': '/musica/cartas-exames/', 'title': 'Cartas de Exames', 'name': 'musicLetters' },
 			{ 'url': '/musica/ensaios-regionais/', 'title': 'Ensaios Regionais', 'name': 'musicEvents', 'active_prefixes': ['/musica/eventos/'] },
 			{ 'url': '/musica/reunioes-tecnicas/', 'title': 'Reuniões Técnicas', 'name': 'musicTechnicalMeetings' },
 			{ 'url': '/musica/ministerio/', 'title': 'Acompanhamento', 'name': 'musicMinistry' }

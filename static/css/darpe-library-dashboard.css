@@ -1,0 +1,65 @@
+/* Reutiliza o cabeçalho de gestão e a tipografia da aplicação. */
+.darpe-library.music-management .library-hero{grid-template-columns:minmax(0,1fr) max-content;padding:18px 24px;min-height:120px;isolation:isolate}
+.darpe-library .library-hero:after{content:"";position:absolute;width:300px;height:300px;right:-95px;top:-190px;border:1px solid #ffffff2b;border-radius:50%;box-shadow:0 0 0 45px #ffffff08,0 0 0 90px #ffffff06;z-index:0}
+.darpe-library .library-hero .management-scope{min-width:248px;position:relative;z-index:1}
+.darpe-library .library-tabs{margin:20px 0 24px;gap:10px}
+.darpe-library .library-tabs a{font-weight:600}
+.darpe-library .library-sectors{gap:16px}
+.darpe-library .sector-card{position:relative;overflow:hidden;padding:20px 22px;border-left:4px solid var(--sector-color);--sector-color:#238be6}
+.darpe-library .sector-2{--sector-color:#0b9d8f}.darpe-library .sector-3{--sector-color:#7b61d1}.darpe-library .sector-4{--sector-color:#d49216}
+.sector-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.darpe-library .sector-top .sector-number{margin:0;background:color-mix(in srgb,var(--sector-color) 10%,white);color:var(--sector-color)}
+.sector-top>i{width:42px;height:42px;display:grid;place-items:center;background:color-mix(in srgb,var(--sector-color) 10%,white);border-radius:12px;color:var(--sector-color);font-size:19px}
+.darpe-library .sector-card h2{font-size:17px;line-height:1.4;margin-bottom:7px}
+.darpe-library .sector-card p{font-size:12px;line-height:1.65;margin-bottom:12px}
+.sector-caption{display:inline-flex;align-items:center;gap:6px;color:#60788a;font-size:11px}
+.library-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#1e4b7a;border-radius:6px;background:#eaf2f8;padding:5px 9px;font-weight:600}
+.statistics .library-panel-heading h2{margin-top:9px;margin-bottom:6px;font-size:21px}
+.statistics-period{min-width:220px;display:grid;gap:7px;justify-items:end}
+.statistics-period label{justify-self:start}
+.statistics-period .form-select{min-height:38px}
+.statistics-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:24px 0}
+.statistics-card{position:relative;min-width:0;padding:17px 15px;border:1px solid #e2eaf0;border-top:3px solid var(--indicator-color);border-radius:13px;background:linear-gradient(155deg,white 60%,color-mix(in srgb,var(--indicator-color) 5%,white));display:flex;flex-direction:column;align-items:start}
+.statistics-card-head{display:flex;align-items:start;justify-content:space-between;width:100%;gap:10px;min-height:42px}
+.statistics-card-head>span{font-size:12px;font-weight:600;color:#285375;line-height:1.45}
+.statistics-card-head i{display:grid;place-items:center;flex-shrink:0;width:33px;height:33px;border-radius:10px;color:var(--indicator-color);background:color-mix(in srgb,var(--indicator-color) 10%,white);font-size:15px}
+.statistics-card>strong{font-size:30px;font-weight:750;line-height:1.25;color:#173b57;margin:12px 0}
+.statistics-change{display:inline-flex;font-size:11px;font-weight:700;border-radius:6px;padding:4px 7px}
+.statistics-change.stable{color:#60788a;background:#eff3f7}.statistics-change.increase{color:#087a62;background:#e4f6ef}.statistics-change.decrease{color:#a94633;background:#fff0eb}
+.statistics-card>small{font-size:10px;color:#60788a;margin-top:8px;line-height:1.5}
+.statistics-detail{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);border:1px solid #e2eaf0;border-radius:14px;overflow:hidden;margin-bottom:20px}
+.statistics-chart-panel{padding:20px;min-width:0;background:#fcfdff}
+.statistics-chart-panel h3,.statistics-source h3{font-size:14px;color:#285375;font-weight:700;margin:0 0 9px}
+.statistics-chart-panel p{font-size:11px;max-width:46ch}
+.statistics-chart-panel .form-select{font-size:11px;min-width:170px}
+#stats-chart{width:100%;min-height:220px}
+#stats-chart svg{width:100%;height:auto;display:block;min-height:220px;font-family:inherit}
+.statistics-source{padding:20px;background:#f1f6fa;border-left:1px solid #e2eaf0}
+.statistics-source .library-tag{background:#e1edf6;margin-bottom:16px}
+.statistics-source p{font-size:12px;white-space:pre-wrap;line-height:1.7;margin-bottom:15px}
+.statistics-source small{font-size:10px;color:#60788a;display:block;margin-bottom:12px}
+.statistics-history{border:1px solid #e2eaf0;border-radius:10px;margin-top:18px}
+.statistics-history summary{cursor:pointer;padding:14px 16px;color:#285375;font-weight:600;list-style:none}
+.statistics-history summary:before{content:'▸';margin-right:9px}.statistics-history[open] summary:before{content:'▾'}
+.statistics-history .table{margin:0;font-size:12px}.statistics-history .table th{background:#eaf2f8;color:#285375}
+.statistics-history .table td,.statistics-history .table th{padding:11px 16px}
+.statistics-editor{margin-top:20px}.statistics-editor>summary{display:inline-flex;align-items:center;gap:7px;cursor:pointer;list-style:none}
+.statistics-editor-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}
+.statistics-editor-grid .wide{grid-column:1/-1}
+#stats-status:empty,#stats-save-status:empty{display:none}#stats-save-status{padding:12px 0;font-size:12px}
+.instrument-legend{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}
+.permission-badge{display:inline-flex;gap:5px;align-items:center;border-radius:6px;padding:4px 7px;font-size:10px;line-height:1.4;font-weight:600}
+.permission-badge.permitted{background:#e0f2e7;color:#176643}.permission-badge.restricted{background:#fce8e4;color:#9f3525}.permission-badge.conditional{background:#fff0cd;color:#775110}
+.darpe-library .instrument-table{min-width:1120px;border-collapse:collapse}
+.darpe-library .instrument-table thead th{background:#202b34;text-align:center;vertical-align:middle;padding:12px 10px;border:1px solid #43505c}
+.instrument-table thead small{display:block;font-size:10px;font-weight:400;color:#e7edf2;margin-top:5px}
+.darpe-library .instrument-table tbody td,.darpe-library .instrument-table tbody th{padding:8px 10px;border:1px solid #c6d3df;font-size:11px}
+.darpe-library .instrument-table tbody tr.instrument-strings>*{background:#fff2cc}
+.darpe-library .instrument-table tbody tr.instrument-woodwinds>*{background:#deebf7}
+.darpe-library .instrument-table tbody tr.instrument-brass>*{background:#fce4d6}
+.darpe-library .instrument-table .instrument-family{font-weight:700;color:#285375;font-size:10px}
+@media(max-width:1200px){.statistics-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.statistics-detail{grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr)}}
+@media(max-width:800px){.statistics-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.statistics-detail{grid-template-columns:1fr}.statistics-source{border-left:0;border-top:1px solid #e2eaf0}.statistics-editor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.statistics-chart-panel .library-panel-heading{flex-direction:column}}
+@media(max-width:600px){.darpe-library.music-management .library-hero{grid-template-columns:minmax(0,1fr)}.darpe-library .library-hero .management-scope{min-width:0;max-width:100%;text-align:left}.statistics .library-panel-heading{flex-direction:column}.statistics-period{width:100%;justify-items:start}.statistics-card{padding:14px 12px}.statistics-card>strong{font-size:26px}.statistics-card-head{flex-direction:column-reverse;gap:9px}.statistics-editor-grid{grid-template-columns:1fr}}
+
+@media(max-width:600px){.statistics-cards>.statistics-card:last-child{grid-column:1/-1}.statistics-cards>.statistics-card:last-child .statistics-card-head{flex-direction:row}}

@@ -5,6 +5,9 @@ from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
 from .modules import darpe
+from .modules import darpe_library
+from .modules import darpe_file_manager
+from .modules import darpe_statistics
 from .modules import darpe_sam
 from .modules import darpe_sam_exports
 from . import gem
@@ -14,6 +17,7 @@ from . import sam_backup_views
 from . import gem_classes
 from . import music_events
 from .modules import music_ministry
+from .modules import music_letters
 from . import music_exams
 from . import gem_projection
 from . import gem_projection
@@ -68,6 +72,16 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
     path('darpe/', darpe.page, name='darpeDashboard'),
+    path('darpe/documentos/', darpe_library.page, {'section': 'documentos'}, name='darpeDocumentos'),
+    path('darpe/instrumentos/', darpe_library.page, {'section': 'instrumentos'}, name='darpeInstrumentos'),
+    path('darpe/setores/', darpe_library.page, {'section': 'setores'}, name='darpeSetores'),
+    path('darpe/biblioteca/pastas/', darpe_file_manager.folders, name='darpePastasApi'),
+    path('darpe/biblioteca/documentos/<uuid:record_id>/editar/', darpe_file_manager.update, name='darpeDocumentoEditar'),
+    path('darpe/biblioteca/documentos/<uuid:record_id>/versoes/', darpe_file_manager.versions, name='darpeDocumentoVersoes'),
+    path('darpe/biblioteca/documentos/<uuid:record_id>/visualizar/', darpe_library.download, {'inline': True}, name='darpeDocumentoVisualizar'),
+    path('darpe/biblioteca/estatisticas/', darpe_statistics.api, name='darpeEstatisticasApi'),
+    path('darpe/biblioteca/documentos/', darpe_library.documents, name='darpeDocumentosApi'),
+    path('darpe/biblioteca/documentos/<uuid:record_id>/download/', darpe_library.download, name='darpeDocumentoDownload'),
     path('darpe/conferencia-sam/', darpe_sam.page, name='darpeSam'),
     path('darpe/api/conferencia-sam/', darpe_sam.api, name='darpeSamApi'),
     path('darpe/api/conferencia-sam/exportar-excel/', darpe_sam_exports.export, {'format': 'xlsx'}, name='darpeSamExcel'),
@@ -134,6 +148,12 @@ urlpatterns = [
     path('musica/eventos/exportar-<str:file_format>/', music_events.export_dashboard, name='musicEventsExport'),
     path('musica/eventos/api/eventos/', music_events.api_events, name='musicEventsList'),
     path('musica/eventos/api/eventos/<uuid:event_id>/', music_events.api_detail, name='musicEventsDetail'),
+    path('musica/cartas-exames/', music_letters.page, name='musicLetters'),
+    path('musica/cartas-exames/api/painel/', music_letters.dashboard, name='musicLettersDashboard'),
+    path('musica/cartas-exames/api/cartas/<uuid:letter_id>/confirmar/', music_letters.confirm, name='musicLettersConfirm'),
+    path('musica/cartas-exames/api/ministerio/importar/', music_letters.import_ministry, name='musicLettersMinistry'),
+    path('musica/cartas-exames/documentos/<uuid:letter_id>/', music_letters.document, name='musicLettersDocument'),
+    path('musica/cartas-exames/exportar-<str:file_format>/', music_letters.export, name='musicLettersExport'),
     path('musica/exames/', music_exams.page, name='musicExams'),
     path('musica/exames/api/dashboard/', music_exams.api_dashboard, name='musicExamsDashboard'),
     path('musica/exames/api/agenda/', music_exams.api_agenda, name='musicExamsAgenda'),

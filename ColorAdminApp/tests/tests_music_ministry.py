@@ -213,6 +213,28 @@ class MinistryDomainTests(SimpleTestCase):
 
 
 class MinistryApiTests(SimpleTestCase):
+    @patch.object(api.music_events, '_allowed', return_value=True)
+    @patch.object(api, '_sources')
+    @patch.object(api, '_rpc', return_value={'id': 'bras'})
+    def test_reimport_preserves_event_exclusion(self, rpc, sources, _):
+        data = source_data()
+        data['events'] = [dict(id='bras', **raw_event())]
+        person = roster(data['registry'], data['members'], data['catalog'])[0]
+        data['entries'] = [dict(event_id='bras', person_key=person['key'], nome=person['nome'],
+            comum=person['comum'], municipio=person['municipio'], roles=person['roles'],
+            situacao='NAO_APLICA', observacoes='Não exercia o cargo neste encontro.', source={}, version=3)]
+        sources.return_value = data
+        cache.set('music-ministry:preview:operator:exclusion-test',
+                  {'records': [], 'sha256': 'a' * 64, 'filename': 'lista.xlsx'}, 1800)
+        request = self.factory.post('/', json.dumps(raw_event(conferido=True, event_id='bras', token='exclusion-test')),
+                                    content_type='application/json')
+        request.session = self.request().session
+        response = api.api_manage(request, 'salvar')
+        self.assertEqual(response.status_code, 200)
+        saved = rpc.call_args.args[1]['p_evento']['registros']
+        self.assertEqual(saved[0]['situacao'], 'NAO_APLICA')
+        self.assertEqual(saved[0]['observacoes'], data['entries'][0]['observacoes'])
+
     def setUp(self):
         self.factory = RequestFactory()
         cache.clear()

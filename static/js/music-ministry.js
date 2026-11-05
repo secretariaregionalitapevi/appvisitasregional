@@ -42,7 +42,7 @@
     $('#ministry-count').textContent=`${data.rows.length} pessoas na lista`;
     const selectedEvent=$('#ministry-event').value;
     const columns=data.event_options.filter(event=>data.rows.some(row=>row.cells.some(cell=>cell.event_id===event.id)));
-    const count=selectedEvent?4:columns.length+3;
+    const count=selectedEvent?5:columns.length+4;
     const selectedInfo=data.event_options.find(event=>event.id===selectedEvent);
     $('#ministry-state').querySelectorAll('option').forEach(option=>{if(option.value==='SEM_REGISTRO')option.textContent=selectedEvent?'N\u00e3o participou deste evento':'Sem presen\u00e7a em nenhum evento do per\u00edodo';});
     $('#ministry-event-shortcuts').innerHTML=[{id:'',titulo:'Todos os eventos do ano'},...data.event_options].map(event=>`<button type="button" data-select-event="${esc(event.id)}" class="${event.id===selectedEvent?'active':''}" aria-pressed="${event.id===selectedEvent}">${event.date?`<strong>${day(event.date)}</strong>`:''}<span>${esc(event.titulo)}</span></button>`).join('');
@@ -50,17 +50,15 @@
 
     $('#ministry-list-title').textContent=selectedEvent?(data.filters.situacao==='PRESENTE'?'Presentes no encontro':'Participação no encontro'):'Acompanhamento anual por pessoa';
     $('#ministry-list-hint').textContent=selectedInfo?`${selectedInfo.titulo} · ${day(selectedInfo.date)}`:'Cada coluna representa um encontro. Abra o nome para consultar o histórico.';
-    $('#ministry-head').innerHTML=selectedEvent?'<tr><th>Pessoa / comum</th><th>Ministério / cargo</th><th>Situação</th><th>Local de participação</th></tr>':`<tr><th>Pessoa / comum</th><th>Ministério / cargo</th>${columns.map(event=>`<th><strong>${day(event.date)}</strong><small>${esc(event.titulo)}</small><button class="btn btn-sm btn-white border" type="button" data-header-export="${esc(event.id)}">PDF de presentes</button></th>`).join('')}<th>Presenças no recorte</th></tr>`;
-    let city=null, common=null;
+    $('#ministry-head').innerHTML=selectedEvent?'<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th><th>Situação</th><th>Local de participação</th></tr>':`<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th>${columns.map(event=>`<th><strong>${day(event.date)}</strong><small>${esc(event.titulo)}</small><button class="btn btn-sm btn-white border" type="button" data-header-export="${esc(event.id)}">PDF de presentes</button></th>`).join('')}<th>Presenças no recorte</th></tr>`;
+    let city=null;
     $('#ministry-body').innerHTML=data.rows.map((row,index)=>{
       const group=city!==row.municipio?`<tr class="ministry-city-group"><td colspan="${count}"><i class="fa fa-location-dot me-2" aria-hidden="true"></i>${esc(row.municipio)}</td></tr>`:'';
-      const commonKey=`${row.municipio}:${row.comum}`;
-      const commonGroup=common!==commonKey?`<tr class="ministry-common-group"><td colspan="${count}">${esc(row.comum)} <span class="ministry-role-badge">${data.rows.filter(p=>p.municipio===row.municipio&&p.comum===row.comum).length} pessoa(s)</span></td></tr>`:'';
-      city=row.municipio;common=commonKey;
+      city=row.municipio;
       const byId=new Map(row.cells.map(cell=>[cell.event_id,cell]));
       const status=cell=>cell?`<span class="ministry-status ${cell.situacao}">${esc(data.states[cell.situacao])}</span>`:'<span class="ministry-neutral">Não se aplica</span>';
       const cells=selectedEvent?`<td>${status(byId.get(selectedEvent))}</td><td>${esc(byId.get(selectedEvent)?.local||'—')}</td>`:columns.map(event=>`<td>${status(byId.get(event.id))}${byId.get(event.id)?.situacao==='PRESENTE'?`<small>${esc(byId.get(event.id).local)}</small>`:''}</td>`).join('')+`<td>${ratio(row.cells)}</td>`;
-      return group+commonGroup+`<tr><td><button type="button" class="ministry-person" data-person="${index}" aria-haspopup="dialog">${esc(row.nome)}</button><small>${esc(row.comum)}</small></td><td>${row.roles.map(role=>`<span class="ministry-role-badge">${esc(data.roles[role]||role)}</span>`).join(' ')}</td>${cells}</tr>`;
+      return group+`<tr><td><button type="button" class="ministry-person" data-person="${index}" aria-haspopup="dialog">${esc(row.nome)}</button></td><td>${esc(row.comum)}</td><td>${row.roles.map(role=>`<span class="ministry-role-badge">${esc(data.roles[role]||role)}</span>`).join(' ')}</td>${cells}</tr>`;
     }).join('')||`<tr><td colspan="${count}" class="events-empty">Nenhuma pessoa para os filtros selecionados.</td></tr>`;
     $('#ministry-events').innerHTML=data.events.map(event=>`<article><div class="ministry-event-top"><span class="ministry-event-date">${day(event.data_evento)}</span><span class="ministry-status ${event.arquivo_sha256?'PRESENTE':'SEM_DADOS'}">${event.arquivo_sha256?'Lista carregada':'Sem lista'}</span></div><h3>${esc(event.titulo)}</h3><p>${esc(event.local)} · ${esc(event.modalidade)}</p><div class="ministry-event-actions"><button class="btn btn-sm btn-primary" type="button" data-event-present="${esc(event.id)}">Ver presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="pdf" data-export-event="${esc(event.id)}">PDF de presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="excel" data-export-event="${esc(event.id)}">Excel de presentes</button>${data.can_manage&&!event.arquivo_sha256?`<button class="btn btn-sm btn-outline-primary" type="button" data-event-import="${esc(event.id)}">Carregar lista</button>`:''}</div></article>`).join('')||'<p class="text-muted mb-0">Nenhum encontro individual cadastrado neste recorte. Selecione um ensaio ou RT no campo “Evento em análise”.</p>';
     $('#ministry-scope').textContent=`${selectedInfo?selectedInfo.titulo+' | '+day(selectedInfo.date):'Todos os eventos do ano'} · Ano ${data.year} · ${multi.labels($('#ministry-city'),'Toda a Regional')} · ${$('#ministry-role').selectedOptions[0].textContent}`;

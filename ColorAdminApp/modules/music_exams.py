@@ -9,7 +9,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from .access_control import can_access, service_headers, user_scope
+from .access_control import can_access, service_headers, user_scope, scope_details
 from .gem import _fetch_students, can_open_module
 
 TABLE="musica_exames_individuais"; BUCKET="gem_exam_documents"
@@ -33,11 +33,13 @@ def actor(request):
 def rest_url():return f"{settings.SUPABASE_URL}/rest/v1/{TABLE}"
 def denied():return JsonResponse({"error":"Seu perfil não possui acesso à pasta Música."},status=403)
 def query_filters(request):
-    return {key:request.GET.get(key,"").strip() for key in ("municipio","comum","mes","inicio","fim","lancamento_inicio","lancamento_fim")}
+    return {key:request.GET.get(key,"").strip() for key in ("municipio","comum","ano","evento","mes","inicio","fim","lancamento_inicio","lancamento_fim")}
 def matches_filters(row,filters,legacy=False):
     if filters["municipio"] and regional_group(row.get("municipio"))!=filters["municipio"]:return False
-    if not legacy and filters["comum"] and norm(row.get("comum"))!=norm(filters["comum"]):return False
+    if filters["comum"] and (legacy or norm(row.get("comum"))!=norm(filters["comum"])):return False
     exam=str(row.get("data_exame") or "")[:10];launched=str(row.get("created_at") or "")[:10]
+    if filters.get("ano") and exam[:4]!=filters["ano"]:return False
+    if filters.get("evento") and filters["evento"] != "date:"+exam:return False
     if filters["mes"] and exam[5:7]!=filters["mes"]:return False
     if filters["inicio"] and exam<filters["inicio"]:return False
     if filters["fim"] and exam>filters["fim"]:return False
@@ -70,11 +72,11 @@ def fetch_rows(request,apply_filters=True):
     response=requests.get(rest_url(),headers=service_headers(),params={"select":"*","order":"data_exame.desc,created_at.desc"},timeout=25);response.raise_for_status()
     scope=user_scope(request);rows=[restore_agenda(row) for row in response.json() if can_access(scope,{"municipio":row.get("municipio"),"comum":row.get("comum")})]
     return [row for row in rows if matches_filters(row,query_filters(request))] if apply_filters else rows
-def fetch_legacy(request):
+def fetch_legacy(request,apply_filters=True):
     select="id,municipio,data_exame,created_at,lancado_por,"+",".join(LEGACY_FIELDS)
     response=requests.get(f"{settings.SUPABASE_URL}/rest/v1/musica_exames_lancamentos",headers=service_headers(),params={"select":select,"order":"data_exame.desc,created_at.desc"},timeout=25);response.raise_for_status()
     scope=user_scope(request);rows=[row for row in response.json() if can_access(scope,{"municipio":row.get("municipio"),"comum":""})]
-    return [row for row in rows if matches_filters(row,query_filters(request),True)]
+    return [row for row in rows if matches_filters(row,query_filters(request),True)] if apply_filters else rows
 def legacy_summary(rows):
     groups={name:{"grupo":name,**{field:0 for field in LEGACY_FIELDS}} for name in GROUPS}
     for row in rows:
@@ -175,18 +177,22 @@ def api_agenda(request):
     except requests.RequestException:return JsonResponse({"error":"A agenda não respondeu. Tente novamente."},status=502)
 def page(request):
     if not can_open_module(request):return render(request,"pages/403.html",{"message":"Seu perfil não possui acesso à pasta Música."},status=403)
-    return render(request,"pages/music_exams.html",{"report_user":actor(request)})
+    return render(request,"pages/music_exams.html",{"report_user":actor(request),"scope":scope_details(user_scope(request))})
 def api_dashboard(request):
     if not can_open_module(request):return denied()
     try:
         all_items = fetch_rows(request, apply_filters=False)
         items = [row for row in all_items if matches_filters(row, query_filters(request))]
         individual_ids = {str(row["id"]) for row in all_items}
-        legacy = [row for row in fetch_legacy(request) if str(row.get("id")) not in individual_ids]
+        all_legacy = fetch_legacy(request, apply_filters=False)
+        legacy = [row for row in all_legacy if str(row.get("id")) not in individual_ids and matches_filters(row,query_filters(request),True)]
         groups,totals=dashboard_summary(legacy,items)
         students=[{"id":s.get("id"),"nome":s.get("nome_aluno"),"registro_msa":s.get("registro_msa"),"municipio":s.get("municipio"),"comum":s.get("comum_congregacao"),"instrumento":s.get("instrumento"),"categoria":s.get("cargo_ministerio")} for s in visible_students(request)]
         launches=[{**row,"grupo":regional_group(row.get("municipio")),"total":sum(int(row.get(f) or 0) for f in LEGACY_FIELDS)} for row in legacy]
-        return JsonResponse({"items":items,"groups":groups,"totals":totals,"students":students,"legacy_launches":launches,"filters":query_filters(request)})
+        dates=sorted({str(r.get('data_exame') or '')[:10] for r in [*all_items,*all_legacy] if r.get('data_exame')},reverse=True)
+        return JsonResponse({"items":items,"groups":groups,"totals":totals,"students":students,"legacy_launches":launches,"filters":query_filters(request),
+            "filter_options":{"years":sorted({d[:4] for d in dates},reverse=True),"commons":sorted({r.get('comum') for r in all_items if r.get('comum')}),
+                "events":[{"id":"date:"+d,"date":d,"title":"Exames e Testes · "+datetime.strptime(d,'%Y-%m-%d').strftime('%d/%m/%Y')} for d in dates]}})
     except requests.RequestException:return JsonResponse({"error":"Não foi possível consultar os exames. Verifique a migração 022."},status=502)
 def approved_stage(exam):
     if norm(exam.get("resultado")) != "APROVADO":
@@ -347,7 +353,11 @@ def document(request,record_id):
     except requests.RequestException:return JsonResponse({"error":"Não foi possível abrir o documento."},status=502)
 def export_excel(request):
     if not can_open_module(request):return denied()
-    groups,totals=legacy_summary(fetch_legacy(request));items=fetch_rows(request);wb=Workbook();ws=wb.active;ws.title="Resumo Regional"
+    all_items=fetch_rows(request,apply_filters=False)
+    items=[row for row in all_items if matches_filters(row,query_filters(request))]
+    individual_ids={str(row['id']) for row in all_items}
+    groups,totals=dashboard_summary([row for row in fetch_legacy(request) if str(row.get('id')) not in individual_ids],items)
+    wb=Workbook();ws=wb.active;ws.title="Resumo Regional"
     def title(sheet,last_col,report):
         sheet.merge_cells(start_row=1,start_column=1,end_row=1,end_column=last_col);sheet["A1"]="CONGREGAÇÃO CRISTÃ NO BRASIL";sheet["A1"].font=Font(bold=True,color="FFFFFF",size=15);sheet["A1"].fill=PatternFill("solid",fgColor="1E4B7A");sheet["A1"].alignment=Alignment(horizontal="center")
         for row,text in ((2,"Regional Itapevi - São Paulo · MÚSICA"),(3,report),(4,f"Emissão: {datetime.now():%d/%m/%Y %H:%M} · Responsável: {actor(request)}")):sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=last_col);sheet.cell(row,1,text)

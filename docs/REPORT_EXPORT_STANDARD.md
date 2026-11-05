@@ -83,3 +83,7 @@ Por solicitacao do usuario, os PDFs de presenca musical usam o titulo Relatório
 Cabecalhos PDF: usar **Impresso por:** para o usuario que gera o arquivo, com rotulos dos metadados em negrito e valores regulares. Preservar campos de responsaveis por pessoas e atividades.
 
 Excecao solicitada para nomes de PDFs de ensaios regionais: [RELATÓRIO] EnR_LOCAL_MMMaa.pdf, usando o local de realizacao e mes/ano do evento (exemplo EnR_ITAPEVI_MAI26).
+
+### Matriz de instrumentos do D.A.R.P.E.
+
+Por solicitação expressa do usuário, a matriz de orientação de instrumentos preserva a composição do documento fornecido: título integrado, famílias Cordas/Madeiras/Metais com faixas amarela/azul/pêssego, marcações x e observações amarelas. A atualização reúne os antigos setores 4 e 5 no setor 4. Esta exceção se aplica somente ao documento de orientação, não aos relatórios institucionais do painel.

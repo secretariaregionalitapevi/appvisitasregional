@@ -262,6 +262,8 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
             continue
         if item['event_id'] not in own_events:
             continue
+        if item['situacao'] == 'NAO_APLICA' and filters.get('situacao') != 'NAO_APLICA':
+            continue
         person = known[item['person_key']]
         event = own_events[item['event_id']]
         cells[person['key']][event['id']] = {**item, 'date': str(event['data_evento']), 'titulo': event['titulo'],
@@ -305,6 +307,8 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
             # Presença positiva vale em qualquer local; ausências respeitam o ciclo municipal.
             present = event['id'] in matched[person['key']]
             review = next((review_map[(event['id'], alias)] for alias in person['aliases'] if (event['id'], alias) in review_map), None)
+            if review and review['situacao'] == 'NAO_APLICA' and filters.get('situacao') != 'NAO_APLICA':
+                continue
             at_event = event_state(person, event['data_evento'], review or nominal.get((person['key'], event['id'])))
             if person.get('temporal') and at_event['known'] and not at_event['roles']:
                 continue

@@ -1,0 +1,72 @@
+/* File Manager do Color Admin: panel, toolbar, file-tree e tabela nativos. */
+.darpe-file-panel{border-radius:8px;overflow:hidden;margin-bottom:24px;box-shadow:0 3px 14px #17384d12}
+.darpe-file-panel .panel-heading{padding:13px 16px;background:#202b34;color:#fff}
+.darpe-file-panel .panel-title{font-size:13px;color:#fff;margin:0}
+.darpe-file-panel .file-manager-toolbar{padding:5px 8px;background:#f1f3f5;gap:2px;border-bottom:1px solid #d9e0e6}
+.darpe-file-panel .file-manager-toolbar .btn{font-size:12px;padding:9px 10px;border-radius:4px;white-space:nowrap}
+.darpe-file-panel .file-manager-toolbar .btn:hover:not(:disabled){background:#dde7ef}
+.darpe-file-panel .file-manager-toolbar .btn:disabled{opacity:.45}
+.darpe-file-panel .file-manager-toolbar i{color:#71808a}
+.darpe-file-panel .file-manager-container{min-height:430px;max-height:720px}
+.darpe-file-panel .file-manager-sidebar{width:250px;min-width:250px;background:#fff}
+.darpe-file-panel .file-manager-sidebar-content{overflow:auto}
+.darpe-file-panel .file-manager-sidebar-footer{font-size:12px;padding:16px;border-top:1px solid #dce3e9}
+.darpe-file-panel .file-manager-sidebar-footer small{font-size:10px}
+.darpe-file-panel .file-manager-content{min-width:0;overflow:auto;background:#fff;border-left:1px solid #dce3e9}
+.darpe-file-panel .fm-folder-link{display:flex;align-items:center;width:100%;border:0;background:transparent;text-align:left;gap:9px;color:#285375;padding:8px 10px;border-radius:4px;font-size:12px}
+.darpe-file-panel .fm-folder-link i{color:#e5ae54}
+.darpe-file-panel .fm-folder-link.selected,.darpe-file-panel .fm-folder-link:hover{background:#eaf2f8;color:#1e4b7a}
+.darpe-file-panel .fm-folder-link.selected{font-weight:700}
+.fm-folder-count{margin-left:auto;font-size:10px;border-radius:5px;background:#edf1f4;color:#60788a;padding:1px 6px}
+.darpe-file-panel .fm-trash-link{margin-top:18px;border-top:1px solid #e1e8ee;border-radius:0;padding-top:14px}
+.darpe-file-panel .fm-trash-link i{color:#8d99a3}
+.fm-navigation{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:15px}
+.fm-navigation .btn{font-size:11px;min-height:32px}
+.fm-breadcrumb{font-size:11px;margin:0;padding:0;min-height:25px}
+.fm-text-button{padding:0;border:0;background:none;color:#1e4b7a;font-size:inherit}
+.fm-text-button:hover{text-decoration:underline}
+.fm-table-container{min-height:210px}
+.darpe-file-panel .fm-table{font-size:12px;margin:0}
+.darpe-file-panel .fm-table th{font-weight:700;color:#173b57;white-space:nowrap;padding:10px 8px}
+.darpe-file-panel .fm-table td{padding:10px 8px;vertical-align:middle}
+.fm-table th:first-child{width:30px}.fm-table th:nth-child(2){width:50%}
+.fm-file-name{border:0;background:none;color:#1e4b7a;padding:0;display:inline-flex;align-items:center;gap:10px;text-align:left;line-height:1.5;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.fm-file-name i{font-size:18px;color:#d85a62}
+.fm-folder-row .fm-file-name i{color:#e5ae54}
+.fm-file-name:hover{text-decoration:underline}
+.fm-file-path{display:block;font-size:10px;color:#728798;margin:4px 0 0 28px;overflow-wrap:anywhere}
+.fm-version-badge{display:inline-block;font-size:10px;color:#718596;margin-left:6px}
+.fm-empty{height:160px;text-align:center;color:#718596}
+.fm-selection-status{font-size:11px;color:#718596;padding:14px 0 0}
+.darpe-file-panel #library-status{font-size:11px;padding:0 0 12px}
+.fm-dialog,.fm-preview{border:1px solid #d8e3ed;border-radius:12px;background:#fff;color:#173b57;box-shadow:0 20px 70px #17394f3d;padding:0;max-height:90vh}
+.fm-dialog{width:min(620px,calc(100vw - 32px))}
+.fm-dialog::backdrop,.fm-preview::backdrop{background:#132f48a6}
+.fm-dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border-bottom:1px solid #e2eaf0;background:#f6f9fb}
+.fm-dialog-heading h2{font-size:17px;margin:0;color:#173b57;overflow-wrap:anywhere}
+.fm-dialog-heading p{font-size:11px;color:#60788a;margin:7px 0 0;max-width:90ch}
+.fm-dialog #fm-fields,.fm-dialog #fm-form-status{padding:16px 20px 0}
+.fm-dialog #fm-fields label{display:block;width:100%;font-size:12px;font-weight:600;color:#285375;margin-bottom:15px}
+.fm-dialog #fm-fields .form-control,.fm-dialog #fm-fields .form-select{margin-top:7px;font-weight:400;font-size:12px}
+.fm-dialog #fm-fields textarea{min-height:85px}
+.fm-dialog #fm-fields p{font-size:12px;line-height:1.7}
+.fm-dialog #fm-form-status{font-size:12px;color:#b42318;white-space:pre-wrap}
+.fm-dialog-footer{display:flex;gap:8px;justify-content:flex-end;padding:18px 20px}
+.fm-preview{width:min(1400px,calc(100vw - 30px));height:92vh;max-height:94vh;overflow:hidden}
+.fm-preview[open]{display:flex;flex-direction:column}
+.fm-preview iframe{border:0;width:100%;flex:1;min-height:0;background:#525659}
+.fm-preview-help{font-size:11px;padding:9px 18px;margin:0;color:#60788a}
+.fm-preview-download{white-space:nowrap}
+.fm-versions{width:min(850px,calc(100vw - 32px))}
+#fm-version-list{padding:18px 20px}
+.fm-version{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:15px 0;border-bottom:1px solid #e2eaf0}
+.fm-version:last-child{border:0}
+.fm-version strong,.fm-version span,.fm-version small{display:block;font-size:12px;margin:3px 0;overflow-wrap:anywhere}
+.fm-version strong{color:#1e4b7a}
+.fm-version-actions{display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
+.fm-version-actions .btn{font-size:11px}
+.fm-folder-link:focus-visible,.fm-file-name:focus-visible,.fm-text-button:focus-visible{outline:3px solid #3e9df1;outline-offset:2px}
+@media(max-width:991px){.darpe-file-panel .file-manager-sidebar{position:static;inset:auto;width:215px;min-width:215px}.darpe-file-panel .file-manager-toolbar{flex-wrap:wrap;overflow:visible}.darpe-file-panel .file-manager-content{overflow:auto}}
+@media(max-width:650px){.darpe-file-panel .file-manager-container{flex-direction:column;max-height:none}.darpe-file-panel .file-manager-sidebar{width:100%;min-width:0;border-bottom:1px solid #dce3e9}.darpe-file-panel .file-manager-sidebar-content{max-height:240px}.darpe-file-panel .file-manager-sidebar-footer{display:none}.darpe-file-panel .file-manager-content{border-left:0}.darpe-file-panel .fm-table{min-width:740px}.darpe-file-panel .panel-heading{gap:10px;align-items:start}.darpe-file-panel .panel-heading .badge{font-size:9px}.fm-version{align-items:start;flex-direction:column}.fm-dialog-heading{padding:15px}.fm-dialog-heading h2{font-size:14px}.fm-preview .fm-dialog-heading{flex-direction:column;align-items:stretch}.fm-preview .fm-dialog-heading>div:last-child{justify-content:space-between}}
+@media(max-width:991px){.darpe-file-panel .file-manager .file-manager-container .file-manager-sidebar{position:static;inset-inline-start:auto;inset:auto}}
+@media(max-width:650px){.darpe-file-panel .file-manager .file-manager-container .file-manager-sidebar{display:flex;width:100%;min-width:0;flex:none}.darpe-file-panel .file-manager .file-manager-container{overflow:visible}}

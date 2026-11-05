@@ -246,7 +246,8 @@ def api_manage(request, action):
             payload['registros'] = [r for r in payload['registros'] if r['person_key'] in snapshots or r['person_key'] in present_keys]
             for key, snapshot in snapshots.items():
                 if key not in {r['person_key'] for r in payload['registros']}:
-                    payload['registros'].append({**snapshot, 'situacao': 'CONFERIR', 'observacoes': 'Cadastro atual divergente do público histórico. Conferir.'})
+                    payload['registros'].append(dict(snapshot) if snapshot['situacao'] == 'NAO_APLICA' else
+                        {**snapshot, 'situacao': 'CONFERIR', 'observacoes': 'Cadastro atual divergente do público histórico. Conferir.'})
             for entry in payload['registros']:
                 previous = snapshots.get(entry['person_key'])
                 if previous:
@@ -254,6 +255,8 @@ def api_manage(request, action):
                     # this event, even if the current directory has changed.
                     for field in ('roles', 'comum', 'municipio'):
                         entry[field] = previous[field]
+                    if previous['situacao'] == 'NAO_APLICA':
+                        entry.update(situacao='NAO_APLICA', observacoes=previous['observacoes'])
                 if previous and previous['situacao'] == 'PRESENTE' and entry['situacao'] != 'PRESENTE':
                     entry.update(situacao='PRESENTE', observacoes=previous['observacoes'])
             payload['event_id'] = target['id']

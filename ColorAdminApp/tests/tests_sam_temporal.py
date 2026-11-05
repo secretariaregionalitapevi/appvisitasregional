@@ -22,6 +22,22 @@ def transition(identity, field, before, after, day='2026-09-01', basis='sam'):
 
 
 class TemporalTests(SimpleTestCase):
+    def test_event_exclusion_does_not_count_absence_or_remove_previous_history(self):
+        catalog, people, legacy = self.setup_data()
+        events = [{**e, 'local': 'Brás', 'modalidade': 'PRESENCIAL'} for e in legacy]
+        entries = [dict(event_id=e['id'], person_key='sam:h', nome='Henrique', comum=COMMON,
+                        municipio='ITAPEVI', roles=['ENCARREGADO_LOCAL'], source={},
+                        situacao=state, observacoes='', version=1)
+                   for e, state in zip(events, ['SEM_REGISTRO', 'NAO_APLICA'])]
+        result = history(people, events, entries, [], [], catalog, {'level': 'regional'},
+                         {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL', 'situacao': 'SEM_REGISTRO'})
+        self.assertEqual(len(result['rows']), 1)
+        self.assertEqual([c['event_id'] for c in result['rows'][0]['cells']], ['jan'])
+        result = history(people, events, entries, [], [], catalog, {'level': 'regional'},
+                         {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL', 'situacao': 'SEM_REGISTRO', 'evento': 'bras'})
+        self.assertEqual(result['rows'], [])
+        self.assertEqual(result['summary']['people'], 0)
+
     def setup_data(self):
         catalog = [{'comum': COMMON, 'cidade': 'ITAPEVI'}, {'comum': CENTRAL, 'cidade': 'ITAPEVI'}]
         registry = [dict(id='h', nome_aluno='Henrique', cargo_ministerio='Músico',
