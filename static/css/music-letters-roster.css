@@ -1,0 +1,37 @@
+#letters-list-section .letters-list-actions{display:flex;align-items:center;align-self:end;flex-direction:row;gap:8px;min-width:0}
+#letters-list-section .letters-list-actions .btn{height:40px;white-space:nowrap}
+.roster-controls,.roster-deadline{display:flex;flex-wrap:wrap;gap:14px;padding:18px 20px;background:#fafcfe;border-bottom:1px solid #dce5ee;align-items:end}
+.roster-field{display:flex;flex-direction:column;gap:6px;min-width:160px;flex:1}
+.roster-controls .roster-field:first-child{flex:2}
+.roster-field label{font-size:12px;color:#1e4b7a;margin:0}
+.roster-deadline .roster-field{max-width:240px}
+.roster-deadline[hidden]{display:none}
+.roster-deadline-actions{display:flex;gap:8px;flex-wrap:wrap}
+.roster-deadline>p{flex-basis:100%}
+.roster-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:18px 20px}
+.roster-stat{border-left:3px solid #c9d8e5;padding:4px 12px}
+.roster-stat strong{display:block;font-size:23px;color:#1e4b7a}
+.roster-stat span{font-size:12px;color:#61768b}
+.roster-stat.received{border-color:#18a68b}.roster-stat.late{border-color:#e3a039}.roster-stat.missing{border-color:#d66579}
+.roster-table-caption{display:flex;justify-content:space-between;gap:12px;padding:0 20px 12px;font-size:11px;color:#718394}
+.roster-table th:last-child{width:110px}.roster-table td{vertical-align:middle}.roster-receipt-check{display:flex;align-items:center;gap:9px;color:#1e4b7a}
+.roster-table input[type=checkbox],.roster-receipt-check input{width:17px;height:17px;accent-color:#1e4b7a;cursor:pointer}
+.roster-state{display:inline-block;font-size:11px;padding:5px 8px;border-radius:6px;background:#edf2f7;color:#526b81}
+.roster-state.on_time{color:#0b725c;background:#e5f7ef}.roster-state.overdue,.roster-state.late{color:#a53a29;background:#fff0ea}
+.roster-pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:14px 20px;font-size:12px}
+.roster-panel{width:min(920px,calc(100vw - 32px))!important}
+.roster-dialog-head{display:flex;align-items:start;justify-content:space-between;gap:18px;margin-bottom:24px}
+.roster-dialog-head h2{margin-bottom:5px}.roster-dialog-head p{font-size:12px}
+.roster-panel-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.roster-panel-fields .roster-field{min-width:0}
+.roster-export-actions{display:flex;flex-wrap:wrap;gap:9px}
+.roster-import-section{margin-top:26px;padding-top:22px;border-top:1px solid #dce5ee}.roster-import-section h3{font-size:16px;color:#1e4b7a}
+.roster-upload{display:flex;gap:10px}.roster-upload input{min-width:0}.roster-upload button{white-space:nowrap}
+.roster-import-scroll{max-height:300px}.roster-import-scroll thead{position:sticky;top:0}
+#roster-feedback:not(:empty){margin:16px 20px 0}#roster-import-feedback:not(:empty){margin-top:12px}
+@media(max-width:900px){#letters-list-section .letters-list-filters{grid-template-columns:1fr 2fr}#letters-list-section .letters-list-actions{grid-column:1/-1;justify-content:flex-end}.roster-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){#letters-list-section .letters-list-filters{grid-template-columns:minmax(0,1fr)}#letters-list-section .letters-list-actions{flex-wrap:wrap}.roster-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.roster-controls .roster-field{flex-basis:100%;min-width:0}.roster-deadline .roster-field{max-width:none;flex-basis:100%;min-width:0}.roster-panel-fields{grid-template-columns:1fr}.roster-upload{flex-direction:column}.roster-dialog-head{flex-direction:column}.roster-table-caption{flex-direction:column}}
+
+.roster-dialog-head>.btn{color:#1e4b7a;background:#f0f3f6;border:1px solid #dce5ee}
+
+.roster-deadline .roster-pre-reference{max-width:440px;min-width:240px;flex:2}.roster-edit-deadline{display:block;padding:3px 0;margin-top:4px;border:0;background:transparent;color:#1e4b7a;text-decoration:underline;font-size:11px}.roster-edit-deadline:focus-visible{outline:2px solid #1e4b7a;outline-offset:2px}

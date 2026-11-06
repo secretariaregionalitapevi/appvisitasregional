@@ -81,6 +81,15 @@ class SupabaseAuthMiddleware:
                 return redirect(f'/user/login-v1?reason={revoke_reason}')
 
             from .module_access import MODULE_DARPE, MODULE_MUSICALIZACAO, MODULE_VISITAS, can_access_module
+            from .module_access import MODULE_MUSICA, allowed_modules
+            if allowed_modules(request) == {MODULE_MUSICA} and not path.startswith('/logout'):
+                message = 'Este acesso foi liberado somente para a administra\u00e7\u00e3o municipal no aplicativo Cartas.'
+                if request.method == 'GET' and '/api/' not in path and getattr(settings, 'CARTAS_APP_URL', ''):
+                    return redirect(settings.CARTAS_APP_URL.rstrip('/') + '/admin')
+                if '/api/' in path:
+                    return JsonResponse({'error': message, 'code': 'cartas_app_only'}, status=403)
+                from django.shortcuts import render
+                return render(request, 'pages/403.html', {'message': message}, status=403)
             requested_module = (
                 MODULE_DARPE if path.startswith('/darpe/') else
                 MODULE_MUSICALIZACAO if path.startswith('/musicalizacao/') else

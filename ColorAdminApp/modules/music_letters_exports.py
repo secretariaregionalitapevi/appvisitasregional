@@ -38,7 +38,8 @@ def sections(rows):
 def row_values(row, number):
     payload = row.get('payload') or {}
     instrument = ' · '.join(filter(None, [payload.get('instrumento'), payload.get('tonalidade')]))
-    notes = [row.get('review_notes') or '']
+    from .music_letters_activity import activity_report_note
+    notes = [row.get('review_notes') or '', activity_report_note(row)]
     if row.get('review_result', 'PENDENTE') != 'PENDENTE':
         notes.insert(0, RESULTS.get(row['review_result'], row['review_result']))
     if row.get('modalidade', '').startswith('troca_'):
@@ -130,6 +131,9 @@ def make_excel(rows, responsible, filters):
         event = row.get('event_snapshot') or {}
         values = row_values(row, number) + [row['municipio'], event.get('evento'), date_br(event.get('data')),
                    MODALITIES.get(row.get('modalidade')), RESULTS.get(row.get('review_result', 'PENDENTE'))]
+        from .music_letters_activity import activity_report_note
+        if activity_report_note(row):
+            sheet.row_dimensions[number + 6].height = 156
         for column, value in enumerate(values, 1):
             cell = sheet.cell(number + 6, column, value)
             cell.data_type = 's'  # Nomes/observações nunca viram fórmulas de planilha.

@@ -34,7 +34,7 @@
     <div class="news-image" style="background-image: url({% static 'img/login-bg/CCB_Itapevi.jpg' %})"></div>
     <div class="news-caption">
       <h4 class="caption-title"><b>Regional Itapevi</b></h4>
-      <p>Sistema de Administração Regional CCB. Cadastre-se para gerenciar visitas e indicadores.</p>
+      <p>{% if request.GET.origem == 'cartas' %}Administração de cartas musicais. Cadastre-se e aguarde a liberação em nível Municipal e pasta Música.{% else %}Sistema de Administração Regional CCB. Cadastre-se para gerenciar visitas e indicadores.{% endif %}</p>
     </div>
   </div>
   <div class="register-container">
@@ -99,7 +99,7 @@
     if(!form.checkValidity()){form.reportValidity();return}
     const button=document.getElementById("btn-register"),label=button.querySelector("span");button.disabled=true;label.textContent="PROCESSANDO...";
     try{
-      const response=await fetch("/api/auth/?action=register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:document.getElementById("fullName").value.trim(),comum:value.value,email:document.getElementById("emailAddress").value.trim().toLowerCase(),password:document.getElementById("password").value})});
+      const response=await fetch("/api/auth/?action=register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:document.getElementById("fullName").value.trim(),comum:value.value,email:document.getElementById("emailAddress").value.trim().toLowerCase(),password:document.getElementById("password").value,origem:new URLSearchParams(location.search).get("origem")==="cartas"?"cartas":"visitas"})});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||"Erro ao processar solicitação.");
       await Swal.fire({title:"Solicitação Enviada!",text:result.message,icon:"success",confirmButtonColor:"#1e4f7f"});

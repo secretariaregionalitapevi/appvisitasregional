@@ -22,35 +22,53 @@
     }
 
     function configurePendingAccessAlert() {
-        var container = document.getElementById('pending-access-notifications');
+        const container = document.getElementById('pending-access-notifications');
         if (!container) return;
-        fetch(container.dataset.pendingUrl, {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin'
-        }).then(function (response) {
-            if (!response.ok) throw new Error('Não foi poss?vel consultar os acessos pendentes.');
-            return response.json();
-        }).then(function (payload) {
-            var count = Number(payload.pending_count) || 0;
-            document.getElementById('pending-access-badge').textContent = count;
-            document.getElementById('pending-access-header-count').textContent = count;
-            document.getElementById('pending-access-message-count').textContent = count;
-            document.getElementById('pending-access-user-label').textContent = count === 1 ? 'novo usuário' : 'novos usuários';
-            if (!count) return;
-            document.getElementById('pending-access-badge').classList.remove('d-none');
-            document.getElementById('pending-access-item').classList.remove('d-none');
-            var toast = document.getElementById('pending-access-toast');
-            var seenKey = 'pending-access-toast-' + count;
-            if (toast && sessionStorage.getItem(seenKey) !== '1') {
-                document.getElementById('pending-access-toast-title').textContent = count === 1 ? '1 liberação aguardando análise' : count + ' liberações aguardando análise';
-                document.getElementById('pending-access-toast-message').textContent = count === 1 ? 'Um usuário aguarda a sua revisão de acesso.' : 'Há ' + count + ' usuários aguardando a sua revisão de acesso.';
-                toast.classList.remove('d-none');
-                sessionStorage.setItem(seenKey, '1');
-                document.getElementById('pending-access-toast-close').addEventListener('click', function () { toast.classList.add('d-none'); });
-            }
-        }).catch(function (error) {
-            console.warn(error.message);
-        });
+        const el = id => document.getElementById(id);
+        let running = false;
+        async function count(url) {
+            if (!url) return 0;
+            const response = await fetch(url, {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}});
+            if (!response.ok || response.redirected) return 0;
+            return Number((await response.json()).pending_count) || 0;
+        }
+        async function refresh() {
+            if (running || document.hidden) return;
+            running = true;
+            try {
+                const results = await Promise.allSettled([count(container.dataset.pendingUrl), count(container.dataset.lettersUrl)]);
+                const [access, letters] = results.map(r => r.status === 'fulfilled' ? r.value : 0);
+                const total = access + letters;
+                el('pending-access-badge').textContent = total;
+                el('pending-access-header-count').textContent = total;
+                el('pending-access-badge').classList.toggle('d-none', !total);
+                el('notifications-empty').classList.toggle('d-none', !!total);
+                if (el('pending-access-item')) {
+                    el('pending-access-item').classList.toggle('d-none', !access);
+                    el('pending-access-message-count').textContent = access;
+                    el('pending-access-user-label').textContent = access === 1 ? 'novo usuário' : 'novos usuários';
+                }
+                el('pending-letters-item').classList.toggle('d-none', !letters);
+                el('pending-letters-count').textContent = letters;
+                const key = 'pending-notifications-' + access + '-' + letters;
+                const toast = el('pending-access-toast');
+                if (!total) toast.classList.add('d-none');
+                let seen = false;
+                try { seen = sessionStorage.getItem(key) === '1'; } catch (_) {}
+                if (total && !seen) {
+                    el('pending-access-toast-title').textContent = letters ? letters + (letters === 1 ? ' carta pendente de análise' : ' cartas pendentes de análise') : access + (access === 1 ? ' liberação aguardando análise' : ' liberações aguardando análise');
+                    el('pending-access-toast-message').textContent = letters ? 'Situação GEM/SAM: aluno inativo ou com status Excluir. Consulte as pendências no sino.' : 'Há usuários aguardando a sua revisão de acesso.';
+                    el('pending-toast-link').href = letters ? el('pending-letters-item').href : el('pending-access-item').href;
+                    toast.classList.remove('d-none');
+                    try { sessionStorage.setItem(key, '1'); } catch (_) {}
+                }
+            } finally { running = false; }
+        }
+        el('pending-access-toast-close').addEventListener('click', () => el('pending-access-toast').classList.add('d-none'));
+        container.addEventListener('click', e => { if (e.target.closest('[data-bs-toggle=dropdown]')) el('pending-access-toast').classList.add('d-none'); });
+        refresh();
+        window.setInterval(refresh, 60000);
+        window.addEventListener('letters-updated', refresh);
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -60,6 +60,40 @@ def endpoint():
     return settings.SUPABASE_URL + '/rest/v1/darpe_documentos'
 
 
+
+def _pdf_object(value):
+    return value.get_object() if hasattr(value, 'get_object') else value
+
+
+def _is_content_credentials(spec):
+    """C2PA é metadado de procedência; não autoriza anexos de outros tipos."""
+    spec = _pdf_object(spec)
+    if not isinstance(spec, dict) or spec.get('/AFRelationship') != '/C2PA_Manifest':
+        return False
+    if str(spec.get('/F') or spec.get('/UF') or '') != 'Content Credentials':
+        return False
+    streams = _pdf_object(spec.get('/EF'))
+    if not isinstance(streams, dict) or not streams:
+        return False
+    return all(str(_pdf_object(stream).get('/Subtype', '')).lower().lstrip('/') == 'application/c2pa'
+               for stream in streams.values())
+
+
+def _only_content_credentials(tree):
+    pending = [tree]
+    seen = set()
+    while pending:
+        node = _pdf_object(pending.pop())
+        if not isinstance(node, dict) or id(node) in seen or len(seen) >= 1000:
+            return False
+        seen.add(id(node))
+        names = _pdf_object(node.get('/Names', []))
+        if len(names) % 2 or any(not _is_content_credentials(names[i]) for i in range(1, len(names), 2)):
+            return False
+        pending.extend(_pdf_object(node.get('/Kids', [])))
+    return True
+
+
 def validate_pdf(upload):
     # O parser pertence ao fluxo de upload, não à inicialização de todas as rotas.
     from pypdf import PdfReader
@@ -77,7 +111,13 @@ def validate_pdf(upload):
             raise ValueError()
         # Não publicar PDFs com ações executáveis ou arquivos embutidos.
         root = pdf.trailer['/Root']
-        if any(key in root for key in ('/OpenAction', '/AA')) or any(key in root.get('/Names', {}) for key in ('/JavaScript', '/EmbeddedFiles')):
+        names = _pdf_object(root.get('/Names', {}))
+        if any(key in root for key in ('/OpenAction', '/AA')) or '/JavaScript' in names:
+            raise ValueError()
+        if '/EmbeddedFiles' in names and not _only_content_credentials(names['/EmbeddedFiles']):
+            raise ValueError()
+        associated = _pdf_object(root.get('/AF', []))
+        if any(not _is_content_credentials(spec) for spec in associated):
             raise ValueError()
     except Exception as exc:
         raise ValueError('Use um PDF válido, sem senha, ações automáticas ou arquivos anexos.') from exc

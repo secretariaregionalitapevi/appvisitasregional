@@ -13,7 +13,7 @@ from .access_control import can_access, service_headers, user_scope, scope_detai
 from .gem import _fetch_students, can_open_module
 
 TABLE="musica_exames_individuais"; BUCKET="gem_exam_documents"
-AGENDA_CSV="https://docs.google.com/spreadsheets/d/e/2PACX-1vSr59qtjfIiXj8PKems0FQzJulSdyUa70QhH8KaJSnNtbh9U0cB0KrRrxaKz93pc9CSLmTAn8btFc-0/pub?output=csv&gid=0&single=true"
+AGENDA_CSV=getattr(settings,"MUSIC_AGENDA_CSV_URL","https://script.google.com/macros/s/AKfycbw8cDlKeV3JuncWmVXY5EmZQ66p2Y_LMpoj93ILRxmDSF582oe8nehEatqtlCMRKs8t/exec")
 RESULTS={"AGENDADO","APROVADO","RETORNOU AO CICLO","AUSENTE"}
 LEGACY_FIELDS=("musicos_culto_oficial","musicos_oficializacao","musicos_troca_instrumento","organistas_rjm","organistas_culto_oficial","organistas_oficializacao","organistas_testes_especiais")
 GROUPS=["ITAPEVI","JANDIRA","COTIA / CAUCAIA / VGP","SANTANA / PIRAPORA"]
@@ -153,10 +153,10 @@ def event_matches_municipality(event, municipality):
 
 
 def agenda_events():
-    cached=cache.get("musica_exam_agenda_events_v2")
+    cached=cache.get("musica_exam_agenda_events_official_v3")
     if cached is not None:return cached
     response=requests.get(AGENDA_CSV,timeout=12);response.raise_for_status();events=[]
-    for row in csv.DictReader(io.StringIO(response.text.lstrip("\ufeff"))):
+    for row in csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))):
         values={norm(k):v for k,v in row.items()}
         if norm(values.get("DEPARTAMENTO"))!="MUSICA":continue
         try:exam_date=datetime.strptime((values.get("DATA") or "").strip(),"%d/%m/%Y").date().isoformat()
@@ -165,7 +165,7 @@ def agenda_events():
         if not is_exam_agenda_event(title):continue
         event_id=hashlib.sha256(f"{exam_date}|{hour}|{norm(title)}".encode()).hexdigest()[:24]
         events.append({"id":event_id,"data":exam_date,"hora":hour,"titulo":title,"url":"https://ccbagenda.vercel.app/"})
-    events.sort(key=lambda x:(x["data"],x["hora"]),reverse=True);cache.set("musica_exam_agenda_events_v2",events,600);return events
+    events.sort(key=lambda x:(x["data"],x["hora"]),reverse=True);cache.set("musica_exam_agenda_events_official_v3",events,600);return events
 
 def api_agenda(request):
     if not can_open_module(request):return denied()

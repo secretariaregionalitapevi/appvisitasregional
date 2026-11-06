@@ -1,1 +1,95 @@
 .letters-toolbar{padding:20px;display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:16px}.letters-toolbar label,#letters-review-form label{font-size:11px;font-weight:600;display:block;color:#5b7387;margin-bottom:6px}.letters-wide{grid-column:span 2}.letters-actions{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.letters-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.letters-metric{background:white;padding:20px;border:1px solid #e1e9f0;border-left:4px solid var(--tone);border-radius:16px}.letters-metric strong{display:block;font-size:28px;color:#173d60}.letters-metric span{font-size:12px;color:#718596}.letters-metric i{color:var(--tone);margin-bottom:10px;font-size:19px}.letters-panel-head{padding:18px 20px;display:flex;justify-content:space-between;align-items:center;gap:18px;border-bottom:1px solid #dce5ee}.letters-panel-head h2{font-size:17px;margin:0 0 4px;color:#1e4b7a}.letters-table{font-size:12px}.letters-table th{background:#eaf2f8;color:#1e4b7a;font-weight:600;white-space:nowrap;padding:13px!important}.letters-table td{padding:14px!important;vertical-align:middle}.letters-table td small{display:block;color:#74899b;margin-top:5px}.letters-table tbody tr:nth-child(even){background:#f8fafc}.letters-table .btn{font-size:11px}.letters-state{display:inline-block;border-radius:6px;padding:5px 8px;background:#fff2d9;color:#805e1e;font-size:11px}.letters-state.approved{background:#e4f5ed;color:#19734d}.letters-state.other{background:#edf1f5;color:#5d7284}.letters-ministry-scroll{max-height:420px}.letters-ministry-scroll th{position:sticky;top:0}#letters-review-dialog{border:0;border-radius:16px;padding:28px;width:min(550px,95vw);box-shadow:0 20px 70px #16374d40;color:#264459}#letters-review-dialog::backdrop{background:#193b5580}#letters-review-form h2{font-size:21px;color:#1e4b7a;margin-bottom:18px}@media(max-width:1000px){.letters-toolbar{grid-template-columns:repeat(2,minmax(130px,1fr))}.letters-metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.letters-toolbar{grid-template-columns:1fr}.letters-wide{grid-column:auto}.letters-panel-head{align-items:flex-start;flex-direction:column}.letters-actions{justify-content:flex-start}.letters-metric{padding:16px}}
+
+/* Same grouped header hierarchy and palette as Exames e Testes. */
+.letters-group-table thead th{background:#f2f4f6;color:#5f6972;font-size:10px;padding:9px 8px!important;vertical-align:middle;text-align:center}
+.letters-group-table thead .musicians-head{background:#12a594;color:#fff;font-weight:700}
+.letters-group-table thead .organists-head{background:#f8ac59;color:#fff;font-weight:700}
+.letters-group-table tbody td{padding:12px 8px!important}
+.letters-group-table tbody td:first-child{text-align:left}
+.letters-group-panel .letters-panel-head h2{margin:0;font-size:16px}
+
+.letters-table .letters-actions-cell{text-align:center;white-space:nowrap;width:136px;min-width:136px}
+.letters-row-actions{display:flex;align-items:center;justify-content:center;gap:5px}
+.letters-row-actions .btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:32px;padding:0}
+.letters-action-dialog{border:0;border-radius:16px;padding:28px;width:min(680px,calc(100vw - 32px));max-height:90vh;overflow:auto;color:#264459;box-shadow:0 20px 70px #16374d40}
+.letters-action-dialog::backdrop{background:#193b5580}
+.letters-action-dialog h2{font-size:21px;color:#1e4b7a;margin-bottom:16px}
+.letters-ministry-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.letters-ministry-fields label{font-size:12px;color:#1e4b7a}.letters-ministry-fields input{margin-top:6px}.letters-ministry-fields .wide{grid-column:1/-1}.letters-ministry-fields input:read-only{background:#f4f7fa}
+@media(max-width:600px){.letters-ministry-fields{grid-template-columns:1fr}.letters-action-dialog{padding:22px}}
+
+.letters-list-filters{display:flex;align-items:end;gap:14px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid #dce5ee;background:#fafcfe}
+.letters-list-filters>div:first-child{flex:1;min-width:180px;max-width:300px}.letters-list-filters>div:nth-child(2){flex:2;min-width:240px;max-width:580px}
+.letters-list-filters .form-select,.letters-list-filters>button{height:40px;min-height:40px}.letters-list-filters>button{display:inline-flex;align-items:center;justify-content:center;margin:0}.letters-list-filters label{display:block;font-size:12px;color:#1e4b7a;margin-bottom:6px}.letters-list-filters>.small{align-self:center;margin-top:20px}
+@media(max-width:600px){.letters-list-filters>div:first-child,.letters-list-filters>div:nth-child(2){flex-basis:100%;min-width:0;max-width:none}.letters-list-filters>.small{margin-top:0}}
+
+.letters-list-filters .select2-container{width:100%!important}.letters-list-filters .select2-selection--single{height:40px;border:1px solid #cbd5df;border-radius:8px}.letters-list-filters .select2-selection__rendered{line-height:38px;padding-left:12px;color:#1e4b7a}.letters-list-filters .select2-selection__arrow{height:38px}.letters-common-dropdown .select2-search--dropdown{padding:8px}.letters-common-dropdown .select2-search__field{padding:8px 10px;border:1px solid #cbd5df!important;border-radius:6px}.letters-common-dropdown .select2-results__option{padding:9px 12px;font-size:12px}.letters-common-dropdown .select2-results__options{max-height:280px!important}
+
+/* Keep native and searchable controls on exactly the same baseline. */
+.letters-list-filters>div:first-child,.letters-list-filters>div:nth-child(2){display:flex;flex-direction:column;gap:6px}
+.letters-list-filters label{line-height:18px;margin:0}
+.letters-list-filters .form-select,.letters-list-filters>button{height:40px!important;min-height:40px!important;box-sizing:border-box}
+.letters-list-filters .select2-container{display:block;height:40px!important;margin:0;vertical-align:top}
+.letters-list-filters .select2-container .selection{display:block;height:40px}
+.letters-list-filters .select2-container .select2-selection--single{display:block;height:40px!important;min-height:40px!important;box-sizing:border-box}
+.letters-list-filters .select2-container .select2-selection__rendered{line-height:38px!important;padding-top:0!important;padding-bottom:0!important}
+.letters-list-filters .select2-container .select2-selection__arrow{height:38px!important;top:1px}
+
+/* Reserve the available width for ministry names; keep status beside actions. */
+.letters-ministry-table{width:100%;table-layout:auto}
+.letters-ministry-table th:first-child{width:20%}
+.letters-ministry-table th:nth-child(n+2):nth-child(-n+5){width:18%}
+.letters-ministry-table td:nth-child(n+2):nth-child(-n+5){white-space:nowrap}
+.letters-ministry-table th:nth-child(6){width:1%}
+.letters-ministry-table td:nth-child(6){min-width:100px}
+.letters-ministry-table .letters-state{white-space:normal;min-width:72px;text-align:center}
+
+.letters-program-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:420px}
+.letters-program-badges .letters-state{font-size:10px;padding:3px 6px}
+.letters-program-summary{padding:18px 20px;display:flex;flex-direction:column;gap:8px;color:#1e4b7a}
+.letters-program-summary strong{font-size:20px}.letters-program-summary small{color:#60788c}
+
+.letters-table .letters-program-row>td{padding-top:0!important;background:#fff}.letters-program-row .technical-summary{margin-top:0;margin-bottom:4px}.letters-program-row .technical-item strong{font-size:10px}.letters-program-row .technical-summary-head strong{display:inline}
+
+.letters-candidate-name{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.letters-candidate-name .technical-status{display:inline-block;margin:0}.letters-program-row .technical-boxes{margin-bottom:4px}
+
+/* Keep each student's identification and study boxes in one visual group. */
+#letters-body>tr:has(+.letters-program-row)>td{border-bottom:0}
+#letters-body>.letters-program-row>td{border-top:0}
+
+.letters-activity-state{background:#fff0f3;color:#a42e48;border:1px solid #efc1cc}.letters-activity-notice{padding:18px 20px;border-bottom:1px solid #dce5ee}.letters-activity-notice:last-child{border-bottom:0}.letters-activity-notice>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#1e4b7a}.letters-activity-notice p{margin:7px 0;font-size:12px;color:#425f76}.letters-activity-notice small{color:#718394;font-size:11px}
+
+/* One row per candidate; study requirements open on demand. */
+#letters-body>tr>td{vertical-align:middle;border-bottom:1px solid #dce5ed;padding-top:18px!important;padding-bottom:18px!important}
+#letters-body>tr:nth-child(even){background:#f8fafc}
+#letters-body>tr>td:first-child{min-width:300px;width:37%}
+.letters-program-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.letters-program-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid #d6e1eb;border-radius:6px;padding:5px 8px;background:#f2f5f8;color:#4e6478;font-size:10px;line-height:1.2;font-weight:700;cursor:pointer}
+.letters-program-badge.ok{background:#e9f8f2;border-color:#b6e3d4;color:#08775e}
+.letters-program-badge.review{background:#fff6e6;border-color:#f2d49b;color:#906000}
+.letters-program-badge.missing{background:#fff0f2;border-color:#f2c8d0;color:#b3334b}
+.letters-badge-state{font-weight:400;opacity:.85}
+.letters-program-badge:hover{filter:brightness(.96)}
+.letters-program-badge:focus-visible{outline:2px solid #1e4b7a;outline-offset:3px}
+#letters-program-dialog .technical-grid{grid-template-columns:1fr;margin-top:18px}
+#letters-program-dialog .technical-item{padding:16px}
+#letters-program-dialog .technical-item strong,#letters-program-dialog .technical-item span{font-size:12px;line-height:1.6}
+.letters-pending-filter{display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer}
+
+button.technical-status.letters-activity-state{font-family:inherit;line-height:inherit;cursor:pointer}
+button.technical-status.letters-activity-state:focus-visible{outline:2px solid #1e4b7a;outline-offset:3px}
+
+/* Filled-letter filters: aligned fields, then a separate scope/status toolbar. */
+#letters-list-section .letters-list-filters{display:grid;grid-template-columns:minmax(180px,1fr) minmax(240px,2fr) auto;gap:14px;padding-bottom:14px;border-bottom:0}
+#letters-list-section .letters-list-filters>div{min-width:0;max-width:none}
+#letters-list-section .letters-list-filters>button{align-self:end}
+.letters-list-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px 16px;background:#fafcfe;border-bottom:1px solid #dce5ee}
+.letters-list-toolbar .letters-pending-filter{position:relative;display:inline-flex;align-items:center;gap:9px;margin:0;padding:8px 11px;border:1px solid #dce5ee;border-radius:8px;background:#fff;color:#536b80;font-size:12px;line-height:18px;cursor:pointer}
+.letters-pending-filter input{position:absolute;width:1px;height:1px;opacity:0}
+.letters-filter-switch{position:relative;flex:0 0 28px;width:28px;height:16px;border-radius:10px;background:#b4c2ce}
+.letters-filter-switch:after{content:'';position:absolute;left:3px;top:3px;width:10px;height:10px;border-radius:50%;background:#fff}
+.letters-pending-filter input:checked+.letters-filter-switch{background:#1e4b7a}
+.letters-pending-filter input:checked+.letters-filter-switch:after{left:15px}
+.letters-list-toolbar .letters-pending-filter:has(input:checked){border-color:#a9c5de;background:#edf5fc;color:#1e4b7a}
+.letters-list-toolbar .letters-pending-filter:has(input:focus-visible){outline:2px solid #1e4b7a;outline-offset:3px}
+.letters-list-result{font-size:12px;color:#718394;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#letters-list-section .letters-list-filters{grid-template-columns:minmax(0,1fr) auto}#letters-list-section .letters-list-filters>div:first-child{grid-column:1/-1}.letters-list-toolbar{align-items:flex-start;flex-direction:column;gap:10px}.letters-list-toolbar .letters-pending-filter{font-size:11px}.letters-list-result{align-self:flex-end}}

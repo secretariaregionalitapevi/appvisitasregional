@@ -138,8 +138,8 @@ def _method_threshold_met(rows, group, target):
                 return True
     return False
 
-def assess_program(student, records):
-    target = target_for_level(student.get("nivel"))
+def assess_program(student, records, target=None):
+    target = target or target_for_level(student.get("nivel"))
     group = instrument_group(student.get("instrumento"), student.get("cargo_ministerio"))
     if target == "concluido":
         return {"target": target, "target_label": "Formação concluída", "instrument_group": group,

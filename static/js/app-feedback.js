@@ -1,6 +1,7 @@
 (() => {
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const flows = {
+    export: {icon:'fa-file-arrow-down', steps:[['fa-filter','Preparando recorte'],['fa-spinner fa-spin','Gerando arquivo'],['fa-download','Preparando download']]},
     save: {icon:'fa-floppy-disk', steps:[['fa-check','Validando dados'],['fa-floppy-disk','Salvando'],['fa-rotate','Atualizando painel']]},
     create: {icon:'fa-user-plus', steps:[['fa-check','Validando dados'],['fa-database','Cadastrando'],['fa-rotate','Atualizando painel']]},
     update: {icon:'fa-pen-to-square', steps:[['fa-check','Validando dados'],['fa-floppy-disk','Atualizando'],['fa-rotate','Atualizando painel']]},
@@ -33,8 +34,8 @@
       : escapedMessage;
     const layer = document.createElement('div');
     layer.id = 'app-feedback-layer';
-    layer.className = 'app-feedback-layer';
-    layer.setAttribute('role', loading ? 'status' : 'dialog');
+    layer.className = 'app-feedback-layer' + (options.toast ? ' app-feedback-toast' : '');
+    layer.setAttribute('role', loading || options.toast ? 'status' : 'dialog');
     layer.setAttribute('aria-live', 'polite');
     layer.innerHTML = `<div class="app-feedback-card ${escapeHtml(type)}"><div class="app-feedback-head"><span class="app-feedback-main-icon"><i class="fa ${iconFor(type, flow)}"></i></span><div class="app-feedback-heading"><strong>${escapeHtml(options.title || 'Operação concluída')}</strong><p>${messageHtml}</p></div>${loading ? '' : '<button class="app-feedback-close" type="button" aria-label="Fechar"><i class="fa fa-xmark"></i></button>'}</div>${loading ? `<div class="app-feedback-steps">${config.steps.map(([icon,label]) => `<div class="app-feedback-step"><span><i class="fa ${icon}"></i></span>${escapeHtml(label)}</div>`).join('')}</div>` : `<div class="app-feedback-result"><i class="fa ${type === 'success' ? 'fa-circle-check' : type === 'warning' ? 'fa-circle-info' : 'fa-circle-exclamation'}"></i><span>${escapeHtml(options.detail || (type === 'success' ? 'Operação concluída e painel atualizado.' : type === 'warning' ? 'Confira as informações antes de continuar.' : 'Revise a mensagem e tente novamente.'))}</span></div>`}</div>`;
     if (previousLayer) {
@@ -43,7 +44,18 @@
       layer.querySelector('.app-feedback-card').style.animation = 'none';
       previousLayer.replaceWith(layer);
     } else {
-      document.body.appendChild(layer);
+      (options.toast ? document.querySelector('dialog[open]') || document.body : document.body).appendChild(layer);
+    }
+    // Native dialogs use the browser's top layer. Put download toasts there too.
+    if (options.toast) {
+      const host = document.querySelector('dialog[open]') || document.body;
+      if (layer.parentElement !== host) host.appendChild(layer);
+    }
+    if (options.toast && typeof layer.showPopover === 'function') {
+      layer.setAttribute('popover', 'manual');
+      layer.showPopover();
+    } else if (options.toast) {
+      (document.querySelector('dialog[open]') || document.body).appendChild(layer);
     }
     const close = () => layer.remove();
     layer.querySelector('.app-feedback-close')?.addEventListener('click', close);
@@ -64,7 +76,7 @@
       layer.className = 'app-feedback-layer';
       layer.setAttribute('role', 'dialog');
       layer.setAttribute('aria-modal', 'true');
-      layer.innerHTML = `<div class="app-feedback-card warning"><div class="app-feedback-head"><span class="app-feedback-main-icon"><i class="fa ${escapeHtml(options.icon || 'fa-triangle-exclamation')}"></i></span><div class="app-feedback-heading"><strong>${escapeHtml(options.title || 'Confirmar operação?')}</strong><p>${messageHtml}</p></div><button class="app-feedback-close" type="button" data-result="false" aria-label="Fechar"><i class="fa fa-xmark"></i></button></div><div class="app-feedback-result"><i class="fa fa-circle-info"></i><span>${escapeHtml(options.detail || 'Confirme a ação para continuar.')}</span></div><div class="app-feedback-actions"><button class="btn btn-light" type="button" data-result="false"><i class="fa fa-xmark me-1"></i>${escapeHtml(options.cancelText || 'Cancelar')}</button><button class="btn btn-danger" type="button" data-result="true"><i class="fa ${escapeHtml(options.confirmIcon || 'fa-trash')} me-1"></i>${escapeHtml(options.confirmText || 'Sim, excluir')}</button></div></div>`;
+      layer.innerHTML = `<div class="app-feedback-card warning"><div class="app-feedback-head"><span class="app-feedback-main-icon"><i class="fa ${escapeHtml(options.icon || 'fa-triangle-exclamation')}"></i></span><div class="app-feedback-heading"><strong>${escapeHtml(options.title || 'Confirmar operação?')}</strong><p>${messageHtml}</p></div><button class="app-feedback-close" type="button" data-result="false" aria-label="Fechar"><i class="fa fa-xmark"></i></button></div><div class="app-feedback-result"><i class="fa fa-circle-info"></i><span>${escapeHtml(options.detail || 'Confirme a ação para continuar.')}</span></div><div class="app-feedback-actions"><button class="btn btn-danger app-btn-cancel" type="button" data-result="false"><i class="fa fa-xmark me-1"></i>${escapeHtml(options.cancelText || 'Cancelar')}</button><button class="btn btn-danger" type="button" data-result="true"><i class="fa ${escapeHtml(options.confirmIcon || 'fa-trash')} me-1"></i>${escapeHtml(options.confirmText || 'Sim, excluir')}</button></div></div>`;
       document.body.appendChild(layer);
       let finished = false;
       const finish = value => { if (finished) return; finished = true; document.removeEventListener('keydown', onKey); layer.remove(); resolve(value); };

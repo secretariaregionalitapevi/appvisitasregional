@@ -77,6 +77,12 @@
   }
   async function download(city,day,button){
     if(!data||button?.disabled)return;
+    if(window.AppExport){
+      const query=params(city);if(day)query.set('data',day);if($('#annual-status').value)query.set('situacao',$('#annual-status').value);
+      const ok=await AppExport.download(button,'/musica/eventos/anual/exportar-pdf/?'+query,{filename:`Ensaios_Regionais_${data.year}.pdf`});
+      if(ok)$('#annual-message').textContent='PDF gerado com os filtros de munic?pio e ano selecionados.';
+      return;
+    }
     const restore=window.MusicEventsDashboard.generating(button);
     const query=params(city);if(day)query.set('data',day);if($('#annual-status').value)query.set('situacao',$('#annual-status').value);
     $('#annual-message').textContent='Gerando o PDF com o acompanhamento e a grade por ensaio…';

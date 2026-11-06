@@ -78,11 +78,11 @@
     const sector=profile.sector||profile.setor||'Visitas';
     const normSec = norm(sector);
     const isGlobalSec = normSec === 'global' || normSec === 'administrativo' || Number(profile.role_id) === 1;
-    const isMusicalSec = normSec.includes('musical') || normSec === 'ebi' || normSec === 'musica';
-    const primary = isMusicalSec ? 'musicalizacao' : (isGlobalSec ? 'global' : 'visitas');
+    const isMusicalSec = normSec.includes('musical') || normSec === 'ebi';
+    const primary = isGlobalSec?'global':normSec==='musica'?'musica':normSec.includes('darpe')?'darpe':isMusicalSec?'musicalizacao':'visitas';
     const grants=new Set((data.module_access||[]).filter(row=>row.user_id===id&&row.active).map(row=>row.module));
     if(primary==='global') {
-      ['visitas','musicalizacao'].forEach(item=>grants.add(item));
+      ['visitas','musicalizacao','darpe','musica'].forEach(item=>grants.add(item));
     } else {
       grants.add(primary);
     }
@@ -90,7 +90,7 @@
     $('#edit-name').val(profile.full_name||'');
     $('#edit-role').val(String(profile.role_id||4));
     $('#edit-status').val(approve?'approved':profile.status||'pending');
-    $('#edit-sector').val(isGlobalSec ? 'Global' : (primary === 'musicalizacao' ? 'Musicalização' : 'Visitas'));
+    $('#edit-sector').val(({global:'Global',musica:'M\u00fasica',musicalizacao:'Musicaliza\u00e7\u00e3o',darpe:'D.A.R.P.E',visitas:'Visitas'})[primary]);
     $('#edit-comum').val(profile.comum||'');
     $('#edit-municipio').val(profile.municipio||profile.cidade||'');
     $('#edit-cargo').val(profile.cargo||'');
@@ -131,21 +131,17 @@
         $('.module-check').prop('checked', true);
       }
     });
-    $('#edit-sector').on('change', function(){
-      const val = $(this).val();
-      if(val === 'Global') {
-        $('.module-check').prop('checked', true);
-      } else if(val === 'Visitas') {
-        $('#module-visitas').prop('checked', true);
-      } else if(val === 'Musicalização') {
-        $('#module-musicalizacao').prop('checked', true);
-      }
+    $('#edit-sector').on('change',function(){
+      const names={Visitas:'visitas','Musicaliza\u00e7\u00e3o':'musicalizacao','M\u00fasica':'musica','D.A.R.P.E':'darpe'};
+      const value=$(this).val();
+      if(value==='Global')$('.module-check').prop('checked',true);
+      else {$('.module-check').prop('checked',false);$('#module-'+names[value]).prop('checked',true);}
     });
-    $('.module-check').on('change', function(){
-      const v = $('#module-visitas').is(':checked'), m = $('#module-musicalizacao').is(':checked');
-      if(v && m) $('#edit-sector').val('Global');
-      else if(m) $('#edit-sector').val('Musicalização');
-      else if(v) $('#edit-sector').val('Visitas');
+    $('.module-check').on('change',function(){
+      const selected=$('.module-check:checked').map((_,e)=>e.value).get();
+      const values={visitas:'Visitas',musicalizacao:'Musicaliza\u00e7\u00e3o',musica:'M\u00fasica',darpe:'D.A.R.P.E'};
+      if(selected.length===4)$('#edit-sector').val('Global');
+      else if(selected.length===1)$('#edit-sector').val(values[selected[0]]);
     });
     $('#user-search,#status-filter').on('input change',renderUsers);
     $('#log-search,#module-filter,#log-date').on('input change',renderLogs);

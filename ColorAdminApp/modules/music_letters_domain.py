@@ -42,6 +42,29 @@ def ministry_workbook(workbook, source_hash):
         raise ValueError('Comuns duplicadas na planilha: ' + ', '.join(sorted(set(duplicates))))
     return list(result.values())
 
+def canonical_ministries(rows, catalog):
+    """O código da comum prevalece sobre o agrupamento municipal da planilha."""
+    from .music_events_identity import CommonResolver, normalized_city
+    from .musicalizacao import REGIONAL_MUNICIPALITIES
+    resolver = CommonResolver(catalog)
+    result = []
+    for original in rows:
+        row = dict(original)
+        canonical = (resolver.resolve(row.get('common_code') or row.get('comum'), row.get('municipio'))
+                     or resolver.resolve(row.get('comum'), row.get('municipio')))
+        # Identidade confirmada pela administração regional; ausente no catálogo legado.
+        if common_code(row.get('common_code') or row.get('comum')) == 'BR-21-1303':
+            canonical = {'comum': 'BR-21-1303 - CAPELA VELHA - SURU', 'cidade': 'SANTANA DE PARNAIBA'}
+        city = normalized_city((canonical or {}).get('cidade') or row.get('municipio'))
+        if city not in REGIONAL_MUNICIPALITIES:
+            raise ValueError('Município fora do catálogo regional: ' + str(row.get('comum')))
+        row['municipio'] = city
+        if canonical:
+            row['comum'] = canonical['comum']
+        result.append(row)
+    return result
+
+
 def matches(row, filters):
     event = row.get('event_snapshot') or {}
     date = str(event.get('data') or '')[:10]
@@ -95,3 +118,13 @@ def exam_payload(letter, responsible):
             'encarregado_local': ((letter.get('ministry_snapshot') or {}).get('encarregado') or {}).get('nome'),
             'agenda_evento_id': letter.get('event_id'), 'agenda_evento_titulo': event.get('evento'),
             'observacoes': 'Confirmação da carta ' + letter['id'], 'origem': 'PAINEL'}
+
+
+def letter_filename(letter):
+    labels = {'culto': 'CULTO OFICIAL', 'oficializacao': 'OFICIALIZAÇÃO', 'rjm': 'RJM',
+              'troca_necessidade': 'TROCA DE INSTRUMENTO - NECESSIDADE',
+              'troca_enfermidade': 'TROCA DE INSTRUMENTO - ENFERMIDADE'}
+    def clean(value):
+        return re.sub(r'\s+', ' ', re.sub(r'[\\/:*?"<>|\x00-\x1f]', ' ', str(value or ''))).strip()
+    return 'CARTA {}_ {} _ {}.pdf'.format(clean(labels.get(letter.get('modalidade'), letter.get('modalidade'))),
+                                         clean(letter.get('nome')), clean(letter.get('comum')))

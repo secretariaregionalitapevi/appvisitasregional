@@ -14,3 +14,4 @@
 [1105/194845.652:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:385] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
 [1105/194845.652:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:385] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
 [1105/194845.652:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:385] SharedImageManager::ProduceMemory: Trying to Produce a Memory representation from a non-existent mailbox.
+[1106/185507.168:ERROR:gpu\ipc\client\command_buffer_proxy_impl.cc:287] ContextResult::kTransientFailure: Failed to send GpuControl.CreateCommandBuffer.

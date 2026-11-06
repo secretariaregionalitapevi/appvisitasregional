@@ -49,7 +49,7 @@
     <div class="col-12" id="team-common-wrap"><label class="form-label">Comum Congregação</label><select id="team-common" class="form-select"><option value="">Selecione...</option>{% for item in comuns %}<option value="{{ item.comum }}" data-city="{{ item.cidade }}">{{ item.comum }}</option>{% endfor %}</select></div>
     <div class="col-12"><label class="form-label">Nome</label><input id="team-name" class="form-control" placeholder="Ex.: Equipe 1" required><div id="team-name-help" class="form-text">Equipe vinculada à comum selecionada.</div></div>
   </div></div>
-  <div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-teal"><i class="fa fa-save me-1"></i>Criar</button></div></form>
+  <div class="modal-footer"><button type="button" class="btn btn-danger app-btn-cancel" data-bs-dismiss="modal"><i class="fa fa-xmark me-1" aria-hidden="true"></i>Cancelar</button><button class="btn btn-teal"><i class="fa fa-save me-1"></i>Criar</button></div></form>
 </div></div></div>
 
 <div class="modal fade" id="member-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
@@ -60,7 +60,7 @@
     <div class="col-12"><label class="form-label">Participante</label><select id="member-person" class="form-select" required disabled><option value="">Selecione a comum...</option></select></div>
     <div class="col-12"><label class="form-label">Equipe ou grupo já cadastrado</label><select id="member-team" class="form-select" required disabled><option value="">Selecione a comum...</option></select><div class="form-text">São exibidas as equipes da comum e os grupos regionais do mesmo município.</div></div>
   </div></div>
-  <div class="modal-footer"><button type="button" class="btn btn-white" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary"><i class="fa fa-user-check me-1"></i>Atribuir</button></div></form>
+  <div class="modal-footer"><button type="button" class="btn btn-danger app-btn-cancel" data-bs-dismiss="modal"><i class="fa fa-xmark me-1" aria-hidden="true"></i>Cancelar</button><button class="btn btn-primary"><i class="fa fa-user-check me-1"></i>Atribuir</button></div></form>
 </div></div></div>
 {% endblock %}
 

@@ -38,6 +38,38 @@ class DarpeLibraryTests(SimpleTestCase):
         with self.assertRaises(ValueError):
             library.validate_pdf(SimpleUploadedFile('x.pdf', stream.getvalue()))
 
+    def _credentials_pdf(self, extra_attachment=False, javascript=False):
+        from pypdf.generic import ArrayObject, NameObject
+        writer = PdfWriter(); writer.add_blank_page(width=100, height=100)
+        writer.add_attachment('Content Credentials', b'provenance metadata')
+        spec = writer._root_object['/Names']['/EmbeddedFiles']['/Names'][1].get_object()
+        spec[NameObject('/AFRelationship')] = NameObject('/C2PA_Manifest')
+        spec['/EF']['/F'][NameObject('/Subtype')] = NameObject('/application/c2pa')
+        writer._root_object[NameObject('/AF')] = ArrayObject([spec])
+        if extra_attachment:
+            writer.add_attachment('anexo.txt', b'not approved')
+        if javascript:
+            writer.add_js('app.alert("script");')
+        stream = io.BytesIO(); writer.write(stream)
+        return SimpleUploadedFile('credenciais.pdf', stream.getvalue())
+
+    def test_accepts_passive_content_credentials_without_changing_pdf(self):
+        upload = self._credentials_pdf()
+        original = upload.read(); upload.seek(0)
+        self.assertEqual(library.validate_pdf(upload), original)
+
+    def test_content_credentials_do_not_allow_other_attachments_or_javascript(self):
+        for upload in [self._credentials_pdf(extra_attachment=True), self._credentials_pdf(javascript=True)]:
+            with self.assertRaises(ValueError):
+                library.validate_pdf(upload)
+
+    def test_rejects_attachment_disguised_by_filename_only(self):
+        writer = PdfWriter(); writer.add_blank_page(width=100, height=100)
+        writer.add_attachment('Content Credentials', b'not c2pa')
+        stream = io.BytesIO(); writer.write(stream)
+        with self.assertRaises(ValueError):
+            library.validate_pdf(SimpleUploadedFile('anexo.pdf', stream.getvalue()))
+
     def test_unauthenticated_access_denied(self):
         req = request(); req.session = {}
         self.assertEqual(library.documents(req).status_code, 403)

@@ -96,6 +96,7 @@
   }
   async function download(format,overrides={},trigger=null){
     const button=trigger||$(`#ministry-${format}`);if(button.disabled||!data)return;
+    if(window.AppExport){const query=params();Object.entries(overrides).forEach(([key,value])=>query.set(key,value));return AppExport.download(button,`/musica/ministerio/exportar-${format}/?${query}`,{filename:`Ministerio_${data.year}.${format==='pdf'?'pdf':'xlsx'}`});}
     button.disabled=true;const original=button.innerHTML;button.textContent='Gerando…';
     try{
       const query=params();Object.entries(overrides).forEach(([key,value])=>query.set(key,value));

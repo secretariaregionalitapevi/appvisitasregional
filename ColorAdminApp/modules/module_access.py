@@ -7,7 +7,8 @@ from django.core.cache import cache
 MODULE_VISITAS = "visitas"
 MODULE_MUSICALIZACAO = "musicalizacao"
 MODULE_DARPE = "darpe"
-VALID_MODULES = {MODULE_VISITAS, MODULE_MUSICALIZACAO, MODULE_DARPE}
+MODULE_MUSICA = "musica"
+VALID_MODULES = {MODULE_VISITAS, MODULE_MUSICALIZACAO, MODULE_DARPE, MODULE_MUSICA}
 
 def _norm(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -25,7 +26,9 @@ def is_global(profile):
 
 def primary_module(profile):
     sector = _norm(profile.get("sector") or profile.get("setor") or profile.get("cadastro_origem_setor_sugerido"))
-    if sector in {"musicalizacao", "musical", "musica", "ebi", "escolinha"} or "musical" in sector:
+    if sector == "musica":
+        return MODULE_MUSICA
+    if sector in {"musicalizacao", "musical", "ebi", "escolinha"} or "musical" in sector:
         return MODULE_MUSICALIZACAO
     if sector in {"darpe", "d.a.r.p.e", "d a r p e"} or "darpe" in sector:
         return MODULE_DARPE

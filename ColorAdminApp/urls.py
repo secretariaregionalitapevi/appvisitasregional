@@ -1,4 +1,5 @@
-﻿from django.urls import path
+from .modules import music_letters_roster_api
+from django.urls import path
 
 from . import views
 from . import admin_views
@@ -149,10 +150,21 @@ urlpatterns = [
     path('musica/eventos/api/eventos/', music_events.api_events, name='musicEventsList'),
     path('musica/eventos/api/eventos/<uuid:event_id>/', music_events.api_detail, name='musicEventsDetail'),
     path('musica/cartas-exames/', music_letters.page, name='musicLetters'),
+    path('musica/cartas-exames/api/relacao/', music_letters_roster_api.dashboard, name='musicLettersRoster'),
+    path('musica/cartas-exames/api/relacao/prazo/', music_letters_roster_api.save_deadline, name='musicLettersDeadline'),
+    path('musica/cartas-exames/api/relacao/entrega/', music_letters_roster_api.save_delivery, name='musicLettersDelivery'),
+    path('musica/cartas-exames/api/relacao/importar/previa/', music_letters_roster_api.preview_import, name='musicLettersImportPreview'),
+    path('musica/cartas-exames/api/relacao/importar/confirmar/', music_letters_roster_api.commit_import, name='musicLettersImportCommit'),
+    path('musica/cartas-exames/relacao/<str:file_format>/', music_letters_roster_api.export, name='musicLettersRosterExport'),
+    path('musica/cartas-exames/api/notificacoes/', music_letters.notifications, name='musicLettersNotifications'),
     path('musica/cartas-exames/api/painel/', music_letters.dashboard, name='musicLettersDashboard'),
     path('musica/cartas-exames/api/cartas/<uuid:letter_id>/confirmar/', music_letters.confirm, name='musicLettersConfirm'),
+    path('musica/cartas-exames/api/cartas/<uuid:letter_id>/excluir/', music_letters.delete_letter, name='musicLettersDelete'),
+    path('musica/cartas-exames/api/ministerio/<str:common_code>/gerir/', music_letters.manage_ministry, name='musicLettersManageMinistry'),
     path('musica/cartas-exames/api/ministerio/importar/', music_letters.import_ministry, name='musicLettersMinistry'),
     path('musica/cartas-exames/documentos/<uuid:letter_id>/', music_letters.document, name='musicLettersDocument'),
+    path('musica/cartas-exames/programa-minimo/pdf/', music_letters.export_program, {'file_format': 'pdf'}, name='musicLettersProgramPdf'),
+    path('musica/cartas-exames/programa-minimo/excel/', music_letters.export_program, name='musicLettersProgramExport'),
     path('musica/cartas-exames/exportar-<str:file_format>/', music_letters.export, name='musicLettersExport'),
     path('musica/exames/', music_exams.page, name='musicExams'),
     path('musica/exames/api/dashboard/', music_exams.api_dashboard, name='musicExamsDashboard'),

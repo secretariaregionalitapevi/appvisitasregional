@@ -30,15 +30,10 @@ def administration_user_modules(request, user_id):
         if not profile_rows:
             return JsonResponse({"error": "Usuário não encontrado."}, status=404)
 
-        # Determina o setor correspondente às pastas solicitadas
-        if requested == set(VALID_MODULES):
-            target_sector = "Global"
-        elif len(requested) == 1 and "darpe" in requested:
-            target_sector = "D.A.R.P.E"
-        elif "musicalizacao" in requested:
-            target_sector = "Musicalização"
-        else:
-            target_sector = "Visitas"
+        if not requested:
+            return JsonResponse({'error': 'Selecione ao menos uma pasta autorizada.'}, status=400)
+        names = {'musicalizacao': 'Musicaliza\u00e7\u00e3o', 'musica': 'M\u00fasica', 'darpe': 'D.A.R.P.E', 'visitas': 'Visitas'}
+        target_sector = 'Global' if requested == set(VALID_MODULES) else next(names[key] for key in names if key in requested)
 
         # Sincroniza o setor pela ponte administrativa segura. Uma falha aqui não
         # pode ser ocultada, pois deixaria o usuário salvo na pasta errada.
@@ -61,9 +56,9 @@ def administration_user_modules(request, user_id):
                 )
                 response.raise_for_status()
         except requests.RequestException:
-            # Caso a tabela user_module_access não esteja criada no Supabase, a permissão
-            # é assegurada pelo campo 'sector' já gravado no perfil.
-            pass
+            # Não confirmar sucesso quando as concessões explícitas falharem.
+            invalidate_module_access(str(user_id))
+            return JsonResponse({"error": "Não foi possível salvar todas as pastas. Aplique a migração 045 e revise as permissões do usuário antes de confirmar a liberação."}, status=503)
 
         invalidate_module_access(str(user_id))
         log_audit(request, "UPDATE_USER_MODULE_ACCESS", "ADMIN", {

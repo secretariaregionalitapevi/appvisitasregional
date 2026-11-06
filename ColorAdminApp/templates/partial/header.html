@@ -2,6 +2,14 @@
 <!-- BEGIN #header -->
 <style>
 .pending-access-toast{position:fixed;z-index:1080;top:82px;right:24px;width:min(390px,calc(100vw - 32px));display:flex;gap:13px;align-items:flex-start;padding:16px 44px 16px 16px;border:1px solid #ffffff73;border-radius:16px;background:linear-gradient(120deg,#6547d9,#0ea9a1 62%,#22c1b5);box-shadow:0 18px 40px #263b5d45;color:#fff;animation:pending-toast-enter .35s ease-out}.pending-access-toast:before{content:'';position:absolute;right:-42px;top:-72px;width:160px;height:160px;border:1px solid #ffffff40;border-radius:50%;box-shadow:0 0 0 26px #ffffff10,0 0 0 52px #ffffff08}.pending-access-toast>*{position:relative;z-index:1}.pending-access-toast-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:13px;background:#ffffff25;font-size:19px}.pending-access-toast-copy{min-width:0}.pending-access-toast-copy strong{display:block;font-size:.89rem}.pending-access-toast-copy span{display:block;margin-top:3px;color:#eefeff;font-size:.76rem;line-height:1.35}.pending-access-toast-copy a{display:inline-block;margin-top:9px;color:#fff;font-size:.74rem;font-weight:800;text-decoration:none}.pending-access-toast-close{position:absolute;right:11px;top:10px;border:0;background:transparent;color:#fff;opacity:.86}.pending-access-toast-close:hover{opacity:1}@keyframes pending-toast-enter{from{transform:translateY(-12px);opacity:0}to{transform:translateY(0);opacity:1}}@media(max-width:575.98px){.pending-access-toast{top:70px;right:16px}}
+#pending-access-notifications .dropdown-menu{width:380px!important;min-width:min(380px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important}
+#pending-letters-item{display:flex;white-space:normal;align-items:flex-start;gap:12px}
+#pending-letters-item.d-none{display:none!important}
+#pending-letters-item .media-left{flex:0 0 auto;padding-right:0}
+#pending-letters-item .media-body{flex:1 1 auto}
+#pending-letters-item .media-body{min-width:0;overflow-wrap:anywhere}
+#pending-letters-item .media-heading{white-space:normal;line-height:1.4}
+#pending-letters-item .pending-letters-link{display:block;margin-top:6px;font-size:11px;font-weight:600;color:var(--bs-link-color,#348fe2);line-height:1.4}
 </style>
 
 <div id="header" class="app-header" data-bs-theme="{% if appHeaderInverse %}dark{% endif %}">
@@ -49,15 +57,15 @@
 			</form>
 		</div>
 		{% with user_role=request.session.user_profile.role|default:'Membro' %}
-		{% if request.session.user_profile.role_id == 1 or user_role|upper == 'MASTER' or user_role|upper == 'GLOBAL' %}
-		<div class="navbar-item dropdown" id="pending-access-notifications" data-pending-url="{% url 'ColorAdminApp:pendingAccessCount' %}">
+		<div class="navbar-item dropdown" id="pending-access-notifications" data-letters-url="{% url 'ColorAdminApp:musicLettersNotifications' %}" {% if request.session.user_profile.role_id == 1 or user_role|upper == 'MASTER' or user_role|upper == 'GLOBAL' %}data-pending-url="{% url 'ColorAdminApp:pendingAccessCount' %}"{% endif %}>
 			<a href="#" data-bs-toggle="dropdown" class="navbar-link dropdown-toggle icon">
 				<i class="fa fa-bell" aria-hidden="true"></i>
 				<span class="badge d-none" id="pending-access-badge">0</span>
-				<span class="visually-hidden">Alertas de acesso pendentes</span>
+				<span class="visually-hidden">Notificações pendentes</span>
 			</a>
 			<div class="dropdown-menu media-list dropdown-menu-end">
-				<div class="dropdown-header">ALERTAS DE ACESSO (<span id="pending-access-header-count">0</span>)</div>
+				<div class="dropdown-header">NOTIFICAÇÕES (<span id="pending-access-header-count">0</span>)</div>
+				{% if request.session.user_profile.role_id == 1 or user_role|upper == 'MASTER' or user_role|upper == 'GLOBAL' %}
 				<a href="{% url 'ColorAdminApp:auditCenter' %}" class="dropdown-item media d-none" id="pending-access-item">
 					<div class="media-left"><i class="fa fa-user-plus media-object bg-warning"></i></div>
 					<div class="media-body">
@@ -68,13 +76,18 @@
 				<div class="dropdown-footer text-center">
 					<a href="{% url 'ColorAdminApp:auditCenter' %}" class="text-decoration-none fw-bold">Ver liberações pendentes <i class="fa fa-angle-right"></i></a>
 				</div>
+                {% endif %}
+                <a href="{% url 'ColorAdminApp:musicLetters' %}#letters-list-section" class="dropdown-item media d-none" id="pending-letters-item">
+                    <div class="media-left"><i class="fa fa-envelope media-object bg-warning"></i></div>
+                    <div class="media-body"><h6 class="media-heading mb-1">Cartas pendentes de análise GEM/SAM (<span id="pending-letters-count">0</span>)</h6><div class="text-muted fs-10px">Aluno inativo ou com status Excluir.</div><span class="pending-letters-link">Ver cartas e responsáveis <i class="fa fa-angle-right" aria-hidden="true"></i></span></div>
+                </a>
+                <div id="notifications-empty" class="dropdown-item text-muted">Nenhuma pendência no momento.</div>
 			</div>
 		</div>
-		{% endif %}
 		{% endwith %}
 		<div id="pending-access-toast" class="pending-access-toast d-none" role="status" aria-live="polite">
 			<div class="pending-access-toast-icon"><i class="fa fa-user-clock"></i></div>
-			<div class="pending-access-toast-copy"><strong id="pending-access-toast-title">Liberações aguardando análise</strong><span id="pending-access-toast-message">Há usuários aguardando a sua revisão.</span><a href="{% url 'ColorAdminApp:auditCenter' %}">Revisar agora <i class="fa fa-arrow-right"></i></a></div>
+			<div class="pending-access-toast-copy"><strong id="pending-access-toast-title">Liberações aguardando análise</strong><span id="pending-access-toast-message">Há usuários aguardando a sua revisão.</span><a id="pending-toast-link" href="{% url 'ColorAdminApp:auditCenter' %}">Revisar agora <i class="fa fa-arrow-right"></i></a></div>
 			<button type="button" id="pending-access-toast-close" class="pending-access-toast-close" aria-label="Fechar alerta"><i class="fa fa-xmark"></i></button>
 		</div>
 		<div class="navbar-item">

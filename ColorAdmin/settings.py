@@ -205,3 +205,6 @@ WHITENOISE_MANIFEST_STRICT = False
 
 # Cópias pessoais do espelho SAM; use diretório persistente fora de static/media.
 SAM_BACKUP_DIR = os.getenv("SAM_BACKUP_DIR") or None
+
+# Optional redirect for approved accounts restricted to the Cartas application.
+CARTAS_APP_URL = os.getenv("CARTAS_APP_URL", "").strip()

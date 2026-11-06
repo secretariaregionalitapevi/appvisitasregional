@@ -564,6 +564,10 @@ def apiAuth(request):
                     "error": "Selecione uma comum válida na lista oficial."
                 }, status=400)
             municipio = str(comum_row.get('cidade') or '').strip()
+            from_cartas = data.get('origem') == 'cartas'
+            registration_source = 'app_cartas' if from_cartas else 'app_visitas_regional'
+            registration_label = 'Aplicativo de Cartas' if from_cartas else 'Aplicativo Regional de Visitas'
+            suggested_sector = 'M\u00fasica' if from_cartas else 'Visitas'
             # 1. Sign up
             url = f"{settings.SUPABASE_URL}/auth/v1/signup"
             headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
@@ -577,9 +581,9 @@ def apiAuth(request):
                     "cidade": municipio,
                     "role_id": 4,
                     "access_level": "local",
-                    "cadastro_origem": "app_visitas_regional",
-                    "cadastro_origem_label": "Aplicativo Regional de Visitas",
-                    "cadastro_origem_setor_sugerido": "Visitas",
+                    "cadastro_origem": registration_source,
+                    "cadastro_origem_label": registration_label,
+                    "cadastro_origem_setor_sugerido": suggested_sector,
                     "cadastro_origem_rota": request.path,
                 }
             }
@@ -610,12 +614,12 @@ def apiAuth(request):
                         "role_id": 4,
                         "role": "Instrutor",
                         "status": "pending",
-                        "cadastro_origem": "app_visitas_regional",
-                        "cadastro_origem_label": "Aplicativo Regional de Visitas",
-                        "cadastro_origem_setor_sugerido": "Visitas",
+                        "cadastro_origem": registration_source,
+                        "cadastro_origem_label": registration_label,
+                        "cadastro_origem_setor_sugerido": suggested_sector,
                         "cadastro_origem_rota": request.path,
                         "cadastro_origem_url": request.build_absolute_uri(),
-                        "sector": "Visitas",
+                        "sector": suggested_sector,
                     }
                     try:
                         profile_response = requests.post(
