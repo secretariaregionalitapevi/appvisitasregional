@@ -63,6 +63,7 @@ def sidebar_menu(request):
 			{ 'url': '/darpe/documentos/', 'title': 'Documentos', 'name': 'darpeDocumentos' },
 			{ 'url': '/darpe/instrumentos/', 'title': 'Instrumentos', 'name': 'darpeInstrumentos' },
 			{ 'url': '/darpe/setores/', 'title': 'Setores', 'name': 'darpeSetores' },
+			{ 'url': '/darpe/atendimentos/', 'title': 'Atendimentos', 'name': 'darpeAtendimentos' },
 			{ 'url': '/darpe/eventos/', 'title': 'Eventos', 'name': 'darpeSection' }
 		]
 	},

@@ -18,6 +18,51 @@ from .module_access import MODULE_DARPE, can_access_module
 logger = logging.getLogger(__name__)
 BUCKET = 'darpe-documentos'
 MAX_BYTES = 20 * 1024 * 1024
+FILE_TYPES = {'.pdf':'application/pdf', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xls':'application/vnd.ms-excel', '.doc':'application/msword', '.ppt':'application/vnd.ms-powerpoint', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.gif':'image/gif', '.txt':'text/plain', '.csv':'text/csv'}
+
+
+def file_extension(name):
+    from pathlib import PurePath
+    return PurePath(name).suffix.lower()
+
+
+def validate_file(upload):
+    if not upload or file_extension(upload.name) not in FILE_TYPES:
+        raise ValueError('Use PDF, Excel, Word, PowerPoint, fotos, TXT ou CSV.')
+    if upload.size > MAX_BYTES:
+        raise ValueError('O arquivo deve ter no m?ximo 20 MB.')
+    ext = file_extension(upload.name)
+    if ext == '.pdf':
+        return validate_pdf(upload)
+    data = upload.read(MAX_BYTES + 1)
+    if not data or len(data) > MAX_BYTES:
+        raise ValueError('Arquivo vazio ou maior que 20 MB.')
+    try:
+        if ext in {'.jpg', '.jpeg', '.png', '.webp', '.gif'}:
+            from PIL import Image
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format != {'.jpg':'JPEG','.jpeg':'JPEG','.png':'PNG','.webp':'WEBP','.gif':'GIF'}[ext]:
+                    raise ValueError()
+                image.verify()
+        elif ext in {'.xlsx', '.docx', '.pptx'}:
+            from zipfile import ZipFile
+            with ZipFile(io.BytesIO(data)) as archive:
+                names = archive.namelist()
+                main = {'.xlsx':'xl/workbook.xml','.docx':'word/document.xml','.pptx':'ppt/presentation.xml'}[ext]
+                if '[Content_Types].xml' not in names or main not in names or any('vbaproject' in n.lower() for n in names):
+                    raise ValueError()
+        elif ext in {'.xls', '.doc', '.ppt'}:
+            if not data.startswith(bytes.fromhex('D0CF11E0A1B11AE1')):
+                raise ValueError()
+        else:
+            data.decode('utf-8-sig')
+            if b'\x00' in data:
+                raise ValueError()
+    except Exception as exc:
+        raise ValueError('Conte?do inv?lido para o formato informado. TXT e CSV devem usar UTF-8.') from exc
+    return data
+
+
 SECTORS = [
     (1, 'Sistemas de Ressocialização e Socioeducativos', 'Atendimento em unidades prisionais masculinas e femininas e em unidades socioeducativas.'),
     (2, 'Clínicas de Dependentes e Albergues', 'Atendimento em clínicas de dependentes e albergues.'),
@@ -163,13 +208,13 @@ def documents(request):
         if not title or len(title) > 160 or len(description) > 2000 or category not in {'documentos', 'instrumentos', 'setores'}:
             raise ValueError('Informe título de até 160 caracteres e uma categoria válida. Descrição: até 2.000 caracteres.')
         upload = request.FILES.get('arquivo')
-        data = validate_pdf(upload)
+        data = validate_file(upload)
         from .darpe_file_manager import ROOTS, folder
         target_folder = folder(request.POST.get('pasta_id') or ROOTS[category])
         record_id = str(uuid4())
-        object_path = record_id + '.pdf'
+        object_path = record_id + file_extension(upload.name)
         storage_url = settings.SUPABASE_URL + '/storage/v1/object/' + BUCKET + '/' + object_path
-        stored = requests.post(storage_url, headers={**service_headers(), 'Content-Type': 'application/pdf'}, data=data, timeout=60)
+        stored = requests.post(storage_url, headers={**service_headers(), 'Content-Type': FILE_TYPES[file_extension(upload.name)]}, data=data, timeout=60)
         stored.raise_for_status()
         response = requests.post(endpoint(), headers=service_headers(), json={
             'id': record_id, 'titulo': title, 'descricao': description, 'categoria': category,
@@ -180,7 +225,7 @@ def documents(request):
         if not response.ok:
             requests.delete(storage_url, headers=service_headers(), timeout=20)
         response.raise_for_status()
-        return JsonResponse({'message': 'PDF publicado e disponível para download.'}, status=201)
+        return JsonResponse({'message': 'Arquivo publicado e disponível para download.'}, status=201)
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
     except requests.RequestException:
@@ -216,9 +261,11 @@ def download(request, record_id, inline=False):
             row = versions.json()[0]['snapshot']
         response = requests.get(settings.SUPABASE_URL + '/storage/v1/object/authenticated/' + BUCKET + '/' + quote(row['object_path'], safe=''), headers=service_headers(), timeout=60)
         response.raise_for_status()
-        result = HttpResponse(response.content, content_type='application/pdf')
+        mime = FILE_TYPES.get(file_extension(row['object_path']), 'application/octet-stream')
+        inline = inline and (mime == 'application/pdf' or mime.startswith('image/'))
+        result = HttpResponse(response.content, content_type=mime)
         result['Content-Disposition'] = ('inline' if inline else 'attachment') + "; filename*=UTF-8''" + quote(row['original_name'], safe='')
         result['X-Content-Type-Options'] = 'nosniff'
         return result
     except requests.RequestException:
-        return JsonResponse({'error': 'Não foi possível baixar o PDF. Tente novamente.'}, status=503)
+        return JsonResponse({'error': 'Não foi possível baixar o arquivo. Tente novamente.'}, status=503)

@@ -2,7 +2,7 @@
 
 Menu D.A.R.P.E.: Documentos, Instrumentos e Setores.
 
-- Documentos reúne todos os PDFs, com busca e filtro por pasta.
+- Documentos reúne todos os arquivos, com busca e filtro por pasta.
 - Instrumentos apresenta a transcrição da matriz fornecida, organizada em quatro setores. O antigo setor 5 integra o 4; as restrições educacionais permanecem específicas e não herdam a permissão hospitalar.
 - Setores informa os quatro campos de atendimento e os dados gerais fornecidos pela administração até outubro de 2026. Esses números são históricos, não indicadores calculados dos cadastros regionais.
 - O PDF original permanece identificado como referência histórica com cinco setores; a orientação organizada em quatro setores está na página Instrumentos.
@@ -21,6 +21,10 @@ Executar também `041_darpe_estatisticas_historico.sql`. Os dados estatísticos 
 
 A biblioteca reutiliza a estrutura de `extra-file-manager.html` do Color Admin: painel, barra de ferramentas, árvore de pastas, breadcrumbs e tabela. Instalar `042_darpe_gerenciador_arquivos.sql`. As três pastas principais são fixas; gestores criam subpastas e podem renomeá-las.
 
-Selecionar um arquivo habilita Visualizar, Baixar, Editar/substituir e Versões. Gestores podem alterar título, descrição, nome e pasta. Substituir o PDF envia um objeto novo; nunca sobrescreve o anterior. O histórico permite visualizar, baixar e restaurar uma publicação como nova versão. A edição compara a versão lida com a atual para detectar alterações concorrentes. Remover envia à lixeira, sem exclusão permanente; usuários de consulta não acessam arquivos arquivados. Alterações múltiplas são executadas individualmente e eventuais falhas indicam quantos arquivos foram concluídos.
+Selecionar um arquivo habilita Visualizar, Baixar, Editar/substituir e Versões. Gestores podem alterar título, descrição, nome e pasta. Substituir o arquivo envia um objeto novo; nunca sobrescreve o anterior. O histórico permite visualizar, baixar e restaurar uma publicação como nova versão. A edição compara a versão lida com a atual para detectar alterações concorrentes. Remover envia à lixeira, sem exclusão permanente; usuários de consulta não acessam arquivos arquivados. Alterações múltiplas são executadas individualmente e eventuais falhas indicam quantos arquivos foram concluídos.
 
 Visualização é feita em iframe com PDF inline e SAMEORIGIN; o download permanece autenticado. O sistema edita os dados do documento e substitui o PDF; não modifica o texto interno de um PDF.
+
+## Formatos adicionais
+
+Executar `scripts/migrations/046_darpe_formatos_arquivos.sql` para permitir os novos tipos no bucket existente. PDF e fotos s?o exibidos no navegador; os outros formatos s?o baixados para abertura no aplicativo correspondente. TXT e CSV devem estar em UTF-8. As extens?es s?o preservadas ao renomear; uma substitui??o usa o nome e formato do novo arquivo. O hist?rico e as permiss?es existentes continuam v?lidos.

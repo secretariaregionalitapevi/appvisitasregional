@@ -6,6 +6,8 @@ from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
 from .modules import darpe
+from .modules import darpe_atendimentos
+from .modules import darpe_atendimentos_exports
 from .modules import darpe_library
 from .modules import darpe_file_manager
 from .modules import darpe_statistics
@@ -73,6 +75,11 @@ urlpatterns = [
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),
     path('musicalizacao/<str:section>/', musicalizacao.page, name='musicalizacaoSection'),
     path('darpe/', darpe.page, name='darpeDashboard'),
+    path('darpe/atendimentos/', darpe_atendimentos.page, name='darpeAtendimentos'),
+    path('darpe/atendimentos/api/exportar-excel/', darpe_atendimentos_exports.export, {'format': 'excel'}, name='darpeAtendimentosExcel'),
+    path('darpe/atendimentos/api/exportar-pdf/', darpe_atendimentos_exports.export, {'format': 'pdf'}, name='darpeAtendimentosPdf'),
+    path('darpe/atendimentos/api/<str:action>/', darpe_atendimentos.api, name='darpeAtendimentosApi'),
+    path('darpe/mobile/api/<str:action>/', darpe_atendimentos.mobile_api, name='darpeMobileApi'),
     path('darpe/documentos/', darpe_library.page, {'section': 'documentos'}, name='darpeDocumentos'),
     path('darpe/instrumentos/', darpe_library.page, {'section': 'instrumentos'}, name='darpeInstrumentos'),
     path('darpe/setores/', darpe_library.page, {'section': 'setores'}, name='darpeSetores'),

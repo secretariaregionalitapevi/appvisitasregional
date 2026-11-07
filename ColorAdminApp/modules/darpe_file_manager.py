@@ -47,8 +47,8 @@ def metadata(data):
     name = str(data.get('original_name') or '').strip()
     if not title or len(title) > 160 or len(description) > 2000:
         raise ValueError('Informe título de até 160 caracteres e descrição de até 2.000 caracteres.')
-    if not name.lower().endswith('.pdf') or len(name) > 255 or any(c in name for c in '/\\\r\n\x00'):
-        raise ValueError('Informe um nome de arquivo PDF, sem caminhos ou quebras de linha.')
+    if library.file_extension(name) not in library.FILE_TYPES or len(name) > 255 or any(c in name for c in '/\\\r\n\x00'):
+        raise ValueError('Informe um nome de arquivo com formato permitido, sem caminhos ou quebras de linha.')
     return {'titulo': title, 'descricao': description, 'original_name': name}
 
 
@@ -162,13 +162,15 @@ def update(request, record_id):
             changes = metadata(request.POST)
             changes['pasta_id'] = folder(request.POST.get('pasta_id'))['id']
             upload = request.FILES.get('arquivo')
+            if not upload and library.file_extension(changes['original_name']) != library.file_extension(current['object_path']):
+                raise ValueError('Preserve a extens?o original ao renomear o arquivo.')
             if upload:
-                data = library.validate_pdf(upload)
-                object_path = str(uuid4()) + '.pdf'
+                data = library.validate_file(upload)
+                object_path = str(uuid4()) + library.file_extension(upload.name)
                 new_object_url = settings.SUPABASE_URL + '/storage/v1/object/' + library.BUCKET + '/' + object_path
-                response = requests.post(new_object_url, headers={**service_headers(), 'Content-Type': 'application/pdf'}, data=data, timeout=60)
+                response = requests.post(new_object_url, headers={**service_headers(), 'Content-Type': library.FILE_TYPES[library.file_extension(upload.name)]}, data=data, timeout=60)
                 response.raise_for_status()
-                changes.update(object_path=object_path, byte_size=len(data))
+                changes.update(object_path=object_path, byte_size=len(data), original_name=upload.name[:255])
         else:
             raise ValueError('Ação inválida.')
         changes['updated_by'] = str(request.session.get('user_id') or '')

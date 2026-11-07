@@ -1,0 +1,39 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}DARPE · Gestão dos atendimentos{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{% static 'css/darpe-atendimentos.css' %}?v=20261107-multi4">
+<link rel="stylesheet" href="{% static 'css/darpe-atendimentos-admin.css' %}?v=20261107-multi4">
+<link rel="stylesheet" href="{% static 'plugins/apexcharts/dist/apexcharts.css' %}">
+<link rel="stylesheet" href="{% static 'css/musicalizacao-multiselect.css' %}">
+{% endblock %}
+{% block content %}
+<div id="darpe-admin" class="darpe-admin" data-api="/darpe/atendimentos/api/">
+ <header class="daa-hero"><div><div class="daa-eyebrow">Painel de gestão · D.A.R.P.E.</div><h1>Atendimentos do D.A.R.P.E.</h1><p>Acompanhe os cultos de evangelização, a participação da equipe e o atendimento nos setores.</p></div>{% include 'partial/music-management-scope.html' %}</header>
+ <div id="daa-dashboard">
+  <section class="daa-toolbar" aria-label="Filtros dos atendimentos">
+   <label>Ano<select id="daa-year" class="form-select"><option value="">Todos</option></select></label>
+   <label>Mês<select id="daa-month" class="form-select"><option value="">Todos</option></select></label>
+   <div class="daa-period"><label>Período<input id="daa-start" type="date" class="form-control" aria-label="Data inicial"></label><span>até</span><label><span class="visually-hidden">Data final</span><input id="daa-end" type="date" class="form-control" aria-label="Data final"></label></div>
+   <label>Município<select id="daa-city" class="form-select" multiple data-music-multiple data-placeholder="Todos os municípios" data-search="Pesquisar município…"></select></label>
+   <label>Comum responsável<select id="daa-common" class="form-select" multiple data-music-multiple data-placeholder="Todas as comuns" data-search="Pesquisar comum…"></select></label>
+   <label>Setor<select id="daa-sector" class="form-select"><option value="">Todos os setores</option></select></label>
+   <div class="daa-actions"><button id="daa-refresh" class="btn btn-white border" type="button"><i class="fa fa-sync-alt text-primary"></i> Atualizar</button><button id="daa-excel" class="btn btn-white border" type="button"><i class="fa fa-file-excel text-success"></i> Excel</button><button id="daa-pdf" class="btn btn-white border" type="button"><i class="fa fa-file-pdf text-danger"></i> PDF</button><button id="daa-clear" class="btn btn-white border" type="button"><i class="fa fa-eraser"></i> Limpar</button><button id="daa-new" class="btn btn-primary" type="button" disabled><i class="fa fa-plus"></i> Novo lançamento</button></div>
+  </section>
+  <div id="daa-error" class="alert alert-danger" role="alert" hidden></div>
+  <div class="daa-section-heading"><div class="daa-kicker">Visão geral</div><h2>O que está acontecendo agora</h2><p>Indicadores do escopo e período selecionados acima.</p></div>
+  <section id="daa-kpis" class="daa-kpis" aria-label="Indicadores dos atendimentos"></section>
+  <div class="daa-reading" role="status"><span class="daa-note-icon">!</span><div><strong>Leitura de gestão</strong><p id="daa-reading-text">Carregando os atendimentos do seu escopo…</p></div></div>
+  <div class="daa-section-heading"><div class="daa-kicker">Atendimento e alcance</div><h2>Onde o D.A.R.P.E. está atuando</h2><p>Evolução dos lançamentos e distribuição pelos quatro setores de atendimento.</p></div>
+  <div class="daa-chart-grid"><section class="daa-panel"><header><h3>Como os atendimentos estão evoluindo?</h3><p>Quantidade de cultos de evangelização por mês no recorte.</p></header><div id="daa-evolution" class="daa-chart"></div></section><section class="daa-panel"><header><h3>Atendimentos por setor</h3><p>Distribuição dos atendimentos registrados.</p></header><div id="daa-sectors" class="daa-chart"></div></section></div>
+  <div class="daa-chart-grid"><section class="daa-panel"><header><h3>Situação por município</h3><p>Atendimentos, locais e participação musical no período.</p></header><div class="table-responsive"><table class="table table-hover daa-table"><thead><tr><th>Município</th><th>Atendimentos</th><th>Locais</th><th>Músicos / organistas</th><th>Equipe</th></tr></thead><tbody id="daa-cities"></tbody></table></div></section><section class="daa-panel"><header><h3>Atendentes responsáveis</h3><p>Atendimentos conduzidos no recorte selecionado.</p></header><div id="daa-attendants" class="daa-ranking"></div></section></div>
+  <section class="daa-panel daa-record-panel"><header class="daa-record-heading"><div><h3>Lançamentos dos atendimentos</h3><p id="daa-count">Carregando…</p></div><label class="daa-search"><span class="visually-hidden">Pesquisar lançamento</span><input type="search" id="daa-search" class="form-control" placeholder="Pesquisar local, atendente ou município…"></label></header><div class="table-responsive"><table class="table table-striped table-hover daa-table"><thead><tr><th>Data / horário</th><th>Setor</th><th>Local atendido</th><th>Município / comum</th><th>Atendente responsável</th><th>Equipe musical</th><th>Ações</th></tr></thead><tbody id="daa-records"><tr><td colspan="7" class="text-center py-5">Carregando os lançamentos…</td></tr></tbody></table></div><footer class="daa-pagination"><span id="daa-page-label"></span><div><button id="daa-prev" class="btn btn-sm btn-outline-primary" type="button">Anterior</button><button id="daa-next" class="btn btn-sm btn-outline-primary" type="button">Próxima</button></div></footer></section>
+ </div>
+ <div id="daa-form-host" hidden>{% include 'partial/darpe-atendimentos.html' %}</div>
+</div>
+{% endblock %}
+{% block js %}
+<script src="{% static 'plugins/apexcharts/dist/apexcharts.min.js' %}"></script>
+<script src="{% static 'js/musicalizacao-multiselect.js' %}"></script>
+<script src="{% static 'js/darpe-atendimentos.js' %}?v=20261107-multi4"></script>
+<script src="{% static 'js/darpe-atendimentos-admin.js' %}?v=20261107-multi4"></script>
+{% endblock %}

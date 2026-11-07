@@ -144,3 +144,30 @@ class DarpeLibraryTests(SimpleTestCase):
         self.assertEqual(rows['Tuba']['s1'], 'Não permitido')
         self.assertEqual(rows['Violino']['s1'], 'Não permitido')
         self.assertIn('ao ar livre', rows['Trompete']['s4'])
+
+
+class AdditionalFileFormatsTests(SimpleTestCase):
+    def test_real_spreadsheet_and_photo(self):
+        from openpyxl import Workbook
+        from PIL import Image
+        for ext in ('xlsx', 'png'):
+            stream = io.BytesIO()
+            if ext == 'xlsx':
+                book = Workbook()
+                book.active.append(['Documento', 'Quantidade'])
+                book.active.append(['Exemplo', 1])
+                book.save(stream)
+            else:
+                Image.new('RGB', (8, 8), 'white').save(stream, format='PNG')
+            data = stream.getvalue()
+            self.assertEqual(library.validate_file(SimpleUploadedFile('arquivo.' + ext, data)), data)
+
+    def test_rejects_fake_formats_and_executable(self):
+        for name in ('foto.png', 'planilha.xlsx', 'programa.exe'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                library.validate_file(SimpleUploadedFile(name, b'invalid'))
+
+    def test_utf8_text_and_csv(self):
+        for name in ('texto.txt', 'dados.csv'):
+            data = 'Nome,Quantidade\nExemplo,1'.encode('utf-8')
+            self.assertEqual(library.validate_file(SimpleUploadedFile(name, data)), data)

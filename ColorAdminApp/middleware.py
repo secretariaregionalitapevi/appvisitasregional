@@ -18,6 +18,7 @@ class SupabaseAuthMiddleware:
             '/user/login-v1',
             '/user/cadastro',
             '/api/auth/',
+            '/darpe/mobile/api/',  # Bearer validado pela própria API; cookies não autenticam.
             '/visitas/navegar/',
             '/static/',
         ]
@@ -106,7 +107,7 @@ class SupabaseAuthMiddleware:
 
         # Registra utilização real sem gerar ruído para APIs e arquivos estáticos.
         if request.method == 'GET' and request.session.get('user_id') and not any(
-            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/biblioteca/', '/administracao/api/', '/static/')
+            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/atendimentos/api/', '/darpe/mobile/api/', '/darpe/biblioteca/', '/administracao/api/', '/static/')
         ):
             try:
                 from .views import log_audit

@@ -66,7 +66,7 @@
   function confirm(options = {}) {
     remove();
     return new Promise(resolve => {
-      const escapedMessage = escapeHtml(options.message || 'Esta aÃ§Ã£o precisa de confirmaÃ§Ã£o.');
+      const escapedMessage = escapeHtml(options.message || 'Esta ação precisa de confirmação.');
       const escapedHighlight = escapeHtml(options.highlight || '');
       const messageHtml = escapedHighlight && escapedMessage.includes(escapedHighlight)
         ? escapedMessage.replace(escapedHighlight, `<strong class="app-feedback-highlight">${escapedHighlight}</strong>`)

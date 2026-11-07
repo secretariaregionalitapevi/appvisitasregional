@@ -1,0 +1,11 @@
+Watching for file changes with StatReloader
+[07/Nov/2026 20:33:57] "GET /darpe/mobile/api/contexto/ HTTP/1.1" 200 14214
+[07/Nov/2026 20:34:00] "GET /darpe/mobile/api/contexto/ HTTP/1.1" 200 14214
+[07/Nov/2026 20:34:08] "GET /darpe/atendimentos/ HTTP/1.1" 302 0
+[07/Nov/2026 20:34:08] "GET /user/login-v1 HTTP/1.1" 200 24760
+[07/Nov/2026 20:34:19] "GET /darpe/mobile/api/pessoas/?q=He&funcao=atendente HTTP/1.1" 200 1142
+[07/Nov/2026 20:34:43] "GET /darpe/mobile/api/pessoas/?q=Ed&funcao=oracao HTTP/1.1" 200 1252
+[07/Nov/2026 20:34:45] "GET /darpe/atendimentos/api/atendimentos/? HTTP/1.1" 200 13
+[07/Nov/2026 20:35:21] "GET /darpe/mobile/api/pessoas/?q=Ric&funcao=musico HTTP/1.1" 200 13
+[07/Nov/2026 20:35:26] "GET /darpe/mobile/api/pessoas/?q=Ri&funcao=musico HTTP/1.1" 200 13
+[07/Nov/2026 20:35:36] "GET /darpe/mobile/api/pessoas/?q=Al&funcao=musico HTTP/1.1" 200 13
