@@ -17,7 +17,7 @@ from django.http.multipartparser import MultiPartParser, MultiPartParserError
 from django.shortcuts import render
 
 from .access_control import can_access, filter_rows, scope_details, service_headers, user_scope
-from .module_access import MODULE_MUSICALIZACAO, can_access_module
+from .module_access import MODULE_GEM, can_access_module
 from .sam_history_sync import SOURCE_CONFIG, program_minimum_progress
 from .sam_program import assess_program
 
@@ -362,8 +362,7 @@ def _milestones(level):
 
 
 def can_open_module(request):
-    # Nesta primeira etapa o GEM herda a autorização territorial da Musicalização.
-    return can_access_module(request, MODULE_MUSICALIZACAO)
+    return can_access_module(request, MODULE_GEM)
 
 
 def _denied():

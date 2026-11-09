@@ -8,7 +8,8 @@ MODULE_VISITAS = "visitas"
 MODULE_MUSICALIZACAO = "musicalizacao"
 MODULE_DARPE = "darpe"
 MODULE_MUSICA = "musica"
-VALID_MODULES = {MODULE_VISITAS, MODULE_MUSICALIZACAO, MODULE_DARPE, MODULE_MUSICA}
+MODULE_GEM = "gem"
+VALID_MODULES = {MODULE_VISITAS, MODULE_MUSICALIZACAO, MODULE_DARPE, MODULE_MUSICA, MODULE_GEM}
 
 def _norm(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -28,6 +29,8 @@ def primary_module(profile):
     sector = _norm(profile.get("sector") or profile.get("setor") or profile.get("cadastro_origem_setor_sugerido"))
     if sector == "musica":
         return MODULE_MUSICA
+    if sector in {"gem", "g.e.m", "g e m"}:
+        return MODULE_GEM
     if sector in {"musicalizacao", "musical", "ebi", "escolinha"} or "musical" in sector:
         return MODULE_MUSICALIZACAO
     if sector in {"darpe", "d.a.r.p.e", "d a r p e"} or "darpe" in sector:

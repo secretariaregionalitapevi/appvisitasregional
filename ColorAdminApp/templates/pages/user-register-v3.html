@@ -14,6 +14,9 @@
 .register-icon.is-solid svg{width:16px;height:18px;fill:currentColor;stroke:none}
 .register-field input{width:100%;min-width:0;height:46px;padding:0 14px;border:0!important;outline:0;background:transparent;color:#495057;font-size:13px}
 .register-field input::placeholder{color:#8294ad;opacity:1}
+.register-field select{width:100%;min-width:0;height:46px;padding:0 14px;border:0!important;outline:0;background:transparent;color:#495057;font-size:13px;appearance:none;cursor:pointer}
+.register-field select option{color:#495057;background:#fff}
+.register-field select:focus{color:#495057}
 .register-toggle{display:flex;flex:0 0 42px;align-items:center;justify-content:center;padding:0;border:0;background:transparent;color:#8294ad;cursor:pointer}
 .register-search{position:relative;flex:1;min-width:0}
 .register-results{position:absolute;z-index:100;top:calc(100% + 1px);left:-49px;right:-1px;max-height:300px;overflow-y:auto;border:1px solid #b8c6d8;border-radius:0 0 4px 4px;background:#fff;box-shadow:0 10px 22px rgba(0,0,0,.14)}
@@ -34,7 +37,7 @@
     <div class="news-image" style="background-image: url({% static 'img/login-bg/CCB_Itapevi.jpg' %})"></div>
     <div class="news-caption">
       <h4 class="caption-title"><b>Regional Itapevi</b></h4>
-      <p>{% if request.GET.origem == 'cartas' %}Administração de cartas musicais. Cadastre-se e aguarde a liberação em nível Municipal e pasta Música.{% else %}Sistema de Administração Regional CCB. Cadastre-se para gerenciar visitas e indicadores.{% endif %}</p>
+      <p>{% if request.GET.origem == 'darpe' %}Aplicativo DARPE. Cadastre-se e aguarde a aprova??o de acesso local, municipal ou regional na pasta D.A.R.P.E.{% elif request.GET.origem == 'cartas' %}Administração de cartas musicais. Cadastre-se e aguarde a liberação em nível Municipal e pasta Música.{% else %}Sistema de Administração Regional CCB. Cadastre-se para gerenciar visitas e indicadores.{% endif %}</p>
     </div>
   </div>
   <div class="register-container">
@@ -53,6 +56,8 @@
         <div class="register-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirme sua senha" minlength="6" required><button class="register-toggle" type="button" data-toggle="confirmPassword" aria-label="Mostrar confirmação de senha" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
         <div class="register-field" id="comum-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span><div class="register-search"><input id="comumSearch" type="text" role="combobox" aria-autocomplete="list" aria-controls="comumResults" aria-expanded="false" autocomplete="off" placeholder="Pesquise sua Comum..." required><input id="comum" type="hidden"><div id="comumResults" class="register-results" role="listbox" hidden><div id="comumMeta" class="register-results-meta"></div><div id="comumList"></div></div></div></div>
         <p class="register-search-help">Digite o código ou o nome da comum e selecione um resultado.</p>
+        <div class="register-field" id="setor-field"><span class="register-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z"/><path d="M9 10v6M15 10v6M9 8h6"/></svg></span><select id="setor" required style="width:100%;min-width:0;height:46px;padding:0 14px;border:0!important;outline:0;background:transparent;color:#495057;font-size:13px;appearance:none;"><option value="">Selecione seu setor...</option><option value="Musicalização">Musicalização</option><option value="Música">Música</option><option value="Visitas">Visitas</option><option value="D.A.R.P.E">D.A.R.P.E</option><option value="G.E.M">G.E.M</option></select></div>
+        <p class="register-search-help">Selecione o setor em que irá atuar.</p>
         <label class="register-terms-box"><input id="agreementCheckbox" type="checkbox" required><span>Li e aceito os <a href="/privacidade/" target="_blank" rel="noopener">Termos de Uso e a Política de Privacidade</a>.</span></label>
         <p id="registerFeedback" class="register-feedback" role="alert" aria-live="polite"></p>
         <button id="btn-register" type="submit" class="btn btn-theme d-flex align-items-center justify-content-center gap-2 w-100 fs-13px fw-bold register-submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg><span>CADASTRAR</span></button>
@@ -99,7 +104,7 @@
     if(!form.checkValidity()){form.reportValidity();return}
     const button=document.getElementById("btn-register"),label=button.querySelector("span");button.disabled=true;label.textContent="PROCESSANDO...";
     try{
-      const response=await fetch("/api/auth/?action=register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:document.getElementById("fullName").value.trim(),comum:value.value,email:document.getElementById("emailAddress").value.trim().toLowerCase(),password:document.getElementById("password").value,origem:new URLSearchParams(location.search).get("origem")==="cartas"?"cartas":"visitas"})});
+      const response=await fetch("/api/auth/?action=register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:document.getElementById("fullName").value.trim(),comum:value.value,email:document.getElementById("emailAddress").value.trim().toLowerCase(),password:document.getElementById("password").value,setor:document.getElementById("setor").value.trim(),origem:(["cartas","darpe"].includes(new URLSearchParams(location.search).get("origem"))?new URLSearchParams(location.search).get("origem"):"visitas")})});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||"Erro ao processar solicitação.");
       await Swal.fire({title:"Solicitação Enviada!",text:result.message,icon:"success",confirmButtonColor:"#1e4f7f"});

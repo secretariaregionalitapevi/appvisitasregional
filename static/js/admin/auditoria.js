@@ -54,12 +54,12 @@
     UPDATE_USER_MODULE_ACCESS:['Pastas autorizadas','Alterou as pastas permitidas para um usu\u00e1rio.','warning','Atualiza\u00e7\u00e3o'],
     MUTATION_FAILED:['Opera\u00e7\u00e3o n\u00e3o conclu\u00edda','Uma altera\u00e7\u00e3o administrativa falhou.','danger','Falha'], RECONCILE:['Reconcilia\u00e7\u00e3o','Reconciliou dados operacionais.','warning','Atualiza\u00e7\u00e3o']
   };
-  const MODULE_LABELS={AUTH:'Autentica\u00e7\u00e3o',AUDITORIA:'Auditoria',ADMIN:'Usuarios e acessos',ADMINISTRACAO:'Administra\u00e7\u00e3o',MINISTERIO_REGIONAL:'Minist\u00e9rio Regional',SANTA_CEIA:'Santa Ceia',NAVIGATION:'Navega\u00e7\u00e3o',VISITAS_IRMANDADE:'Visitas - Irmandade',VISITAS_EQUIPES:'Visitas - Equipes',VISITAS_AGENDA:'Visitas - Agenda',VISITAS_LANCAMENTOS:'Visitas - Lancamentos'};
+  const MODULE_LABELS={AUTH:'Autentica\u00e7\u00e3o',AUDITORIA:'Auditoria',ADMIN:'Usuarios e acessos',ADMINISTRACAO:'Administra\u00e7\u00e3o',MINISTERIO_REGIONAL:'Minist\u00e9rio Regional',SANTA_CEIA:'Santa Ceia',MUSICALIZACAO:'Musicalização',NAVIGATION:'Navega\u00e7\u00e3o',VISITAS_IRMANDADE:'Visitas - Irmandade',VISITAS_EQUIPES:'Visitas - Equipes',VISITAS_AGENDA:'Visitas - Agenda',VISITAS_LANCAMENTOS:'Visitas - Lancamentos'};
   const actionMeta=log=>AUDIT_ACTIONS[String(log.action||'').toUpperCase()]||[String(log.action||'Evento').replaceAll('_',' '),'Evento registrado na trilha de auditoria.','info','Evento'];
   const moduleLabel=module=>MODULE_LABELS[String(module||'').toUpperCase()]||String(module||'Global').replaceAll('_',' ');
   const targetProfile=log=>{const d=log.details||{},id=d.target?.user_id||d.target_user_id||d.reviewed_user_id;return {id,profile:profileMap()[id]||{},snapshot:d.target||{}}};
   const targetName=log=>{const target=targetProfile(log);return target.snapshot.name||target.profile.full_name||target.profile.username||(target.id?`Usu\u00e1rio ${target.id}`:'usu\u00e1rio n\u00e3o identificado')};
-  const detailSummary=log=>{const d=log.details||{},meta=actionMeta(log),action=String(log.action||'').toUpperCase();if(action==='VIEW_PAGE')return `Acessou ${d.page_title||d.path||d.request?.path||'uma pagina do sistema'}.`;if(action==='USER_APPROVAL_APPROVED')return `Aprovou o acesso de ${targetName(log)}.`;if(action==='USER_APPROVAL_REJECTED')return `Rejeitou o acesso de ${targetName(log)}.`;if(d.entity)return `${meta[1]} Entidade: ${d.entity}${d.entity_id?' #'+d.entity_id:''}.`;return d.description||d.message||meta[1]};
+  const detailSummary=log=>{const d=log.details||{},meta=actionMeta(log),action=String(log.action||'').toUpperCase();if(action==='VIEW_PAGE')return `Acessou ${d.page_title||d.path||d.request?.path||'uma pagina do sistema'}.`;if(action==='LOGIN'&&d.source==='APP_MUSICALIZACAO')return 'Login no aplicativo de Musicalização.';if(action==='USER_APPROVAL_APPROVED')return `Aprovou o acesso de ${targetName(log)}.`;if(action==='USER_APPROVAL_REJECTED')return `Rejeitou o acesso de ${targetName(log)}.`;if(d.entity)return `${meta[1]} Entidade: ${d.entity}${d.entity_id?' #'+d.entity_id:''}.`;return d.description||d.message||meta[1]};
   const FIELD_LABELS={actor:'Responsável',request:'Requisição',path:'Caminho acessado',view:'Tela do sistema',name:'Nome',scope:'Escopo',user_id:'Identificador do usuário',method:'Método HTTP',role:'Perfil',cargo:'Cargo ou função',comum:'Comum congregação',sector:'Setor',source:'Origem do registro',status:'Situação',role_id:'Código do perfil',language:'Idioma',referrer:'Página de origem',timezone:'Fuso horário',actor_name:'Nome do responsável',actor_role:'Perfil do responsável',screen_size:'Resolução da tela',actor_sector:'Setor do responsável',current_hash:'Área acessada',current_path:'Caminho da aplicação',actor_role_id:'Código do perfil do responsável',actor_user_id:'Identificador do responsável',cadastro_origem:'Origem do cadastro',reviewed_user_id:'Identificador do usuário analisado',timestamp_client:'Data e hora no dispositivo',reviewed_username:'Usuário analisado',schema_version:'Versão do registro',request_id:'Identificador da requisição'};
   const detailRows=(value,prefix='')=>Object.entries(value||{}).flatMap(([key,item])=>{const translated=FIELD_LABELS[key]||key.replaceAll('_',' '),label=(prefix?prefix+' / ':'')+translated;let display=Array.isArray(item)?JSON.stringify(item):item;if(['sector','actor_sector','cadastro_origem'].includes(key)&&display)display=String(display).toUpperCase();if(key==='status')display=statusLabel(display);return item&&typeof item==='object'&&!Array.isArray(item)?detailRows(item,label):[[label,display,key]]});
   const detailCell=(value,key)=>['sector','actor_sector'].includes(key)?`<span class="badge bg-primary">${esc(String(value||'Não informado').toUpperCase())}</span>`:esc(value==null?'\u2014':value);
@@ -173,11 +173,12 @@
     const sector=profile.sector||profile.setor||'Visitas';
     const normSec = norm(sector);
     const isGlobalSec = normSec === 'global' || normSec === 'administrativo' || Number(profile.role_id) === 1;
-    const isMusicalSec = normSec.includes('musical') || normSec === 'ebi' || normSec === 'musica';
-    const primary = isMusicalSec ? 'musicalizacao' : (isGlobalSec ? 'global' : 'visitas');
+    const sectorModules={'visitas':'visitas','musicalizacao':'musicalizacao','musica':'musica','d.a.r.p.e':'darpe','darpe':'darpe','g.e.m':'gem','gem':'gem','g e m':'gem','ebi':'musicalizacao'};
+    const sectorNames={visitas:'Visitas',musicalizacao:'Musicalização',musica:'Música',gem:'G.E.M',darpe:'D.A.R.P.E',global:'Global'};
+    const primary = isGlobalSec ? 'global' : (sectorModules[normSec]||'visitas');
     const grants=new Set((data.module_access||[]).filter(row=>row.user_id===id&&row.active).map(row=>row.module));
     if(primary==='global') {
-      ['visitas','musicalizacao'].forEach(item=>grants.add(item));
+      ['visitas','musicalizacao','musica','darpe','gem'].forEach(item=>grants.add(item));
     } else {
       grants.add(primary);
     }
@@ -185,7 +186,7 @@
     $('#edit-name').val(profile.full_name||'');
     $('#edit-role').val(String(profile.role_id||4));
     $('#edit-status').val(approve?'approved':profile.status||'pending');
-    $('#edit-sector').val(isGlobalSec ? 'Global' : (primary === 'musicalizacao' ? 'Musicalização' : 'Visitas'));
+    $('#edit-sector').val(sectorNames[primary]);
     $('#edit-comum').val(profile.comum||'');
     $('#edit-municipio').val(profile.municipio||profile.cidade||'');
     $('#edit-cargo').val(profile.cargo||'');
@@ -229,20 +230,15 @@
       }
     });
     $('#edit-sector').on('change', function(){
-      const val = $(this).val();
-      if(val === 'Global') {
-        $('.module-check').prop('checked', true);
-      } else if(val === 'Visitas') {
-        $('#module-visitas').prop('checked', true);
-      } else if(val === 'Musicalização') {
-        $('#module-musicalizacao').prop('checked', true);
-      }
+      const key={'Visitas':'visitas','Musicalização':'musicalizacao','Música':'musica','G.E.M':'gem','D.A.R.P.E':'darpe'}[$(this).val()];
+      if($(this).val()==='Global')$('.module-check').prop('checked',true);
+      else if(key)$('#module-'+key).prop('checked',true);
     });
     $('.module-check').on('change', function(){
-      const v = $('#module-visitas').is(':checked'), m = $('#module-musicalizacao').is(':checked');
-      if(v && m) $('#edit-sector').val('Global');
-      else if(m) $('#edit-sector').val('Musicalização');
-      else if(v) $('#edit-sector').val('Visitas');
+      const names={visitas:'Visitas',musicalizacao:'Musicalização',musica:'Música',gem:'G.E.M',darpe:'D.A.R.P.E'};
+      const selected=$('.module-check:checked').map((_,item)=>item.value).get();
+      if(selected.length===5)$('#edit-sector').val('Global');
+      else if(!selected.some(key=>names[key]===$('#edit-sector').val()))$('#edit-sector').val(names[selected[0]]||'');
     });
     let userSearchTimer, logSearchTimer;
     $('#user-search').on('input', () => {clearTimeout(userSearchTimer); userSearchTimer = setTimeout(() => {pages.usuarios = 1; renderUsers();}, 180);});

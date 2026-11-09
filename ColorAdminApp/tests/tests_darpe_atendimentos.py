@@ -28,6 +28,15 @@ class AttendanceTests(SimpleTestCase):
         self.assertEqual(result['equipe'][0]['nome'], self.person['nome_completo'])
         self.assertEqual(result['pedidos_oracao']['viagens'], 0)
 
+    def test_optional_contact_numbers_are_validated_and_persisted(self):
+        payload = {**self.payload, 'whatsapp': '(11) 99999-1234', 'telefone': '+55 11 4141-1234'}
+        result = att.validate(payload, self.req)
+        self.assertEqual(result['whatsapp'], '(11) 99999-1234')
+        self.assertEqual(result['telefone'], '+55 11 4141-1234')
+        for invalid in ['123', '11 99999 ABC', '1' * 16]:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                att.validate({**payload, 'whatsapp': invalid}, self.req)
+
     def test_disallowed_person_role_inactive_and_duplicates(self):
         for change in ('foreign', 'musico', 'inactive', 'duplicate', 'no_responsible'):
             payload = copy.deepcopy(self.payload)
@@ -54,6 +63,30 @@ class AttendanceTests(SimpleTestCase):
         with self.assertRaises(PermissionError):
             att.validate(self.payload, self.req)
 
+    def test_registered_common_and_municipality_are_locked(self):
+        profile = self.req.session['user_profile']
+        profile.update(access_level='local', municipio='ITAPEVI', comum='CENTRAL')
+        payload = copy.deepcopy(self.payload)
+        payload['comum'] = 'central'
+        payload['municipio'] = 'itapevi'
+        result = att.validate(payload, self.req)
+        self.assertEqual(result['comum'], 'CENTRAL')
+        self.assertEqual(result['municipio'], 'ITAPEVI')
+
+        for key, value in [('comum', 'OUTRA COMUM'), ('municipio', 'JANDIRA')]:
+            forged = copy.deepcopy(self.payload)
+            forged[key] = value
+            with self.subTest(key=key), self.assertRaises(PermissionError):
+                att.validate(forged, self.req)
+
+    def test_registered_common_is_locked_for_higher_scope_profiles_too(self):
+        self.req.session['user_profile'].update(
+            access_level='municipal', municipio='ITAPEVI', comum='CENTRAL')
+        payload = copy.deepcopy(self.payload)
+        payload['comum'] = 'OUTRA COMUM'
+        with self.assertRaises(PermissionError):
+            att.validate(payload, self.req)
+
     def test_homonymous_common_in_another_city_is_not_local_scope(self):
         scope = {'level':'local','municipio':'ITAPEVI','comum':'CENTRAL'}
         self.assertFalse(att.in_scope(scope,{'municipio':'JANDIRA','comum':'CENTRAL'}))
@@ -75,6 +108,65 @@ class AttendanceTests(SimpleTestCase):
         self.assertNotIn('cpf', data[0]); self.assertNotIn('telefone', data[0])
         req = request_for('/darpe/atendimentos/api/pessoas/?funcao=musico&q=Atendente')
         self.assertEqual(json.loads(att.api(req, 'pessoas').content)['items'], [])
+
+    def test_legacy_musical_registration_search_and_save(self):
+        self.person.update(nome_completo='Edmilson', darpe_musico_organista=True,
+                           instrumento_oficializado='SAXOFONE ALTO', sexo='Masculino')
+        req = request_for('/darpe/atendimentos/api/pessoas/?funcao=musico&q=Edmilson')
+        self.assertEqual(len(json.loads(att.api(req, 'pessoas').content)['items']), 1)
+        self.assertFalse(att.eligible(self.person, 'organista'))
+        payload = copy.deepcopy(self.payload)
+        payload['equipe'].append({'cadastro_id': self.person['id'], 'funcao': 'musico'})
+        self.assertEqual(len(att.validate(payload, self.req)['equipe']), 2)
+        self.person.update(instrumento_oficializado='ÓRGÃO', sexo='Feminino')
+        self.assertTrue(att.eligible(self.person, 'organista'))
+        self.assertFalse(att.eligible(self.person, 'musico'))
+        self.person['status'] = 'INATIVO'
+        self.assertFalse(att.eligible(self.person, 'organista'))
+
+    def test_explicit_musical_roles_override_legacy_flag(self):
+        self.person.update(darpe_musico=False, darpe_organista=False,
+                           darpe_musico_organista=True, sexo='Masculino')
+        self.assertFalse(att.eligible(self.person, 'musico'))
+        self.assertFalse(att.eligible(self.person, 'organista'))
+
+    @patch.object(att, 'rows')
+    @patch.object(att.requests, 'patch')
+    def test_update_validates_and_preserves_creation_metadata(self, update, rows):
+        rows.return_value = [{**self.payload, 'whatsapp': '(11) 99999-1234'}]
+        update.return_value = Mock(json=lambda: [self.payload])
+        req = request_for('/darpe/atendimentos/api/atendimentos/', 'post', self.payload)
+        req.method = 'PATCH'
+        self.assertEqual(att.api(req).status_code, 200)
+        saved = update.call_args.kwargs['json']
+        self.assertNotIn('created_by', saved)
+        self.assertNotIn('created_at', saved)
+        self.assertEqual(saved['whatsapp'], '(11) 99999-1234')
+        self.assertEqual(saved['telefone'], '')
+        self.assertEqual(update.call_args.kwargs['params'], {'id': 'eq.' + self.payload['id']})
+
+    @patch.object(att, 'rows')
+    @patch.object(att.requests, 'delete')
+    def test_delete_and_update_reject_records_outside_scope(self, delete, rows):
+        rows.return_value = [{**self.payload, 'municipio': 'JANDIRA'}]
+        for method in ('DELETE', 'PATCH'):
+            req = request_for('/darpe/atendimentos/api/atendimentos/', 'post', self.payload)
+            req.method = method
+            req.session['user_profile'].update(access_level='municipal', municipio='ITAPEVI')
+            self.assertEqual(att.api(req).status_code, 403)
+        delete.assert_not_called()
+
+    @patch.object(att, 'rows')
+    @patch.object(att.requests, 'delete')
+    def test_delete_targets_only_selected_record_and_handles_missing(self, delete, rows):
+        rows.return_value = [self.payload]
+        delete.return_value = Mock(json=lambda: [self.payload])
+        req = request_for('/darpe/atendimentos/api/atendimentos/', 'post', {'id': self.payload['id']})
+        req.method = 'DELETE'
+        self.assertEqual(att.api(req).status_code, 200)
+        self.assertEqual(delete.call_args.kwargs['params'], {'id': 'eq.' + self.payload['id']})
+        rows.return_value = []
+        self.assertEqual(att.api(req).status_code, 404)
 
     @patch.object(att.requests, 'post')
     def test_create_atomic_papeleta_with_actor(self, post):
@@ -123,6 +215,39 @@ class AttendanceTests(SimpleTestCase):
         rows.return_value = [{'status':'approved','sector':'darpe','role_id':2}]
         with patch('ColorAdminApp.modules.module_access.explicit_modules',return_value=set()), patch.object(att,'common_catalog',return_value=[]):
             self.assertEqual(att.mobile_api(req,'contexto').status_code,200)
+
+    @override_settings(SUPABASE_ANON_KEY='anon')
+    @patch.object(att, 'can_access_module', return_value=True)
+    @patch.object(att, 'rows')
+    @patch.object(att, 'read_profile')
+    @patch.object(att.requests, 'get')
+    def test_mobile_pdf_requires_approved_in_scope_user_and_returns_pdf(
+            self, auth_get, profile, records, _module):
+        user_id = str(uuid4())
+        auth_get.return_value = Mock(ok=True, json=lambda: {'id': user_id})
+        profile.return_value = [{
+            'user_id': user_id, 'status': 'approved', 'role_id': 2,
+            'sector': 'D.A.R.P.E', 'access_level': 'regional', 'full_name': 'Atendente DARPE',
+        }]
+        records.return_value = [{
+            **self.payload, 'created_by_name': 'Operador DARPE',
+            'created_at': '2026-01-01T12:00:00Z',
+            'equipe': [{'cadastro_id': self.person['id'], 'funcao': 'atendente',
+                        'nome': 'Atendente DARPE'}],
+        }]
+        request = RequestFactory().get(
+            f'/darpe/mobile/api/exportar-pdf/?id={self.payload["id"]}',
+            HTTP_AUTHORIZATION='Bearer valid-token',
+        )
+        response = att.mobile_api(request, 'exportar-pdf')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('Papeleta_DARPE_01_01_2026.pdf', response['Content-Disposition'])
+        from pypdf import PdfReader
+        from io import BytesIO
+        text = PdfReader(BytesIO(response.content)).pages[0].extract_text()
+        self.assertIn('Unidade de atendimento', text)
+        self.assertIn('Atendente DARPE', text)
 
     @patch.object(att.requests, 'get')
     def test_profile_lookup_uses_user_id_without_nonexistent_id_order(self, get):

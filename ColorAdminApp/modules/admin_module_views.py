@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from .admin_views import _get_table, _headers, _update_profile_via_rpc, global_only
-from .module_access import VALID_MODULES, invalidate_module_access
+from .module_access import VALID_MODULES, invalidate_module_access, primary_module
 from .views import log_audit
 
 
@@ -32,8 +32,17 @@ def administration_user_modules(request, user_id):
 
         if not requested:
             return JsonResponse({'error': 'Selecione ao menos uma pasta autorizada.'}, status=400)
-        names = {'musicalizacao': 'Musicaliza\u00e7\u00e3o', 'musica': 'M\u00fasica', 'darpe': 'D.A.R.P.E', 'visitas': 'Visitas'}
-        target_sector = 'Global' if requested == set(VALID_MODULES) else next(names[key] for key in names if key in requested)
+        names = {
+            'musicalizacao': 'Musicaliza\u00e7\u00e3o',
+            'musica': 'M\u00fasica',
+            'darpe': 'D.A.R.P.E',
+            'visitas': 'Visitas',
+            'gem': 'G.E.M',
+        }
+        primary = primary_module(profile_rows[0])
+        target_sector = ('Global' if requested == set(VALID_MODULES) else
+                         names[primary] if primary in requested else
+                         next(names[key] for key in names if key in requested))
 
         # Sincroniza o setor pela ponte administrativa segura. Uma falha aqui não
         # pode ser ocultada, pois deixaria o usuário salvo na pasta errada.
@@ -58,7 +67,7 @@ def administration_user_modules(request, user_id):
         except requests.RequestException:
             # Não confirmar sucesso quando as concessões explícitas falharem.
             invalidate_module_access(str(user_id))
-            return JsonResponse({"error": "Não foi possível salvar todas as pastas. Aplique a migração 045 e revise as permissões do usuário antes de confirmar a liberação."}, status=503)
+            return JsonResponse({"error": "Não foi possível salvar todas as pastas. Aplique as migrações de controle de acesso e revise as permissões do usuário antes de confirmar a liberação."}, status=503)
 
         invalidate_module_access(str(user_id))
         log_audit(request, "UPDATE_USER_MODULE_ACCESS", "ADMIN", {

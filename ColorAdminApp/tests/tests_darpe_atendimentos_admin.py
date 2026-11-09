@@ -21,7 +21,8 @@ def sample():
             'equipe':[{'cadastro_id':'person','funcao':'atendente','nome':'Atendente de teste'},
                       {'cadastro_id':'music','funcao':'musico','nome':'Músico de teste'}],
             'hinos':[374,7],'palavra':'Atos 3','observacoes':'','participacao':'40 participantes',
-            'pedidos_oracao':{'familias':'todas'},'created_by_name':'Operador de teste',
+            'pedidos_oracao':{'familias':'todas'},'whatsapp':'(11) 99999-1234',
+            'telefone':'(11) 4141-1234','created_by_name':'Operador de teste',
             'created_at':'2026-11-01T15:00:00Z'}
 
 
@@ -112,6 +113,29 @@ class AdminAttendanceTests(SimpleTestCase):
                           'Atendimentos realizados','07/11/2026 18:30','Impresso por:', 'Página']:
                 self.assertIn(value,text)
             self.assertAlmostEqual(float(page.mediabox.width),841.8898,places=2)
+
+    def test_single_papeleta_pdf_contains_all_fields_and_standard_header(self):
+        now=datetime(2026,11,7,18,30,tzinfo=ZoneInfo('America/Sao_Paulo'))
+        output=reports.build_papeleta_pdf(sample(),'Operador de teste',now)
+        reader=PdfReader(BytesIO(output))
+        self.assertEqual(len(reader.pages),1)
+        text=reader.pages[0].extract_text()
+        for value in [
+            'CONGREGAÇÃO CRISTÃ NO BRASIL', 'Regional Itapevi - São Paulo',
+            'Papeleta de atendimento', '07/11/2026 18:30', 'Impresso por:',
+            '01/11/2026', 'Unidade de atendimento', 'ITAPEVI', 'CENTRAL',
+            'Atendente de teste', 'Músico de teste', '374, 7', 'Atos 3',
+            '40 participantes', 'Todas',
+            '(11) 99999-1234', '(11) 4141-1234',
+            'ATENDIMENTO D.A.R.P.E.', 'Orações', 'Colaboradores',
+            'Irmão da palavra', 'PEDIDOS DE ORAÇÃO', 'Enfermidade(s)',
+            'Acidentado(s)', 'Tribulação(ões)', 'Testemunhado(s)',
+        ]:
+            self.assertIn(value,text)
+        self.assertLess(text.index('Hinos'),text.index('Palavra'))
+        self.assertLess(text.index('Palavra'),text.index('Irmão da palavra'))
+        self.assertLess(text.index('Obs.'),text.index('PEDIDOS DE ORAÇÃO'))
+        self.assertAlmostEqual(float(reader.pages[0].mediabox.width),595.2756,places=2)
 
     @patch.object(attendance,'visible_records',return_value=[sample()])
     def test_export_uses_the_same_filters_as_dashboard(self, visible):

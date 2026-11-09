@@ -313,8 +313,8 @@ def _apply_child_attendance_rules(children, classes, attendances, persist=False)
                 timeout=15,
             )
             response.raise_for_status()
-        cache.delete("musicalizacao:dashboard:v7")
-        cache.delete("musicalizacao:source:v7:criancas")
+        cache.delete("musicalizacao:dashboard:v8")
+        cache.delete("musicalizacao:source:v8:criancas")
     return children
 
 
@@ -332,7 +332,7 @@ def _attendance_history():
         )
         attendances_future = executor.submit(
             fetch, f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_presenca",
-            {"select": "aula_id,aluno_id,status,presente"},
+            {"select": "aula_id,aluno_id,status,presente,created_by_user_id,created_by_name,created_by_email"},
         )
         return classes_future.result(), attendances_future.result()
 
@@ -359,15 +359,15 @@ def api_summary(request):
         "criancas": "id,nome_crianca,sexo,data_nascimento,comum_congregacao,polo_participacao,cidade,nome_responsavel,celular_responsavel,status",
         "instrutores": "id,nome_completo,comum_congregacao,polo_auxilio,role,status",
         "polos": "nome_polo,localidade",
-        "aulas": "id,data_aula,cidade,polo,ciclo,numero_aula,meninos_presentes,meninas_presentes,instrutores_presentes,colaboradores_presentes,coordenadores_presentes,nome_atividade",
-        "presencas": "aula_id,aluno_id,colaborador_id,participante_tipo,status,presente,observacoes",
+        "aulas": "id,data_aula,cidade,polo,ciclo,numero_aula,meninos_presentes,meninas_presentes,instrutores_presentes,colaboradores_presentes,coordenadores_presentes,nome_atividade,created_by_user_id,created_by_name,created_by_email,updated_by_user_id,updated_by_name,updated_by_email",
+        "presencas": "aula_id,aluno_id,colaborador_id,participante_tipo,status,presente,observacoes,created_by_user_id,created_by_name,created_by_email",
     }
     try:
-        cached = cache.get("musicalizacao:dashboard:v7")
+        cached = cache.get("musicalizacao:dashboard:v8")
 
         def fetch(item):
             name, config = item
-            source_key = f"musicalizacao:source:v7:{name}"
+            source_key = f"musicalizacao:source:v8:{name}"
             source_cached = cache.get(source_key)
             if source_cached is not None:
                 return name, source_cached, None
@@ -389,7 +389,7 @@ def api_summary(request):
             raw = {name: rows for name, rows, warning in datasets}
             warnings = [warning for name, rows, warning in datasets if warning]
             if not warnings:
-                cache.set("musicalizacao:dashboard:v7", raw, 300)
+                cache.set("musicalizacao:dashboard:v8", raw, 300)
         else:
             raw, warnings = cached, []
 
@@ -613,8 +613,8 @@ def api_resource(request, resource, record_id=None):
                 if coordinator_supplied:
                     _set_polo_coordinator(scope, saved_item.get("nome_polo"), coordinator_id)
                 cache.delete("musicalizacao:polos:v1")
-            cache.delete("musicalizacao:dashboard:v7")
-            cache.delete(f"musicalizacao:source:v7:{resource}")
+            cache.delete("musicalizacao:dashboard:v8")
+            cache.delete(f"musicalizacao:source:v8:{resource}")
             return JsonResponse({"item": saved_item}, status=200 if record_id else 201)
 
         if request.method == "DELETE" and record_id:
@@ -622,8 +622,8 @@ def api_resource(request, resource, record_id=None):
             response.raise_for_status()
             if resource == "polos":
                 cache.delete("musicalizacao:polos:v1")
-            cache.delete("musicalizacao:dashboard:v7")
-            cache.delete(f"musicalizacao:source:v7:{resource}")
+            cache.delete("musicalizacao:dashboard:v8")
+            cache.delete(f"musicalizacao:source:v8:{resource}")
             return JsonResponse({}, status=204)
         return JsonResponse({"error": "Método não permitido."}, status=405)
     except PermissionError:

@@ -50,39 +50,52 @@ class SupabaseAuthMiddleware:
                         params={'user_id': f'eq.{user_id}', 'select': 'user_id,status,role_id,role,sector,comum,municipio,cidade', 'limit': '1'},
                         timeout=5,
                     )
-                    if profile_response.status_code == 200:
-                        profiles = profile_response.json()
-                        if not profiles:
-                            revoke_reason = 'account_removed'
-                        elif profiles[0].get('status') != 'approved':
-                            revoke_reason = 'access_revoked'
-                        else:
-                            # Mudancas de nivel, pasta, municipio ou comum passam a
-                            # valer na sessao ativa sem exigir novo login.
-                            current_profile = request.session.get('user_profile') or {}
-                            merged = {**current_profile, **profiles[0]}
-                            if not merged.get('role'):
-                                merged['role'] = merged.get('role_name') or merged.get('cargo') or 'Membro'
-                            if not merged.get('cargo'):
-                                merged['cargo'] = merged.get('role') or 'Membro'
-                            if not merged.get('role_name'):
-                                merged['role_name'] = merged.get('role') or 'Membro'
-                            request.session['user_profile'] = merged
-                except (requests.RequestException, ValueError):
-                    # Falha de rede não deve expulsar todos os usuários ativos.
-                    pass
+                    profile_response.raise_for_status()
+                    profiles = profile_response.json()
+                    if not isinstance(profiles, list):
+                        raise ValueError("Invalid Supabase profile response")
+                    if not profiles:
+                        revoke_reason = 'account_removed'
+                    elif not isinstance(profiles[0], dict):
+                        raise ValueError("Invalid Supabase profile record")
+                    elif profiles[0].get('status') != 'approved':
+                        revoke_reason = 'access_revoked'
+                    else:
+                        # Mudancas de nivel, pasta, municipio ou comum passam a
+                        # valer na sessao ativa sem exigir novo login.
+                        current_profile = request.session.get('user_profile') or {}
+                        merged = {**current_profile, **profiles[0]}
+                        if not merged.get('role'):
+                            merged['role'] = merged.get('role_name') or merged.get('cargo') or 'Membro'
+                        if not merged.get('cargo'):
+                            merged['cargo'] = merged.get('role') or 'Membro'
+                        if not merged.get('role_name'):
+                            merged['role_name'] = merged.get('role') or 'Membro'
+                        request.session['user_profile'] = merged
+                except (requests.RequestException, ValueError) as exc:
+                    logger.warning(
+                        "Could not verify access approval for authenticated request: %s",
+                        type(exc).__name__,
+                    )
+                    message = 'Não foi possível confirmar a autorização da sua conta. Tente novamente.'
+                    if '/api/' in path:
+                        return JsonResponse({'error': message, 'code': 'approval_check_unavailable'}, status=503)
+                    from django.shortcuts import render
+                    return render(request, 'pages/403.html', {'message': message}, status=503)
 
             if revoke_reason:
                 request.session.flush()
-                if path.startswith(('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/biblioteca/', '/administracao/api/')):
+                if '/api/' in path or path.startswith('/darpe/biblioteca/'):
                     return JsonResponse({
                         'error': 'Sua sessão foi encerrada porque este acesso não está mais ativo.',
                         'code': revoke_reason,
                     }, status=401)
                 return redirect(f'/user/login-v1?reason={revoke_reason}')
 
-            from .module_access import MODULE_DARPE, MODULE_MUSICALIZACAO, MODULE_VISITAS, can_access_module
-            from .module_access import MODULE_MUSICA, allowed_modules
+            from .module_access import (
+                MODULE_DARPE, MODULE_GEM, MODULE_MUSICA, MODULE_MUSICALIZACAO,
+                MODULE_VISITAS, allowed_modules, can_access_module, primary_module,
+            )
             if allowed_modules(request) == {MODULE_MUSICA} and not path.startswith('/logout'):
                 message = 'Este acesso foi liberado somente para a administra\u00e7\u00e3o municipal no aplicativo Cartas.'
                 if request.method == 'GET' and '/api/' not in path and getattr(settings, 'CARTAS_APP_URL', ''):
@@ -91,8 +104,28 @@ class SupabaseAuthMiddleware:
                     return JsonResponse({'error': message, 'code': 'cartas_app_only'}, status=403)
                 from django.shortcuts import render
                 return render(request, 'pages/403.html', {'message': message}, status=403)
+            dashboard_paths = {'/', '/dashboard/v1', '/dashboard/v2', '/dashboard/v3'}
+            if path in dashboard_paths and not can_access_module(request, MODULE_VISITAS):
+                landing_paths = {
+                    MODULE_MUSICALIZACAO: '/musicalizacao/',
+                    MODULE_GEM: '/gem/',
+                    MODULE_DARPE: '/darpe/',
+                }
+                landing = landing_paths.get(primary_module(request.session.get('user_profile') or {}))
+                if primary_module(request.session.get('user_profile') or {}) == MODULE_MUSICA:
+                    cartas_url = getattr(settings, 'CARTAS_APP_URL', '').rstrip('/')
+                    landing = f'{cartas_url}/admin' if cartas_url else None
+                if landing:
+                    return redirect(landing)
+                from django.shortcuts import render
+                return render(
+                    request, 'pages/403.html',
+                    {'message': 'Seu perfil não possui autorização para esta pasta.'}, status=403,
+                )
             requested_module = (
                 MODULE_DARPE if path.startswith('/darpe/') else
+                MODULE_GEM if path.startswith('/gem/') else
+                MODULE_MUSICA if path.startswith('/musica/') else
                 MODULE_MUSICALIZACAO if path.startswith('/musicalizacao/') else
                 MODULE_VISITAS if path.startswith('/visitas/') else None
             )

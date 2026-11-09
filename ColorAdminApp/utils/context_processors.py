@@ -280,7 +280,10 @@ def sidebar_menu(request):
 		current_path_name = ''
 	
 	# O menu usa a mesma autorizacao aplicada pelo servidor nas URLs e APIs.
-	from ..module_access import MODULE_DARPE, MODULE_MUSICALIZACAO, MODULE_VISITAS, allowed_modules, is_global
+	from ..module_access import (
+		MODULE_DARPE, MODULE_GEM, MODULE_MUSICA, MODULE_MUSICALIZACAO,
+		MODULE_VISITAS, allowed_modules, is_global,
+	)
 	user_profile = request.session.get('user_profile', {})
 	is_global_user = is_global(user_profile)
 	try:
@@ -294,7 +297,9 @@ def sidebar_menu(request):
 			allowed_titles.add('Visitas')
 		if MODULE_MUSICALIZACAO in modules:
 			allowed_titles.add('Musicalização')
+		if MODULE_GEM in modules:
 			allowed_titles.add('GEM')
+		if MODULE_MUSICA in modules:
 			allowed_titles.add('Música')
 		if MODULE_DARPE in modules:
 			allowed_titles.add('D.A.R.P.E')
@@ -310,4 +315,3 @@ def sidebar_menu(request):
 	sidebar_menu = mark_active_link(sidebar_menu, current_path_name, request.path_info)
 
 	return {'sidebar_menu': sidebar_menu}
-

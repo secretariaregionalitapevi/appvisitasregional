@@ -286,12 +286,13 @@
       let status = activityNotHeld ? 'Não se aplica' : 'Faltou';
       let tone = activityNotHeld ? 'empty' : 'late';
       let observation = activityNotHeld ? 'Atividade não realizada; nenhuma falta atribuída.' : (saved?.observacoes || '');
+      const recordedBy = saved?.created_by_name || (saved ? 'Não identificado (registro legado)' : 'Sem registro nominal');
       if (norm(observation).startsWith('PRESENCA RECUPERADA DO LANCAMENTO ORIGINAL DA ATIVIDADE')) observation = '';
       if (!activityNotHeld && saved && norm(saved.status).includes('JUSTIFIC')) { status='Justificado'; tone='attention'; }
       else if (saved && (saved.presente === true || norm(saved.status) === 'PRESENTE')) { status='Presente'; tone='ok'; }
       else if (!activityNotHeld && !saved && person.role === 'Coordenadora' && coordinatorsToRecover > 0) { status='Presente'; tone='ok'; coordinatorsToRecover--; }
       else if (!activityNotHeld && !saved && person.role === 'Monitora' && monitorsToRecover > 0) { status='Presente'; tone='ok'; monitorsToRecover--; }
-      return {...person,status,tone,observation};
+      return {...person,status,tone,observation,recordedBy};
     });
 
     const totals = {
@@ -305,13 +306,13 @@
       let groupHeader='';
       if(item.group>0&&item.group!==previousGroup){
         const coordination=item.group===2;
-        groupHeader=`<tr class="attendance-group-row"><td colspan="5"><i class="fa ${coordination?'fa-star':'fa-users'} me-2"></i>${coordination?'Coordenação':'Monitoras'}</td></tr>`;
+        groupHeader=`<tr class="attendance-group-row"><td colspan="6"><i class="fa ${coordination?'fa-star':'fa-users'} me-2"></i>${coordination?'Coordenação':'Monitoras'}</td></tr>`;
       }
       previousGroup=item.group;
-      return groupHeader+`<tr class="attendance-participant-row" data-attendance-search="${esc(norm(item.name+' '+item.role+' '+item.status))}"><td>${index+1}</td><td><strong>${esc(item.name||'Participante não identificado')}</strong></td><td><span class="activity-role-badge activity-role-${item.group===0?'child':item.group===2?'coordinator':'monitor'}">${esc(item.role)}</span></td><td><span class="activity-status-badge activity-status-${item.tone}">${esc(item.status)}</span></td><td><div class="activity-observation">${esc(item.observation||'—')}</div></td></tr>`;
+      return groupHeader+`<tr class="attendance-participant-row" data-attendance-search="${esc(norm(item.name+' '+item.role+' '+item.status+' '+item.recordedBy))}"><td>${index+1}</td><td><strong>${esc(item.name||'Participante não identificado')}</strong></td><td><span class="activity-role-badge activity-role-${item.group===0?'child':item.group===2?'coordinator':'monitor'}">${esc(item.role)}</span></td><td><span class="activity-status-badge activity-status-${item.tone}">${esc(item.status)}</span></td><td><div class="activity-observation">${esc(item.observation||'—')}</div></td><td>${esc(item.recordedBy)}</td></tr>`;
     }).join('');
     const noActivityNotice = activityNotHeld ? `<div class="attendance-no-activity"><i class="fa fa-calendar-xmark"></i><div><strong>Não houve atividade nesta data.</strong><span>${esc(row.observacoes || 'Motivo não informado.')}</span><span>Nenhuma falta foi gerada.</span></div></div>` : '';
-    $('#activity-attendance-body').innerHTML = `<h6 class="fw-bold text-muted mb-3">Resumo da frequência</h6>${noActivityNotice}<div class="activity-modal-summary"><div class="activity-modal-metric activity-metric-present"><strong>${totals.present}</strong><span>Presentes</span></div><div class="activity-modal-metric activity-metric-absent"><strong>${totals.absent}</strong><span>Faltas</span></div><div class="activity-modal-metric activity-metric-justified"><strong>${totals.justified}</strong><span>Justificados</span></div></div><div class="attendance-search"><i class="fa fa-search"></i><input class="form-control" id="attendance-search-input" placeholder="Pesquisar participante do polo…"></div><div class="table-responsive"><table class="table activity-table attendance-table"><thead><tr><th>#</th><th>Participante</th><th>Função</th><th>Status</th><th>Justificativa / Observação</th></tr></thead><tbody>${rowsHtml||'<tr><td colspan="5" class="text-center text-muted py-4">Nenhum participante cadastrado neste polo.</td></tr>'}</tbody></table></div>`;
+    $('#activity-attendance-body').innerHTML = `<h6 class="fw-bold text-muted mb-3">Resumo da frequência</h6>${noActivityNotice}<div class="activity-modal-summary"><div class="activity-modal-metric activity-metric-present"><strong>${totals.present}</strong><span>Presentes</span></div><div class="activity-modal-metric activity-metric-absent"><strong>${totals.absent}</strong><span>Faltas</span></div><div class="activity-modal-metric activity-metric-justified"><strong>${totals.justified}</strong><span>Justificados</span></div></div><div class="attendance-search"><i class="fa fa-search"></i><input class="form-control" id="attendance-search-input" placeholder="Pesquisar participante do polo…"></div><div class="table-responsive"><table class="table activity-table attendance-table"><thead><tr><th>#</th><th>Participante</th><th>Função</th><th>Status</th><th>Justificativa / Observação</th><th>Lançado por</th></tr></thead><tbody>${rowsHtml||'<tr><td colspan="6" class="text-center text-muted py-4">Nenhum participante cadastrado neste polo.</td></tr>'}</tbody></table></div>`;
     $('#attendance-search-input')?.addEventListener('input', event => {
       const query=norm(event.target.value);
       document.querySelectorAll('.attendance-participant-row').forEach(tableRow=>tableRow.hidden=!!query&&!tableRow.dataset.attendanceSearch.includes(query));

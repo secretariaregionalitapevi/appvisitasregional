@@ -565,9 +565,18 @@ def apiAuth(request):
                 }, status=400)
             municipio = str(comum_row.get('cidade') or '').strip()
             from_cartas = data.get('origem') == 'cartas'
-            registration_source = 'app_cartas' if from_cartas else 'app_visitas_regional'
-            registration_label = 'Aplicativo de Cartas' if from_cartas else 'Aplicativo Regional de Visitas'
-            suggested_sector = 'M\u00fasica' if from_cartas else 'Visitas'
+            from_darpe = data.get('origem') == 'darpe'
+            registration_source = 'app_darpe' if from_darpe else 'app_cartas' if from_cartas else 'app_visitas_regional'
+            registration_label = 'Aplicativo DARPE' if from_darpe else 'Aplicativo de Cartas' if from_cartas else 'Aplicativo Regional de Visitas'
+
+            setor_selecionado = str(data.get('setor') or '').strip()
+            valid_setores = ['Musicalização', 'Música', 'Visitas', 'D.A.R.P.E', 'G.E.M']
+            if setor_selecionado not in valid_setores:
+                return JsonResponse({
+                    "error": "Selecione um setor válido na lista."
+                }, status=400)
+
+            suggested_sector = setor_selecionado
             # 1. Sign up
             url = f"{settings.SUPABASE_URL}/auth/v1/signup"
             headers = {"apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}
@@ -583,6 +592,7 @@ def apiAuth(request):
                     "access_level": "local",
                     "cadastro_origem": registration_source,
                     "cadastro_origem_label": registration_label,
+                    "cadastro_origem_setor_selecionado": setor_selecionado,
                     "cadastro_origem_setor_sugerido": suggested_sector,
                     "cadastro_origem_rota": request.path,
                 }
@@ -616,10 +626,11 @@ def apiAuth(request):
                         "status": "pending",
                         "cadastro_origem": registration_source,
                         "cadastro_origem_label": registration_label,
+                        "cadastro_origem_setor_selecionado": setor_selecionado,
                         "cadastro_origem_setor_sugerido": suggested_sector,
                         "cadastro_origem_rota": request.path,
                         "cadastro_origem_url": request.build_absolute_uri(),
-                        "sector": suggested_sector,
+                        "sector": setor_selecionado,
                     }
                     try:
                         profile_response = requests.post(
@@ -673,6 +684,7 @@ def apiAuth(request):
                 log_audit(request, 'REGISTER', details={
                     "email": data.get('email'), "user_id": user_id, "target_user_id": user_id,
                     "comum": comum, "municipio": municipio, "role_id": 4,
+                    "cadastro_origem": registration_source, "setor_selecionado": setor_selecionado,
                 })
                 return JsonResponse({"status": "ok", "message": "Registro realizado. Aguarde aprovação do administrador."})
 

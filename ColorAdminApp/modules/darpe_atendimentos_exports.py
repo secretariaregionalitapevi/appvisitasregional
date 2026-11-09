@@ -190,6 +190,217 @@ def build_pdf(rows, scope, actor, now):
     return stream.getvalue()
 
 
+def build_papeleta_pdf(record, actor, now):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import (
+        Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    )
+
+    page_width, page_height = A4
+    usable = page_width - 56
+    label_style = ParagraphStyle(
+        'PapeletaLabel', fontName='Helvetica-Bold', fontSize=8, leading=10,
+        textColor='#1e4b7a',
+    )
+    value_style = ParagraphStyle(
+        'PapeletaValue', fontName='Helvetica', fontSize=8, leading=10,
+        textColor='#263238',
+    )
+    header_style = ParagraphStyle(
+        'PapeletaTableHeader', fontName='Helvetica-Bold', fontSize=8,
+        leading=10, textColor=colors.white, alignment=TA_CENTER,
+    )
+    metadata_style = ParagraphStyle(
+        'PapeletaMetadata', fontName='Helvetica', fontSize=6.5, leading=8,
+        alignment=TA_RIGHT, textColor='#263238',
+    )
+
+    def paragraph(value, style=value_style):
+        return Paragraph(escape(str(value or '—')).replace('\n', '<br/>'), style)
+
+    def field(label, value):
+        return [paragraph(label, label_style), paragraph(value)]
+
+    class PapeletaCanvas(canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.states = []
+
+        def showPage(self):
+            self.states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self.states)
+            for state in self.states:
+                self.__dict__.update(state)
+                self.saveState()
+                center = page_width / 2
+                for y, text, font, size, color in (
+                    (page_height - 29, 'CONGREGAÇÃO CRISTÃ NO BRASIL',
+                     'Helvetica-Bold', 15, '#263238'),
+                    (page_height - 43, 'Regional Itapevi - São Paulo',
+                     'Helvetica', 9, '#263238'),
+                    (page_height - 60, 'D.A.R.P.E', 'Helvetica-Bold', 12, '#1e4b7a'),
+                    (page_height - 74, 'Papeleta de atendimento',
+                     'Helvetica', 9, '#263238'),
+                ):
+                    self.setFont(font, size)
+                    self.setFillColor(colors.HexColor(color))
+                    self.drawCentredString(center, y, text)
+                details = Paragraph(
+                    f'<b>Página:</b> {self._pageNumber} de {total}<br/>'
+                    f'<b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/>'
+                    f'<b>Data:</b> {datetime.strptime(row_data, "%Y-%m-%d"):%d/%m/%Y}<br/>'
+                    f'<b>Impresso por:</b> {escape(actor)}',
+                    metadata_style,
+                )
+                _, metadata_height = details.wrap(165, 80)
+                details.drawOn(self, page_width - 28 - 165,
+                               page_height - 16 - metadata_height)
+                self.setFont('Helvetica', 7)
+                self.setFillColor(colors.HexColor('#6b7280'))
+                self.drawString(28, 19, 'D.A.R.P.E · Papeleta de atendimento')
+                self.drawRightString(page_width - 28, 19,
+                                     f'Página {self._pageNumber} de {total}')
+                self.restoreState()
+                super().showPage()
+            super().save()
+
+    row_data = record['data']
+    content = [[paragraph('ATENDIMENTO D.A.R.P.E.', header_style),
+                paragraph(datetime.strptime(row_data, '%Y-%m-%d').strftime('%d/%m/%Y'),
+                          ParagraphStyle(
+                              'PapeletaDate', fontName='Helvetica-Bold', fontSize=9,
+                              leading=12, textColor=colors.white, alignment=TA_RIGHT,
+                          ))]]
+    banner = Table(content, colWidths=[usable - 90, 90])
+    banner.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e4b7a')),
+        ('BOX', (0, 0), (-1, -1), .6, colors.HexColor('#1e4b7a')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+
+    def people_for(*roles):
+        return ', '.join(
+            person.get('nome', '') for person in record.get('equipe', [])
+            if person.get('funcao') in roles and person.get('nome')
+        ) or '—'
+
+    fields = [
+        field('Horário', record['hora_inicio'][:5] + ' às ' + record['hora_fim'][:5]),
+        field('Setor', f"Setor {record['setor']}"),
+        field('Local', record['local']),
+        field('Município', record['municipio']),
+        field('Comum do responsável', record['comum']),
+        field('Atendente', people_for('atendente')),
+        field('Orações', people_for('oracao')),
+        field('Músicos', people_for('musico', 'organista')),
+        field('Colaboradores', people_for('colaborador')),
+        field('Hinos', ', '.join(map(str, record.get('hinos', []))) or '—'),
+    ]
+    for label, key in (('WhatsApp', 'whatsapp'), ('Outro telefone', 'telefone')):
+        if record.get(key):
+            fields.append(field(label, record[key]))
+    fields.extend([
+        field('Palavra', record.get('palavra')),
+        field('Irmão da palavra', people_for('palavra')),
+        field('Participação', record.get('participacao')),
+        field('Obs.', record.get('observacoes')),
+    ])
+
+    prayer_labels = [
+        ('enfermidades', 'Enfermidade(s)'), ('acidentados', 'Acidentado(s)'),
+        ('tribulacoes', 'Tribulação(ões)'), ('familias', 'Família(s)'),
+        ('causas', 'Causa(s)'), ('testemunhados', 'Testemunhado(s)'),
+        ('viagens', 'Viagem(ns)'),
+    ]
+    prayers = [[
+        paragraph('PEDIDOS DE ORAÇÃO', header_style), '', '', '',
+    ]]
+    prayer_values = record.get('pedidos_oracao') or {}
+    for index in range(0, len(prayer_labels), 2):
+        cells = []
+        for key, label in prayer_labels[index:index + 2]:
+            value = prayer_values.get(key, 0)
+            cells.extend([paragraph(label, label_style),
+                          paragraph('Todas' if value == 'todas' else value)])
+        if len(cells) == 2:
+            cells.extend([paragraph(''), paragraph('')])
+        prayers.append(cells)
+
+    def detail_table(data, widths, header_rows=0):
+        table = Table(data, colWidths=widths, repeatRows=header_rows, hAlign='LEFT')
+        styles = [
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LINEBELOW', (0, 0), (-1, -1), .6, colors.HexColor('#8b9aaa')),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]
+        if header_rows:
+            styles.extend([
+                ('SPAN', (0, 0), (-1, 0)),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e4b7a')),
+                ('BOX', (0, 0), (-1, 0), .6, colors.HexColor('#1e4b7a')),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('TOPPADDING', (0, 0), (-1, 0), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#eaf2f8')),
+                ('BOX', (0, 1), (-1, -1), .5, colors.HexColor('#c8d1da')),
+                ('INNERGRID', (0, 1), (-1, -1), .4, colors.HexColor('#c8d1da')),
+                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+                ('ALIGN', (3, 1), (3, -1), 'CENTER'),
+            ])
+        else:
+            styles.append(('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#eaf2f8')))
+        table.setStyle(TableStyle(styles))
+        return table
+
+    stream = BytesIO()
+    doc = SimpleDocTemplate(
+        stream, pagesize=A4, leftMargin=28, rightMargin=28,
+        topMargin=94, bottomMargin=34, title='Papeleta de atendimento',
+        author=actor,
+    )
+    doc.build([
+        banner, Spacer(1, 5),
+        detail_table(fields, [112, usable - 112]), Spacer(1, 8),
+        detail_table(prayers, [usable * .36, usable * .14,
+                               usable * .36, usable * .14], header_rows=1),
+    ], canvasmaker=PapeletaCanvas)
+    return stream.getvalue()
+
+
+def export_papeleta_pdf(request, record_id):
+    if not request.session.get('user_id') or not can_access_module(request, MODULE_DARPE):
+        return JsonResponse({'error': 'Acesso DARPE não autorizado.'}, status=403)
+    try:
+        rows = attendance.rows(attendance.TABLE, {'id': 'eq.' + str(record_id)})
+        if not rows or not attendance.in_scope(attendance.user_scope(request), rows[0]):
+            return JsonResponse({'error': 'Atendimento não encontrado no seu escopo.'}, status=404)
+        now = datetime.now(ZoneInfo('America/Sao_Paulo'))
+        response = HttpResponse(
+            build_papeleta_pdf(rows[0], _actor(request)['name'], now),
+            content_type='application/pdf',
+        )
+        filename = f"Papeleta_DARPE_{datetime.strptime(rows[0]['data'], '%Y-%m-%d').strftime('%d_%m_%Y')}.pdf"
+        response['Content-Disposition'] = "attachment; filename*=UTF-8''" + quote(filename)
+        response['Cache-Control'] = 'no-store'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except requests.RequestException as exc:
+        return attendance.database_error(exc)
+
 
 @never_cache
 @require_GET

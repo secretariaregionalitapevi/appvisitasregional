@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from openpyxl import load_workbook
 
-from ColorAdminApp.musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _child_age, _child_age_error, _child_polo_city, _normalize_birth_date, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module, export_children_excel
+from ColorAdminApp.musicalizacao import RESOURCES, REGIONAL_MUNICIPALITIES, _attendance_history, _child_age, _child_age_error, _child_polo_city, _normalize_birth_date, _set_polo_coordinator, _visible, api_resource, api_summary, can_open_module, export_children_excel
 
 
 def request_with_profile(path, profile, method="get", data=None):
@@ -22,6 +22,23 @@ def request_with_profile(path, profile, method="get", data=None):
 
 @override_settings(SUPABASE_URL="https://db.example", SUPABASE_SERVICE_ROLE_KEY="secret")
 class MusicalizacaoSecurityTests(SimpleTestCase):
+    @patch("ColorAdminApp.musicalizacao.requests.get")
+    def test_attendance_history_includes_author_fields(self, mock_get):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = []
+        mock_get.return_value = response
+
+        _attendance_history()
+
+        attendance_call = next(
+            call for call in mock_get.call_args_list
+            if call.kwargs["params"].get("select", "").startswith("aula_id,aluno_id")
+        )
+        self.assertIn("created_by_user_id", attendance_call.kwargs["params"]["select"])
+        self.assertIn("created_by_name", attendance_call.kwargs["params"]["select"])
+        self.assertIn("created_by_email", attendance_call.kwargs["params"]["select"])
+
     @patch("ColorAdminApp.musicalizacao.requests.post")
     def test_activity_authorship_comes_from_authenticated_session(self, mock_post):
         response = Mock()

@@ -1,12 +1,14 @@
 """Papeletas DARPE: uma API para a administração e o aplicativo mobile."""
 import json
 from copy import copy
-from datetime import date, time
+from datetime import date, datetime, time
+from urllib.parse import quote
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import requests
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
@@ -67,6 +69,12 @@ def people(request):
 
 
 def eligible(row, role):
+    if role in ('musico', 'organista') and not any(
+            field in row for field in ('darpe_musico', 'darpe_organista')):
+        musician, organist = darpe._musical_flags(
+            row.get('instrumento_oficializado'), row.get('sexo'),
+            row.get('darpe_musico_organista') is True)
+        return row.get('status') == 'ATIVO' and (musician if role == 'musico' else organist)
     return row.get('status') == 'ATIVO' and any(row.get(field) is True for field in ROLES.get(role, ()))
 
 
@@ -126,14 +134,29 @@ def validate(payload, request):
         raise ValueError('Informe os dados do atendimento.')
     result = {}
     for key, limit in [('local', 200), ('municipio', 100), ('comum', 200), ('palavra', 200),
-                       ('participacao', 1000), ('observacoes', 3000)]:
+                       ('participacao', 1000), ('observacoes', 3000),
+                       ('whatsapp', 20), ('telefone', 20)]:
         value = payload.get(key, '')
         if not isinstance(value, str) or len(value.strip()) > limit:
             raise ValueError(f'Campo {key}: limite de {limit} caracteres.')
         result[key] = value.strip()
+    for key in ('whatsapp', 'telefone'):
+        digits = ''.join(char for char in result[key] if char.isdigit())
+        if result[key] and (len(digits) < 8 or len(digits) > 15 or
+                            any(char not in '+ ()-.' and not char.isdigit() for char in result[key])):
+            raise ValueError(f'Informe um número válido para {key}.')
     if not all(result[k] for k in ('local', 'municipio', 'comum')):
         raise ValueError('Informe local, município e comum responsável pelo atendimento.')
-    if not in_scope(user_scope(request), result):
+    scope = user_scope(request)
+    if scope['comum']:
+        if darpe._norm(result['comum']) != darpe._norm(scope['comum']):
+            raise PermissionError('A comum do atendimento deve ser a comum vinculada ao seu cadastro DARPE.')
+        result['comum'] = scope['comum']
+        if scope['municipio']:
+            if darpe._norm(result['municipio']) != darpe._norm(scope['municipio']):
+                raise PermissionError('O município do atendimento deve corresponder ao município do seu cadastro DARPE.')
+            result['municipio'] = scope['municipio']
+    if not in_scope(scope, result):
         raise PermissionError('O atendimento está fora do seu escopo territorial.')
     result['data'] = date.fromisoformat(payload.get('data', '')).isoformat()
     if result['data'] > timezone.localdate().isoformat():
@@ -192,7 +215,7 @@ def page(request):
 
 
 @never_cache
-@require_http_methods(['GET', 'POST'])
+@require_http_methods(['GET', 'POST', 'PATCH', 'DELETE'])
 def api(request, action='atendimentos'):
     if not request.session.get('user_id') or not can_access_module(request, MODULE_DARPE):
         return JsonResponse({'error': 'Acesso DARPE não autorizado.'}, status=403)
@@ -221,6 +244,28 @@ def api(request, action='atendimentos'):
             data.sort(key=lambda r: (r['data'], r['hora_inicio']), reverse=True)
             return JsonResponse({'items': data})
         payload = json.loads(request.body)
+        if request.method in ('PATCH', 'DELETE'):
+            record_id = str(UUID(str(payload.get('id', ''))))
+            existing = rows(TABLE, {'id': 'eq.' + record_id})
+            if not existing:
+                return JsonResponse({'error': 'Atendimento não encontrado.'}, status=404)
+            if not in_scope(user_scope(request), existing[0]):
+                raise PermissionError('O atendimento está fora do seu escopo territorial.')
+            headers = {**service_headers(), 'Prefer': 'return=representation'}
+            params = {'id': 'eq.' + record_id}
+            if request.method == 'DELETE':
+                response = requests.delete(darpe._url(TABLE), headers=headers, params=params, timeout=30)
+            else:
+                result = validate(payload, request)
+                for key in ('whatsapp', 'telefone'):
+                    if key not in payload:
+                        result[key] = existing[0].get(key, '')
+                response = requests.patch(darpe._url(TABLE), headers=headers, params=params, json=result, timeout=30)
+            response.raise_for_status()
+            changed = response.json()
+            if not changed:
+                return JsonResponse({'error': 'O atendimento não está mais disponível. Atualize a lista.'}, status=404)
+            return JsonResponse({'item': changed[0], 'message': 'Atendimento excluído.' if request.method == 'DELETE' else 'Atendimento atualizado.'})
         result = validate(payload, request)
         # ID da submissão torna a repetição após perda de conexão idempotente.
         result['id'] = str(UUID(str(payload.get('id', ''))))
@@ -244,7 +289,7 @@ def api(request, action='atendimentos'):
 
 @csrf_exempt
 @never_cache
-@require_http_methods(['GET', 'POST'])
+@require_http_methods(['GET', 'POST', 'PATCH'])
 def mobile_api(request, action='atendimentos'):
     """Exceção CSRF restrita a Bearer validado; cookies nunca autenticam esta rota."""
     token = request.headers.get('Authorization', '')
@@ -262,6 +307,29 @@ def mobile_api(request, action='atendimentos'):
         # Não persistir a autenticação Bearer na sessão de navegação Django.
         proxy = copy(request)
         proxy.session = {'user_id': user_id, 'authenticated': True, 'user_profile': profiles[0]}
+        if action == 'exportar-pdf' and request.method == 'GET':
+            from .darpe_atendimentos_exports import build_papeleta_pdf
+            from .darpe import _actor
+
+            if not can_access_module(proxy, MODULE_DARPE):
+                return JsonResponse({'error': 'Acesso DARPE não autorizado.'}, status=403)
+            try:
+                record_id = str(UUID(request.GET.get('id', '')))
+            except (ValueError, TypeError, AttributeError):
+                return JsonResponse({'error': 'Identificador de atendimento inválido.'}, status=400)
+            records = rows(TABLE, {'id': 'eq.' + record_id})
+            if not records or not in_scope(user_scope(proxy), records[0]):
+                return JsonResponse({'error': 'Atendimento não encontrado no seu escopo.'}, status=404)
+            now = datetime.now(ZoneInfo('America/Sao_Paulo'))
+            response = HttpResponse(
+                build_papeleta_pdf(records[0], _actor(proxy)['name'], now),
+                content_type='application/pdf',
+            )
+            filename = f"Papeleta_DARPE_{datetime.strptime(records[0]['data'], '%Y-%m-%d').strftime('%d_%m_%Y')}.pdf"
+            response['Content-Disposition'] = "attachment; filename*=UTF-8''" + quote(filename)
+            response['Cache-Control'] = 'no-store'
+            response['X-Content-Type-Options'] = 'nosniff'
+            return response
         return api(proxy, action)
     except (requests.RequestException, ValueError, KeyError):
         return JsonResponse({'error': 'Não foi possível validar seu acesso.'}, status=503)

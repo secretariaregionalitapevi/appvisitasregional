@@ -197,7 +197,7 @@ def export_audit_excel(request):
         "UPDATE_USER_ACCESS": "Permissões do usuário", "UPDATE_USER_MODULE_ACCESS": "Pastas autorizadas",
         "VIEW_PAGE": "Navegação", "LOGIN": "Login", "LOGOUT": "Logout",
     }
-    module_labels = {"ADMIN": "Usuários e acessos", "NAVIGATION": "Navegação", "AUTH": "Autenticação", "AUDITORIA": "Auditoria"}
+    module_labels = {"ADMIN": "Usuários e acessos", "NAVIGATION": "Navegação", "AUTH": "Autenticação", "AUDITORIA": "Auditoria", "MUSICALIZACAO": "Musicalização"}
 
     def target(log):
         details = log.get("details") or {}

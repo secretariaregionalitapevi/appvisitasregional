@@ -5,10 +5,10 @@ begin;
 -- Não altera nem concede automaticamente permissões dos usuários existentes.
 create table if not exists public.user_module_access (
  id uuid primary key default gen_random_uuid(),
- user_id uuid not null references public.profiles(user_id) on delete cascade,
+ user_id uuid not null,
  module text not null,
  active boolean not null default true,
- granted_by uuid references public.profiles(user_id) on delete set null,
+ granted_by uuid,
  granted_at timestamptz not null default now(),
  revoked_at timestamptz,
  updated_at timestamptz not null default now(),
