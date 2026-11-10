@@ -144,7 +144,14 @@
 </div>
 
 <script>
-const resourceMap={musicalizacao:[{v:'musicalizacao_aulas',l:'Aulas'},{v:'musicalizacao_presenca',l:'Presença'}],darpe:[{v:'darpe_atendimentos',l:'Atendimentos'}],cartas:[{v:'cartas_exames',l:'Cartas'}],visitas:[{v:'visitas_acompanhamentos',l:'Acompanhamentos'}],sam:[{v:'sam_audit_events',l:'Eventos'}],gem:[{v:'gem_classes',l:'Turmas'}]};
+const resourceMap={
+  musicalizacao:[{v:'aulas',l:'Aulas'},{v:'presencas',l:'Presença'}],
+  darpe:[{v:'atendimentos',l:'Atendimentos'}],
+  cartas:[{v:'cartas',l:'Cartas'}],
+  visitas:[{v:'visitas',l:'Visitas'}],
+  sam:[{v:'eventos',l:'Eventos'}],
+  gem:[{v:'aulas',l:'Aulas'}]
+};
 let currentModule='musicalizacao';
 
 document.querySelectorAll('.module-btn').forEach(btn=>{
@@ -173,12 +180,13 @@ function loadData(){
   const tbody=document.getElementById('audit-tbody');
   tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-muted"><i class="fa fa-spinner fa-spin"></i> Carregando…</td></tr>';
   
+  const period=document.getElementById('filter-period').value||'30';
   const params=new URLSearchParams({
     module:currentModule,
     resource:document.getElementById('filter-resource').value,
     action:document.getElementById('filter-action').value,
     operator:document.getElementById('filter-operator').value,
-    period:document.getElementById('filter-period').value
+    period:period
   });
   
   fetch(`/api/auditoria/generic/?${params}`)

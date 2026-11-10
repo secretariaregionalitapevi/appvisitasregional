@@ -99,7 +99,7 @@ def get_audit_modules():
 def api_audit_generic(request, module):
     """API genérica para consultar auditoria de qualquer módulo.
     
-    GET /api/auditoria/generic/?module=musicalizacao&resource=aulas&days=30
+    GET /api/auditoria/generic/?module=musicalizacao&resource=aulas&period=30
     """
     if not can_access_module(request, module):
         return JsonResponse({"error": "Acesso negado a este módulo."}, status=403)
@@ -116,96 +116,97 @@ def api_audit_generic(request, module):
     try:
         resource = request.GET.get('resource', '')
         action = request.GET.get('action', '')
-        actor = request.GET.get('actor', '')
-        days = int(request.GET.get('days', 30))
-        limit = int(request.GET.get('limit', 100))
-        offset = int(request.GET.get('offset', 0))
+        operator = request.GET.get('operator', '')
+        period = int(request.GET.get('period', 30))
         
-        if days < 1 or days > 3650:
-            return JsonResponse({"error": "Dias deve estar entre 1 e 3650."}, status=400)
+        if period < 1 or period > 3650:
+            return JsonResponse({"error": "Período deve estar entre 1 e 3650 dias."}, status=400)
         
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-        results = {}
+        cutoff_date = (datetime.now() - timedelta(days=period)).isoformat()
+        all_records = []
+        unique_operators = set()
         
         # Processar cada recurso do módulo
         for res_name, res_config in config['resources'].items():
             if resource and resource != res_name:
                 continue
             
-            # Montar parâmetros de filtro
-            params = {
-                'select': res_config['select'],
-                'order': 'created_at.desc',
-                'limit': limit,
-                'offset': offset,
-            }
-            
-            # Filtrar por data
-            if 'created_at' in res_config['select']:
-                params['created_at'] = f'gte.{cutoff_date}'
-            
-            # Filtrar por ação
-            if action == 'created':
-                params['created_by_user_id'] = 'not.is.null'
-            elif action == 'updated':
-                params['updated_by_user_id'] = 'not.is.null'
-            
-            # Fazer requisição ao Supabase
-            response = requests.get(
-                f"{settings.SUPABASE_URL}/rest/v1/{res_config['table']}",
-                headers=service_headers(),
-                params=params,
-                timeout=15
-            )
-            response.raise_for_status()
-            rows = response.json()
-            
-            # Filtrar por escopo e ator
-            filtered = []
-            for row in rows:
-                # Verificar escopo (se aplicável)
-                if 'cidade' in row and 'polo' in row:
-                    if not can_access(scope, {'cidade': row.get('cidade'), 'comum': row.get('polo')}):
-                        continue
+            try:
+                # Montar parâmetros de filtro
+                params = {
+                    'select': res_config['select'],
+                    'order': 'created_at.desc',
+                    'limit': '100',
+                }
                 
-                # Filtrar por ator
-                if actor:
-                    creators = [row.get('created_by_name'), row.get('updated_by_name')]
-                    if not any(actor.lower() in (name or '').lower() for name in creators):
-                        continue
+                # Filtrar por data
+                if 'created_at' in res_config['select']:
+                    params['created_at'] = f'gte.{cutoff_date}'
                 
-                # Formatar registro
-                filtered.append({
-                    'resource': res_name,
-                    'id': row.get('id'),
-                    'description': res_config['description'],
-                    'created_by': row.get('created_by_name') or row.get('actor_name_snapshot'),
-                    'created_at': row.get('created_at') or row.get('occurred_at'),
-                    'updated_by': row.get('updated_by_name'),
-                    'updated_at': row.get('updated_at'),
-                })
-            
-            results[res_name] = filtered
+                # Fazer requisição ao Supabase
+                response = requests.get(
+                    f"{settings.SUPABASE_URL}/rest/v1/{res_config['table']}",
+                    headers=service_headers(),
+                    params=params,
+                    timeout=15
+                )
+                response.raise_for_status()
+                rows = response.json()
+                
+                # Filtrar por escopo
+                for row in rows:
+                    # Verificar escopo (se aplicável)
+                    if 'cidade' in row and 'polo' in row:
+                        if not can_access(scope, {'cidade': row.get('cidade'), 'comum': row.get('polo')}):
+                            continue
+                    elif 'cidade' in row:
+                        if not can_access(scope, {'cidade': row.get('cidade')}):
+                            continue
+                    
+                    creator_name = row.get('created_by_name') or row.get('actor_name_snapshot') or 'Sistema'
+                    updater_name = row.get('updated_by_name')
+                    
+                    # Filtrar por operador
+                    if operator:
+                        if operator.lower() not in creator_name.lower() and (not updater_name or operator.lower() not in updater_name.lower()):
+                            continue
+                    
+                    unique_operators.add(creator_name)
+                    if updater_name:
+                        unique_operators.add(updater_name)
+                    
+                    # Filtrar por ação
+                    action_type = 'Criação'
+                    if updater_name and not action:
+                        action_type = 'Atualização'
+                    elif action == 'created':
+                        action_type = 'Criação'
+                    elif action == 'updated':
+                        action_type = 'Atualização'
+                    
+                    # Formatar registro
+                    all_records.append({
+                        'resource': res_config['description'],
+                        'action': action_type,
+                        'created_by': creator_name,
+                        'created_at': row.get('created_at') or row.get('occurred_at'),
+                        'details': f"Registro ID: {row.get('id')}",
+                    })
+            except requests.RequestException:
+                # Falha silenciosa para um recurso, continua com os outros
+                continue
+        
+        # Ordenar por data descendente
+        all_records.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         
         return JsonResponse({
-            "results": results,
-            "module": {
-                "name": module,
-                "display_name": config['display_name'],
-                "icon": config['icon'],
-            },
-            "scope": scope_details(scope),
-            "filters": {
-                "resource": resource,
-                "action": action,
-                "actor": actor,
-                "days": days,
-                "limit": limit,
-                "offset": offset,
-            }
+            "records": all_records,
+            "total_events": len(all_records),
+            "active_operators": len(unique_operators),
+            "scope": "REGIONAL" if scope == "global" else "MUNICIPAL",
         }, status=200)
         
     except ValueError:
         return JsonResponse({"error": "Parâmetros numéricos inválidos."}, status=400)
-    except requests.RequestException as e:
-        return JsonResponse({"error": f"Falha ao consultar auditoria: {str(e)}"}, status=502)
+    except Exception as e:
+        return JsonResponse({"error": f"Erro ao consultar auditoria: {str(e)}"}, status=500)
