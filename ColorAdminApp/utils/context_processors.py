@@ -95,7 +95,7 @@ def sidebar_menu(request):
 	},
 	{ 'url': '/auditoria/', 'icon': 'fa fa-shield-halved', 'title': 'Auditoria', 'name': 'auditCenter',
 		'children': [
-			{ 'url': '/auditoria/modulos/', 'title': 'Dashboard de Módulos', 'name': 'auditModulos', 'highlight': 'true' },
+			{ 'url': '/auditoria/modulos/', 'title': 'Dashboard', 'name': 'auditModulos' },
 			{ 'url': '/auditoria/#pendentes', 'title': 'Liberações' },
 			{ 'url': '/auditoria/#usuarios', 'title': 'Usuários' },
 			{ 'url': '/auditoria/#auditoria', 'title': 'Trilha de Auditoria' },
