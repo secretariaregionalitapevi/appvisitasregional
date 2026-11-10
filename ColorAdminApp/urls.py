@@ -70,6 +70,7 @@ urlpatterns = [
     path('visitas/api/geocode/', views.apiGeocode, name='apiGeocode'),
     path('musicalizacao/', musicalizacao.page, name='musicalizacaoDashboard'),
     path('musicalizacao/api/resumo/', musicalizacao.api_summary, name='musicalizacaoSummary'),
+    path('musicalizacao/api/auditoria/', musicalizacao.api_audit, name='musicalizacaoAudit'),
     path('musicalizacao/api/criancas/exportar-excel/', musicalizacao.export_children_excel, name='musicalizacaoChildrenExport'),
     path('musicalizacao/api/<str:resource>/', musicalizacao.api_resource, name='musicalizacaoResource'),
     path('musicalizacao/api/<str:resource>/<uuid:record_id>/', musicalizacao.api_resource, name='musicalizacaoRecord'),

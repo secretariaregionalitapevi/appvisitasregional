@@ -340,6 +340,8 @@ def _attendance_history():
 def page(request, section="dashboard"):
     if not can_open_module(request):
         return render(request, "pages/403.html", {"message": "Seu perfil não possui acesso à pasta Musicalização."}, status=403)
+    if section == "auditoria":
+        return render(request, "pages/musicalizacao_auditoria.html", {"scope": scope_details(user_scope(request))})
     if section not in {"dashboard", *RESOURCES.keys(), "historico"}:
         section = "dashboard"
     return render(request, "pages/musicalizacao.html", {"section": section, "scope": scope_details(user_scope(request))})
@@ -632,3 +634,138 @@ def api_resource(request, resource, record_id=None):
         return JsonResponse({"error": "JSON inválido."}, status=400)
     except requests.RequestException:
         return JsonResponse({"error": "Falha ao acessar os dados de Musicalização."}, status=502)
+
+
+def api_audit(request):
+    """API para consultar e visualizar auditoria de Musicalização."""
+    if not can_open_module(request):
+        return _denied()
+    if request.method != "GET":
+        return JsonResponse({"error": "Método não permitido."}, status=405)
+    
+    scope = user_scope(request)
+    
+    try:
+        # Parâmetros de filtro
+        resource = request.GET.get('resource', '')  # aulas, presencas, criancas, instrutores, polos
+        action = request.GET.get('action', '')  # created, updated
+        actor = request.GET.get('actor', '')  # nome ou email
+        days = int(request.GET.get('days', 30))  # últimos N dias
+        limit = int(request.GET.get('limit', 100))
+        offset = int(request.GET.get('offset', 0))
+        
+        # Validar recurso
+        valid_resources = {'aulas', 'presencas', 'criancas', 'instrutores', 'polos', ''}
+        if resource not in valid_resources:
+            return JsonResponse({"error": "Recurso inválido."}, status=400)
+        
+        # Data limite
+        from datetime import timedelta
+        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        # Construir filtros para cada recurso
+        filters = {'limit': limit, 'offset': offset, 'order': 'created_at.desc'}
+        
+        results = {}
+        
+        # Consultar auditoria de AULAS
+        if not resource or resource == 'aulas':
+            params = {
+                'select': 'id,data_aula,polo,cidade,created_by_user_id,created_by_name,created_by_email,created_at,updated_by_user_id,updated_by_name,updated_at',
+                'order': 'created_at.desc',
+                'limit': limit,
+                'offset': offset,
+                'created_at': f'gte.{cutoff_date}'
+            }
+            
+            if action == 'created':
+                params['created_by_user_id'] = 'not.is.null'
+            elif action == 'updated':
+                params['updated_by_user_id'] = 'not.is.null'
+            
+            if actor:
+                # Nota: PostgREST não permite OR, então vamos filtrar no Python
+                pass
+            
+            response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_aulas",
+                headers=service_headers(),
+                params=params,
+                timeout=15
+            )
+            response.raise_for_status()
+            aulas = response.json()
+            
+            # Filtrar por scope e ator
+            filtered = []
+            for row in aulas:
+                if not can_access(scope, {'cidade': row.get('cidade'), 'comum': row.get('polo')}):
+                    continue
+                if actor and actor.lower() not in (row.get('created_by_name') or '').lower() and \
+                           actor.lower() not in (row.get('updated_by_name') or '').lower():
+                    continue
+                filtered.append({
+                    'resource': 'aulas',
+                    'id': row.get('id'),
+                    'description': f"Aula em {row.get('data_aula')} - {row.get('polo')} ({row.get('cidade')})",
+                    'created_by': row.get('created_by_name'),
+                    'created_at': row.get('created_at'),
+                    'updated_by': row.get('updated_by_name'),
+                    'updated_at': row.get('updated_at'),
+                })
+            
+            results['aulas'] = filtered
+        
+        # Consultar auditoria de PRESENÇAS
+        if not resource or resource == 'presencas':
+            params = {
+                'select': 'id,aula_id,aluno_id,created_by_user_id,created_by_name,created_by_email,created_at',
+                'order': 'created_at.desc',
+                'limit': limit,
+                'offset': offset,
+                'created_at': f'gte.{cutoff_date}'
+            }
+            
+            if actor:
+                pass
+            
+            response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/musicalizacao_presenca",
+                headers=service_headers(),
+                params=params,
+                timeout=15
+            )
+            response.raise_for_status()
+            presencas = response.json()
+            
+            filtered = []
+            for row in presencas:
+                if actor and actor.lower() not in (row.get('created_by_name') or '').lower():
+                    continue
+                filtered.append({
+                    'resource': 'presencas',
+                    'id': row.get('id'),
+                    'description': f"Presença lançada (aula: {row.get('aula_id')})",
+                    'created_by': row.get('created_by_name'),
+                    'created_at': row.get('created_at'),
+                })
+            
+            results['presencas'] = filtered
+        
+        return JsonResponse({
+            "results": results,
+            "scope": scope_details(scope),
+            "filters": {
+                "resource": resource,
+                "action": action,
+                "actor": actor,
+                "days": days,
+                "limit": limit,
+                "offset": offset
+            }
+        }, status=200)
+        
+    except ValueError:
+        return JsonResponse({"error": "Parâmetros numéricos inválidos."}, status=400)
+    except requests.RequestException:
+        return JsonResponse({"error": "Falha ao consultar auditoria."}, status=502)
