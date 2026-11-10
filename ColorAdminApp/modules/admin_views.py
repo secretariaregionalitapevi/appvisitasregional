@@ -153,7 +153,7 @@ def audit_center(request):
 def audit_center_generic(request):
     """Dashboard centralizado de auditoria para todos os módulos."""
     profile = request.session.get("user_profile") or {}
-    return render(request, "pages/auditoria_centralizada.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
+    return render(request, "pages/auditoria_modulos.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
 
 
 @require_http_methods(["GET"])
