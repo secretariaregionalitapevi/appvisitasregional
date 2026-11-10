@@ -1,250 +1,47 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}Auditoria de Módulos{% endblock %}
 {% block css %}<style>
-.audit-heading{padding:4px 2px}.audit-heading h1{font-size:1.65rem;letter-spacing:-.03em}.audit-kpi,.audit-panel{border:0;border-radius:18px;box-shadow:0 8px 28px #17384d12}.audit-kpi{height:100%;transition:transform .2s}.audit-kpi:hover{transform:translateY(-2px)}.audit-kpi-icon{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:20px}.audit-kpi-value{font-size:1.65rem;font-weight:750;line-height:1}.audit-kpi-label{color:#73808c;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.audit-panel .panel-heading{border-radius:18px 18px 0 0;padding:16px 20px;background:#fff;color:#1d2c38;border-bottom:1px solid #edf0f2}.audit-table thead th{font-size:.72rem;text-transform:uppercase;color:#687581}.filter-section{background:#fff;padding:20px;border-radius:6px;box-shadow:0 2px 10px #0000000d;margin-bottom:20px}.filter-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;width:100%}.filter-actions .btn{min-height:36px;white-space:nowrap;border-radius:5px!important;padding-left:11px;padding-right:11px}.filter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px}.filter-row select,.filter-row input{border-radius:5px;border:1px solid #d5dbe0;font-size:.86rem}.module-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 20px 0;padding-bottom:12px;border-bottom:1px solid #e9edf2}.module-btn{padding:8px 14px;border:2px solid #e5eaf0;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;transition:all .2s;font-size:.86rem;box-shadow:0 2px 6px #0000000a}.module-btn:hover{border-color:#0d7377;background:#f0fffe}.module-btn.active{border-color:#0d7377;background:#e0f7f6;color:#0d7377}.module-btn i{margin-right:6px}.premium-stat{position:relative;min-height:190px;border:1px solid #e9edf2;border-radius:20px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 34px #28374a12;overflow:hidden}.premium-stat:after{content:'';position:absolute;width:120px;height:120px;border-radius:50%;right:-55px;top:-55px;background:var(--tint)}.premium-stat .card-body{position:relative;z-index:1;padding:20px}.premium-top{display:flex;justify-content:space-between;align-items:flex-start}.premium-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:var(--tint)}.premium-title{font-size:.72rem;font-weight:700;color:#677481;text-transform:uppercase;letter-spacing:.055em}.premium-value{font-size:2rem;line-height:1;font-weight:750;color:#202a35;margin-top:12px}.premium-context{font-size:.71rem;color:#87919b;margin-top:6px}.mini-bars{height:42px;display:flex;align-items:flex-end;gap:5px;margin-top:17px}.mini-bars i{display:block;flex:1;min-width:5px;height:var(--h);border-radius:5px 5px 2px 2px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 55%,white));opacity:.9}.audit-badge{display:inline-block;padding:3px 8px;border-radius:8px;font-size:.66rem;font-weight:700;text-transform:uppercase}.badge-musicalizacao{background:#e8f8f4;color:#087d69}.badge-darpe{background:#fff3e0;color:#e65100}.badge-cartas{background:#fce4ec;color:#c2185b}.badge-visitas{background:#e1f5fe;color:#0277bd}.badge-sam{background:#f3e5f5;color:#7b1fa2}.badge-gem{background:#ebf5ff;color:#0050b3}.export-actions{display:flex;gap:8px;align-items:center}.export-actions .btn{min-height:36px;padding:7px 13px;font-size:.85rem;border-radius:5px!important}@media(max-width:1199.98px){.filter-actions{justify-content:flex-start;padding-top:14px;margin-top:2px;border-top:1px solid #e9ecef}}@media(max-width:575.98px){.filter-section{padding:14px!important}.filter-row{grid-template-columns:1fr}.filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.filter-actions .btn{width:100%}.filter-actions .btn-primary{grid-column:1/-1}}
+.audit-hero{background:linear-gradient(135deg,#0d7377 0,#16a89a 100%);padding:20px 0;border-radius:12px;margin-bottom:20px;position:relative;overflow:hidden}.audit-hero:before{content:'';position:absolute;top:-40%;right:-10%;width:300px;height:300px;background:rgba(255,255,255,.05);border-radius:50%}.audit-hero-content{position:relative;z-index:1}.audit-hero .eyebrow{color:rgba(255,255,255,.7);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}.audit-hero h1{color:#fff;font-size:2rem;font-weight:800;margin-bottom:8px;line-height:1.2}.audit-hero p{color:rgba(255,255,255,.9);font-size:.95rem;margin-bottom:0}.audit-scope{text-align:right;color:rgba(255,255,255,.8);font-size:.85rem}.audit-scope strong{color:#fff;display:block;font-size:1rem;margin-top:4px}.filter-section{background:#fff;padding:20px;border-radius:6px;box-shadow:0 2px 10px #0000000d;margin-bottom:20px}.filter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px}.filter-row select,.filter-row input{border:1px solid #d5dbe0;border-radius:5px;font-size:.9rem;padding:8px 10px}.filter-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.filter-actions .btn{min-height:36px;border-radius:5px;padding:7px 13px;font-size:.85rem;white-space:nowrap}.filter-actions .btn-primary{min-width:120px}.vision-header{color:#687581;font-size:.8rem;text-transform:uppercase;font-weight:700;letter-spacing:.08em;margin:24px 0 16px 0}.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px}.premium-stat{position:relative;min-height:160px;border:1px solid #e9edf2;border-radius:18px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 34px #28374a12;overflow:hidden}.premium-stat:after{content:'';position:absolute;width:100px;height:100px;border-radius:50%;right:-50px;top:-50px;background:var(--tint)}.premium-stat .card-body{position:relative;z-index:1;padding:18px}.premium-top{display:flex;justify-content:space-between;align-items:flex-start}.premium-icon{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:var(--tint)}.premium-title{font-size:.7rem;font-weight:700;color:#677481;text-transform:uppercase;letter-spacing:.06em}.premium-value{font-size:1.8rem;line-height:1;font-weight:750;color:#202a35;margin-top:10px}.premium-context{font-size:.68rem;color:#87919b;margin-top:5px}.mini-bars{height:36px;display:flex;align-items:flex-end;gap:4px;margin-top:12px}.mini-bars i{display:block;flex:1;height:var(--h);border-radius:4px 4px 2px 2px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 60%,white));opacity:.85}.audit-panel{border:0;border-radius:16px;box-shadow:0 8px 28px #17384d12}.audit-panel .panel-heading{border-radius:16px 16px 0 0;padding:16px 20px;background:#fff;color:#1d2c38;border-bottom:1px solid #edf0f2;display:flex;justify-content:space-between;align-items:center}.audit-panel .panel-heading h4{margin:0;font-size:.95rem}.audit-table thead th{font-size:.7rem;text-transform:uppercase;color:#687581;font-weight:700;border-color:#edf0f2}.audit-table tbody td{font-size:.9rem;vertical-align:middle;border-color:#f5f7f9}.audit-badge{display:inline-block;padding:4px 9px;border-radius:6px;font-size:.65rem;font-weight:700;text-transform:uppercase}.badge-musicalizacao{background:#e8f8f4;color:#087d69}.badge-darpe{background:#fff3e0;color:#e65100}.badge-cartas{background:#fce4ec;color:#c2185b}.badge-visitas{background:#e1f5fe;color:#0277bd}.badge-sam{background:#f3e5f5;color:#7b1fa2}.badge-gem{background:#ebf5ff;color:#0050b3}.pagination-section{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid #edf0f2;margin-top:12px;font-size:.85rem;color:#7a8791}.pagination-info{flex:0}.pagination-buttons{flex:1;display:flex;gap:6px;justify-content:flex-end}.pagination-buttons button{min-height:32px;padding:5px 11px;border:1px solid #d5dbe0;background:#fff;border-radius:4px;cursor:pointer;font-size:.85rem}.pagination-buttons button:disabled{opacity:.5;cursor:not-allowed}.pagination-buttons button:hover:not(:disabled){background:#f5f7f9}.pagination-buttons button.active{background:#0d7377;color:#fff;border-color:#0d7377}@media(max-width:1199.98px){.filter-row{grid-template-columns:repeat(2,1fr)}}@media(max-width:575.98px){.filter-row{grid-template-columns:1fr}.filter-actions{grid-template-columns:repeat(2,1fr)}.filter-actions .btn-primary{grid-column:1/-1}.kpi-grid{grid-template-columns:1fr}.audit-hero h1{font-size:1.5rem}.audit-hero p{font-size:.9rem}}
 </style>
 {% endblock %}
-
 {% block content %}
-<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item"><a href="/auditoria/">Auditoria</a></li><li class="breadcrumb-item active">Módulos</li></ol>
+<ol class="breadcrumb float-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item"><a href="/auditoria/">Auditoria</a></li><li class="breadcrumb-item active">Auditoria de Módulos</li></ol>
 
-<div class="audit-heading mb-4">
-  <h1>Auditoria de Módulos
-    <small>Rastreamento centralizado de operações em todos os módulos</small>
-  </h1>
-</div>
+<div class="audit-hero"><div class="row align-items-center"><div class="col-md audit-hero-content"><div class="eyebrow">Trilha de auditoria</div><h1 class="fw-bold">Auditoria de Módulos</h1><p>Rastreamento centralizado de operações realizadas em todos os módulos educacionais. Acompanhe criações, atualizações e exclusões com detalhes de data, operador e localização.</p></div><div class="col-md-auto"><div class="audit-scope">Escopo desta visão<strong id="header-scope">REGIONAL</strong></div></div></div></div>
 
-<div class="module-tabs">
-  <button class="module-btn active" data-module="musicalizacao"><i class="fa fa-music"></i>Musicalização</button>
-  <button class="module-btn" data-module="darpe"><i class="fa fa-handshake"></i>DARPE</button>
-  <button class="module-btn" data-module="cartas"><i class="fa fa-envelope"></i>Cartas</button>
-  <button class="module-btn" data-module="visitas"><i class="fa fa-person-hiking"></i>Visitas</button>
-  <button class="module-btn" data-module="sam"><i class="fa fa-graduation-cap"></i>SAM</button>
-  <button class="module-btn" data-module="gem"><i class="fa fa-book"></i>GEM</button>
-</div>
+<div class="filter-section"><div class="row g-2"><div class="col-12 col-lg-2"><label class="form-label fw-bold text-muted text-uppercase mb-2" style="font-size:.75rem">Módulo</label><select id="filter-module" class="form-select"><option value="musicalizacao">Musicalização</option><option value="darpe">DARPE</option><option value="cartas">Cartas</option><option value="visitas">Visitas</option><option value="sam">SAM</option><option value="gem">GEM</option></select></div><div class="col-12 col-lg-2"><label class="form-label fw-bold text-muted text-uppercase mb-2" style="font-size:.75rem">Recurso</label><select id="filter-resource" class="form-select"><option value="">Todos</option></select></div><div class="col-12 col-lg-2"><label class="form-label fw-bold text-muted text-uppercase mb-2" style="font-size:.75rem">Ação</label><select id="filter-action" class="form-select"><option value="">Todas</option><option value="CREATE">Criar</option><option value="UPDATE">Atualizar</option><option value="DELETE">Deletar</option></select></div><div class="col-12 col-lg-3"><label class="form-label fw-bold text-muted text-uppercase mb-2" style="font-size:.75rem">Operador</label><input type="text" id="filter-operator" class="form-control" placeholder="Nome ou email..."></div><div class="col-12 col-lg-3"><label class="form-label fw-bold text-muted text-uppercase mb-2" style="font-size:.75rem">Período</label><select id="filter-period" class="form-select"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="0">Todos os registros</option></select></div></div><div class="filter-actions mt-3"><button type="button" id="btn-search" class="btn btn-primary"><i class="fa fa-search me-1"></i>Buscar</button><button type="button" id="btn-export-excel" class="btn btn-white border" style="border:1px solid #d5dbe0"><i class="fa fa-file-excel text-success me-1"></i>Excel</button><button type="button" id="btn-export-pdf" class="btn btn-white border" style="border:1px solid #d5dbe0"><i class="fa fa-file-pdf text-danger me-1"></i>PDF</button><button type="button" id="btn-clear" class="btn btn-white border" style="border:1px solid #d5dbe0"><i class="fa fa-eraser me-1"></i>Limpar</button></div></div>
 
-<div class="row g-3 mb-4">
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#00acac;--tint:#e8f8f4">
-      <div class="card-body">
-        <div class="premium-top">
-          <span class="premium-title">Total de Eventos</span>
-          <div class="premium-icon"><i class="fa fa-chart-line"></i></div>
-        </div>
-        <div class="premium-value" id="kpi-total">0</div>
-        <div class="premium-context">últimos 30 dias</div>
-        <div class="mini-bars"><i style="--h:30%"></i><i style="--h:55%"></i><i style="--h:40%"></i><i style="--h:70%"></i><i style="--h:45%"></i></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#6c5ce7;--tint:#f7f5ff">
-      <div class="card-body">
-        <div class="premium-top">
-          <span class="premium-title">Operadores Ativos</span>
-          <div class="premium-icon"><i class="fa fa-users"></i></div>
-        </div>
-        <div class="premium-value" id="kpi-operators">0</div>
-        <div class="premium-context">realizaram alterações</div>
-        <div class="mini-bars"><i style="--h:50%"></i><i style="--h:35%"></i><i style="--h:65%"></i><i style="--h:42%"></i><i style="--h:58%"></i></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#f59e0b;--tint:#fef3f2">
-      <div class="card-body">
-        <div class="premium-top">
-          <span class="premium-title">Período</span>
-          <div class="premium-icon"><i class="fa fa-calendar"></i></div>
-        </div>
-        <div class="premium-value" id="kpi-period">30</div>
-        <div class="premium-context">dias selecionados</div>
-        <div class="mini-bars"><i style="--h:45%"></i><i style="--h:60%"></i><i style="--h:50%"></i><i style="--h:75%"></i><i style="--h:40%"></i></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#0891b2;--tint:#ecfdf5">
-      <div class="card-body">
-        <div class="premium-top">
-          <span class="premium-title">Seu Escopo</span>
-          <div class="premium-icon"><i class="fa fa-shield-alt"></i></div>
-        </div>
-        <div class="premium-value" id="kpi-scope">REGIONAL</div>
-        <div class="premium-context">visualiza todos os dados</div>
-        <div class="mini-bars"><i style="--h:100%"></i><i style="--h:85%"></i><i style="--h:95%"></i><i style="--h:80%"></i><i style="--h:90%"></i></div>
-      </div>
-    </div>
-  </div>
-</div>
+<div class="vision-header">O que está acontecendo agora</div>
 
-<div class="filter-section">
-  <div class="row g-3 align-items-end">
-    <div class="col-12 col-lg-2">
-      <label class="form-label fw-bold text-muted text-uppercase mb-1" style="font-size:.75rem">Tipo de Registro</label>
-      <select id="filter-resource" class="form-select border-gray-300 shadow-none">
-        <option value="">Todos</option>
-      </select>
-    </div>
-    <div class="col-12 col-lg-2">
-      <label class="form-label fw-bold text-muted text-uppercase mb-1" style="font-size:.75rem">Ação</label>
-      <select id="filter-action" class="form-select border-gray-300 shadow-none">
-        <option value="">Todas</option>
-        <option value="CREATE">Criar</option>
-        <option value="UPDATE">Atualizar</option>
-        <option value="DELETE">Deletar</option>
-      </select>
-    </div>
-    <div class="col-12 col-lg-3">
-      <label class="form-label fw-bold text-muted text-uppercase mb-1" style="font-size:.75rem">Operador</label>
-      <input type="text" id="filter-operator" class="form-control border-gray-300 shadow-none" placeholder="Nome parcial...">
-    </div>
-    <div class="col-12 col-lg-2">
-      <label class="form-label fw-bold text-muted text-uppercase mb-1" style="font-size:.75rem">Período</label>
-      <select id="filter-period" class="form-select border-gray-300 shadow-none">
-        <option value="30">Últimos 30 dias</option>
-        <option value="7">Últimos 7 dias</option>
-        <option value="1">Hoje</option>
-        <option value="0">Todos</option>
-      </select>
-    </div>
-    <div class="col-12 col-lg-3">
-      <div class="export-actions">
-        <button type="button" id="btn-search" class="btn btn-primary"><i class="fa fa-search me-1"></i>Buscar</button>
-        <button type="button" id="btn-export-excel" class="btn btn-white border-gray-400"><i class="fa fa-file-excel text-success me-1"></i>Excel</button>
-        <button type="button" id="btn-clear" class="btn btn-white border-gray-400"><i class="fa fa-eraser text-dark me-1"></i>Limpar</button>
-      </div>
-    </div>
-  </div>
-</div>
+<div class="kpi-grid"><div class="card premium-stat" style="--accent:#00acac;--tint:#e8f8f4"><div class="card-body"><div class="premium-top"><span class="premium-title">Total de Eventos</span><div class="premium-icon"><i class="fa fa-chart-line"></i></div></div><div class="premium-value" id="kpi-total">0</div><div class="premium-context">período selecionado</div><div class="mini-bars"><i style="--h:30%"></i><i style="--h:55%"></i><i style="--h:40%"></i><i style="--h:70%"></i><i style="--h:45%"></i></div></div></div><div class="card premium-stat" style="--accent:#6c5ce7;--tint:#f7f5ff"><div class="card-body"><div class="premium-top"><span class="premium-title">Operadores Ativos</span><div class="premium-icon"><i class="fa fa-users"></i></div></div><div class="premium-value" id="kpi-operators">0</div><div class="premium-context">realizaram alterações</div><div class="mini-bars"><i style="--h:50%"></i><i style="--h:35%"></i><i style="--h:65%"></i><i style="--h:42%"></i><i style="--h:58%"></i></div></div></div><div class="card premium-stat" style="--accent:#f59e0b;--tint:#fef3f2"><div class="card-body"><div class="premium-top"><span class="premium-title">Criações</span><div class="premium-icon"><i class="fa fa-plus-circle"></i></div></div><div class="premium-value" id="kpi-creates">0</div><div class="premium-context">novos registros</div><div class="mini-bars"><i style="--h:45%"></i><i style="--h:60%"></i><i style="--h:50%"></i><i style="--h:75%"></i><i style="--h:40%"></i></div></div></div><div class="card premium-stat" style="--accent:#0891b2;--tint:#ecfdf5"><div class="card-body"><div class="premium-top"><span class="premium-title">Atualizações</span><div class="premium-icon"><i class="fa fa-pen-to-square"></i></div></div><div class="premium-value" id="kpi-updates">0</div><div class="premium-context">registros modificados</div><div class="mini-bars"><i style="--h:35%"></i><i style="--h:58%"></i><i style="--h:42%"></i><i style="--h:68%"></i><i style="--h:50%"></i></div></div></div></div>
 
-<div class="panel audit-panel">
-  <div class="panel-heading">
-    <h4 class="panel-title fw-bold">Eventos de auditoria</h4>
-    <span class="badge bg-secondary" id="record-count">0 registros</span>
-  </div>
-  <div class="panel-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover mb-0 audit-table">
-        <thead>
-          <tr>
-            <th>Tipo</th>
-            <th>Ação</th>
-            <th>Operador</th>
-            <th>Data/Hora</th>
-            <th>Detalhes</th>
-          </tr>
-        </thead>
-        <tbody id="audit-tbody">
-          <tr><td colspan="5" class="py-4 text-center text-muted">Carregando…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+<div class="panel audit-panel"><div class="panel-heading"><h4 class="panel-title fw-bold">Eventos de auditoria</h4><span class="badge bg-light text-dark" id="record-count">0 registros</span></div><div class="panel-body p-0"><div class="table-responsive"><table class="table table-hover mb-0 audit-table"><thead><tr><th>Tipo</th><th>Ação</th><th>Operador</th><th>Data/Hora</th><th>Localização</th></tr></thead><tbody id="audit-tbody"><tr><td colspan="5" class="py-4 text-center text-muted">Clique em "Buscar" para carregar eventos</td></tr></tbody></table></div></div><div class="pagination-section"><div class="pagination-info">Página <span id="current-page">1</span> de <span id="total-pages">1</span> | <span id="page-info">0 de 0 registros</span></div><div class="pagination-buttons"><button id="btn-prev" onclick="prevPage()" disabled>← Anterior</button><span id="page-numbers"></span><button id="btn-next" onclick="nextPage()">Próxima →</button></div></div></div>
 
 <script>
-const resourceMap={
-  musicalizacao:[{v:'aulas',l:'Aulas'},{v:'presencas',l:'Presença'}],
-  darpe:[{v:'atendimentos',l:'Atendimentos'}],
-  cartas:[{v:'cartas',l:'Cartas'}],
-  visitas:[{v:'visitas',l:'Visitas'}],
-  sam:[{v:'eventos',l:'Eventos'}],
-  gem:[{v:'aulas',l:'Aulas'}]
-};
-let currentModule='musicalizacao';
+const resourceMap={musicalizacao:[{v:'aulas',l:'Aulas'},{v:'presencas',l:'Presença'}],darpe:[{v:'atendimentos',l:'Atendimentos'}],cartas:[{v:'cartas',l:'Cartas'}],visitas:[{v:'visitas',l:'Visitas'}],sam:[{v:'eventos',l:'Eventos'}],gem:[{v:'aulas',l:'Aulas'}]};
+let currentModule='musicalizacao',currentPage=1,totalPages=1,allRecords=[],pageSize=10;
 
-document.querySelectorAll('.module-btn').forEach(btn=>{
-  btn.addEventListener('click',function(){
-    document.querySelectorAll('.module-btn').forEach(b=>b.classList.remove('active'));
-    this.classList.add('active');
-    currentModule=this.dataset.module;
-    updateResources();
-    loadData();
-  });
-});
+function updateResources(){const resources=resourceMap[currentModule]||[];const select=document.getElementById('filter-resource');select.innerHTML='<option value="">Todos</option>';resources.forEach(r=>{const opt=document.createElement('option');opt.value=r.v;opt.textContent=r.l;select.appendChild(opt);});}
 
-function updateResources(){
-  const select=document.getElementById('filter-resource');
-  const resources=resourceMap[currentModule]||[];
-  select.innerHTML='<option value="">Todos</option>';
-  resources.forEach(r=>{
-    const opt=document.createElement('option');
-    opt.value=r.v;
-    opt.textContent=r.l;
-    select.appendChild(opt);
-  });
-}
+document.getElementById('filter-module').addEventListener('change',function(){currentModule=this.value;currentPage=1;updateResources();});
 
-function loadData(){
-  const tbody=document.getElementById('audit-tbody');
-  tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-muted"><i class="fa fa-spinner fa-spin"></i> Carregando…</td></tr>';
-  
-  const period=document.getElementById('filter-period').value||'30';
-  const params=new URLSearchParams({
-    module:currentModule,
-    resource:document.getElementById('filter-resource').value,
-    action:document.getElementById('filter-action').value,
-    operator:document.getElementById('filter-operator').value,
-    period:period
-  });
-  
-  fetch(`/api/auditoria/generic/?${params}`)
-    .then(r=>r.json())
-    .then(data=>{
-      tbody.innerHTML='';
-      const badgeClass='badge-'+currentModule;
-      (data.records||[]).forEach(record=>{
-        const row=document.createElement('tr');
-        const date=new Date(record.created_at);
-        const dateStr=date.toLocaleDateString('pt-BR')+' '+date.toLocaleTimeString('pt-BR');
-        row.innerHTML=`
-          <td><span class="audit-badge ${badgeClass}">${record.resource||'-'}</span></td>
-          <td><strong>${record.action||'-'}</strong></td>
-          <td>${record.created_by||'Sistema'}</td>
-          <td><small>${record.created_at?dateStr:'-'}</small></td>
-          <td><small>${record.details||'-'}</small></td>
-        `;
-        tbody.appendChild(row);
-      });
-      
-      if((data.records||[]).length===0){
-        tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-muted">Nenhum evento encontrado</td></tr>';
-      }
-      
-      document.getElementById('record-count').textContent=(data.records||[]).length+' registros';
-      document.getElementById('kpi-total').textContent=data.total_events||0;
-      document.getElementById('kpi-operators').textContent=data.active_operators||0;
-      document.getElementById('kpi-scope').textContent=(data.scope||'REGIONAL');
-    })
-    .catch(e=>{
-      console.error(e);
-      tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-danger"><i class="fa fa-exclamation-triangle"></i> Erro ao carregar dados</td></tr>';
-    });
-}
+function loadData(){const tbody=document.getElementById('audit-tbody');tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-muted"><i class="fa fa-spinner fa-spin"></i> Carregando…</td></tr>';const params=new URLSearchParams({module:currentModule,resource:document.getElementById('filter-resource').value,action:document.getElementById('filter-action').value,operator:document.getElementById('filter-operator').value,period:document.getElementById('filter-period').value});fetch(`/api/auditoria/generic/?${params}`).then(r=>r.json()).then(data=>{allRecords=data.records||[];renderPage(1);document.getElementById('kpi-total').textContent=data.total_events||0;document.getElementById('kpi-operators').textContent=data.active_operators||0;document.getElementById('header-scope').textContent=data.scope||'REGIONAL';const creates=allRecords.filter(r=>r.action==='Criação').length;const updates=allRecords.filter(r=>r.action==='Atualização').length;document.getElementById('kpi-creates').textContent=creates;document.getElementById('kpi-updates').textContent=updates;}).catch(e=>{console.error(e);tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-danger"><i class="fa fa-exclamation-triangle"></i> Erro ao carregar</td></tr>';});}
 
-document.getElementById('btn-search').addEventListener('click',loadData);
-document.getElementById('btn-clear').addEventListener('click',()=>{
-  document.getElementById('filter-resource').value='';
-  document.getElementById('filter-action').value='';
-  document.getElementById('filter-operator').value='';
-  document.getElementById('filter-period').value='30';
-  loadData();
-});
+function renderPage(page){const tbody=document.getElementById('audit-tbody');tbody.innerHTML='';if(allRecords.length===0){tbody.innerHTML='<tr><td colspan="5" class="py-4 text-center text-muted">Nenhum evento encontrado</td></tr>';document.getElementById('total-pages').textContent='1';document.getElementById('record-count').textContent='0 registros';updatePagination();return;}
+totalPages=Math.ceil(allRecords.length/pageSize);const start=(page-1)*pageSize;const end=Math.min(start+pageSize,allRecords.length);const pageRecords=allRecords.slice(start,end);const badgeClass='badge-'+currentModule;pageRecords.forEach(record=>{const row=document.createElement('tr');const date=new Date(record.created_at);const dateStr=date.toLocaleDateString('pt-BR')+' '+date.toLocaleTimeString('pt-BR');row.innerHTML=`<td><span class="audit-badge ${badgeClass}">${record.resource||'-'}</span></td><td><strong>${record.action||'-'}</strong></td><td>${record.created_by||'Sistema'}</td><td><small>${record.created_at?dateStr:'-'}</small></td><td><small>${record.details||'-'}</small></td>`;tbody.appendChild(row);});document.getElementById('total-pages').textContent=totalPages;document.getElementById('current-page').textContent=page;document.getElementById('page-info').textContent=`${start+1} a ${end} de ${allRecords.length}`;document.getElementById('record-count').textContent=allRecords.length+' registros';updatePagination();currentPage=page;}
 
-document.getElementById('btn-export-excel').addEventListener('click',()=>{
-  const data=Array.from(document.querySelectorAll('#audit-tbody tr')).map(row=>{
-    return Array.from(row.querySelectorAll('td')).map(td=>td.textContent.trim());
-  });
-  const headers=['Tipo','Ação','Operador','Data/Hora','Detalhes'];
-  const csv='\ufeff'+[headers,...data].map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('\r\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='Auditoria_'+currentModule+'_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
+function updatePagination(){document.getElementById('btn-prev').disabled=currentPage===1;document.getElementById('btn-next').disabled=currentPage===totalPages;let numbers='';for(let i=1;i<=Math.min(totalPages,5);i++){numbers+=`<button ${i===currentPage?'class="active"':''}onclick="renderPage(${i})">${i}</button>`;}if(totalPages>5)numbers+='<span>…</span>';document.getElementById('page-numbers').innerHTML=numbers;}
+
+function nextPage(){if(currentPage<totalPages)renderPage(currentPage+1);}
+function prevPage(){if(currentPage>1)renderPage(currentPage-1);}
+
+document.getElementById('btn-search').addEventListener('click',()=>{currentPage=1;loadData();});
+
+document.getElementById('btn-clear').addEventListener('click',()=>{document.getElementById('filter-resource').value='';document.getElementById('filter-action').value='';document.getElementById('filter-operator').value='';document.getElementById('filter-period').value='30';currentPage=1;loadData();});
+
+document.getElementById('btn-export-excel').addEventListener('click',()=>{const headers=['Tipo','Ação','Operador','Data/Hora','Localização'];const data=allRecords.map(r=>[r.resource||'-',r.action||'-',r.created_by||'Sistema',new Date(r.created_at).toLocaleString('pt-BR'),r.details||'-']);const csv='\ufeff'+[headers,...data].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Auditoria_'+currentModule+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(a.href);});
+
+document.getElementById('btn-export-pdf').addEventListener('click',()=>{const title='AUDITORIA DE '+currentModule.toUpperCase();const content=document.querySelector('.audit-panel').outerHTML;const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial;font-size:11px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px;text-align:left}</style></head><body><h1>${title}</h1><p>Gerado em ${new Date().toLocaleString('pt-BR')}</p>${content}</body></html>`;const w=window.open('','','width=800,height=600');w.document.write(html);w.print();w.close();});
 
 updateResources();
 loadData();
