@@ -1,61 +1,58 @@
 {% extends 'base.html' %}{% load static %}
 {% block title %}Auditoria de Módulos{% endblock %}
 {% block css %}
-<link href="{% static 'plugins/apexcharts/dist/apexcharts.css' %}" rel="stylesheet">
 <style>
-.audit-heading{padding:4px 2px}.audit-heading h1{font-size:1.65rem;letter-spacing:-.03em}.audit-kpi,.audit-panel{border:0;border-radius:18px;box-shadow:0 8px 28px #17384d12}.audit-kpi{height:100%;transition:transform .2s}.audit-kpi:hover{transform:translateY(-2px)}.audit-kpi-icon{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-size:20px}.audit-kpi-value{font-size:1.65rem;font-weight:750;line-height:1}.audit-kpi-label{color:#73808c;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}.audit-panel .panel-heading{border-radius:18px 18px 0 0;padding:16px 20px;background:#fff;color:#1d2c38;border-bottom:1px solid #edf0f2}.audit-filter{background:#fff;padding:20px;border-radius:6px;box-shadow:0 2px 10px #0000000d;margin-bottom:20px}.audit-filter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:15px}.audit-filter-row.actions{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));justify-items:end;margin-bottom:0}.audit-table{font-size:.85rem}.audit-table thead th{font-size:.72rem;text-transform:uppercase;color:#687581;font-weight:700}.audit-table tbody tr{border-bottom:1px solid #edf0f2}.audit-table tbody tr:hover{background:#f9fbfd}.audit-actor{font-weight:600;color:#1d2c38}.audit-date{color:#7a8792;font-size:.75rem}.audit-resource-badge{display:inline-block;padding:3px 8px;border-radius:12px;font-size:.65rem;font-weight:700;text-transform:uppercase}.audit-resource-aulas{background:#e8f8f4;color:#087d69}.audit-resource-presencas{background:#fef3f2;color:#c53030}.audit-resource-atendimentos{background:#fff3e0;color:#e65100}.audit-resource-cartas{background:#fce4ec;color:#c2185b}.audit-resource-apontamentos{background:#e1f5fe;color:#0277bd}.audit-resource-eventos{background:#f3e5f5;color:#7b1fa2}.audit-resource-default{background:#ebf5ff;color:#0050b3}.audit-empty{text-align:center;padding:40px 20px;color:#7a8792}.audit-empty i{font-size:3rem;color:#d5dbe0;margin-bottom:12px;display:block}.audit-loading{text-align:center;padding:20px}.audit-loading .spinner-border{width:2rem;height:2rem}.module-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;justify-content:center}.module-btn{padding:10px 18px;border:2px solid #e5eaf0;border-radius:10px;background:#fff;cursor:pointer;font-weight:600;transition:all .2s;font-size:.88rem;box-shadow:0 2px 8px #0000000a}.module-btn:hover{border-color:#687581;background:#f9fbfc}.module-btn.active{border-color:#0066cc;background:#ebf5ff;color:#0050b3;box-shadow:0 4px 12px #0066cc22}.module-btn i{margin-right:7px;font-size:1rem}.section-card{border-radius:14px;border:1px solid #e8edf1;background:#fff;box-shadow:0 4px 16px #17384d08;margin-bottom:20px}.section-card .section-header{border-radius:14px 14px 0 0;padding:16px 20px;background:#f9fbfc;border-bottom:1px solid #edf0f2;display:flex;align-items:center;justify-content:space-between}.section-card .section-header i{font-size:1.1rem;color:#687581;margin-right:10px}.section-card .section-body{padding:20px}@media(max-width:575.98px){.audit-filter-row{grid-template-columns:1fr}.audit-filter-row.actions{grid-template-columns:repeat(2,1fr)}.module-selector{justify-content:flex-start;overflow-x:auto;padding-bottom:8px}.audit-table{font-size:.75rem}}
-.premium-stat{position:relative;min-height:140px;border:1px solid #e9edf2;border-radius:20px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 34px #28374a12;overflow:hidden}.premium-stat:after{content:'';position:absolute;width:100px;height:100px;border-radius:50%;right:-45px;top:-45px;background:var(--tint)}.premium-stat .card-body{position:relative;z-index:1;padding:18px}.premium-top{display:flex;justify-content:space-between;align-items:flex-start}.premium-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:var(--tint)}.premium-title{font-size:.72rem;font-weight:700;color:#677481;text-transform:uppercase;letter-spacing:.055em}.premium-value{font-size:1.85rem;line-height:1;font-weight:750;color:#202a35;margin-top:10px}.premium-context{font-size:.71rem;color:#87919b;margin-top:6px}.mini-bars{height:36px;display:flex;align-items:flex-end;gap:4px;margin-top:12px}.mini-bars i{display:block;flex:1;min-width:4px;height:var(--h);border-radius:5px 5px 2px 2px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 55%,white));opacity:.9}
+.audit-header-banner{background:linear-gradient(135deg,#0d7377 0%,#14919b 50%,#00a8a8 100%);color:#fff;padding:28px 24px;border-radius:18px;margin-bottom:24px;box-shadow:0 8px 24px #0d737712}.audit-header-banner h1{font-size:1.85rem;font-weight:750;margin:0;letter-spacing:-.02em}.audit-header-banner p{color:#e0f7f6;font-size:.92rem;margin:8px 0 0 0}.module-selector{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0;justify-content:flex-start;padding-bottom:8px}.module-btn{padding:10px 16px;border:2px solid #e5eaf0;border-radius:12px;background:#fff;cursor:pointer;font-weight:600;transition:all .3s ease;font-size:.86rem;box-shadow:0 2px 8px #0000000a;align-items:center;gap:8px;display:inline-flex}.module-btn:hover{border-color:#0d7377;background:#f0fffe;color:#0d7377}.module-btn.active{border-color:#0d7377;background:#e0f7f6;color:#0d7377;box-shadow:0 4px 16px #0d737730}.module-btn i{font-size:1rem}.premium-stat{position:relative;min-height:180px;border:1px solid #e9edf2;border-radius:18px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 32px #17384d0f;overflow:hidden}.premium-stat:after{content:'';position:absolute;width:110px;height:110px;border-radius:50%;right:-50px;top:-50px;background:var(--tint)}.premium-stat .card-body{position:relative;z-index:1;padding:20px}.premium-top{display:flex;justify-content:space-between;align-items:flex-start}.premium-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;color:var(--accent);background:var(--tint);font-size:1.1rem}.premium-title{font-size:.73rem;font-weight:700;color:#677481;text-transform:uppercase;letter-spacing:.058em}.premium-value{font-size:2.1rem;line-height:1.1;font-weight:800;color:#202a35;margin-top:12px}.premium-context{font-size:.70rem;color:#87919b;margin-top:7px}.mini-bars{height:42px;display:flex;align-items:flex-end;gap:5px;margin-top:15px}.mini-bars i{display:block;flex:1;min-width:5px;height:var(--h);border-radius:6px 6px 3px 3px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 50%,white));opacity:.85}.filter-section{background:#fff;padding:20px;border-radius:12px;border:1px solid #e8edf1;box-shadow:0 4px 12px #0000000a;margin-top:20px}.filter-section .section-header{padding:0 0 16px 0;border-bottom:1px solid #edf0f2;display:flex;align-items:center;gap:10px;font-weight:700;color:#202a35;font-size:1rem}.filter-section .section-header i{font-size:.95rem;color:#0d7377}.filter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px}.filter-row .form-select,.filter-row .form-control{border-radius:8px;border:1px solid #d5dbe0;font-size:.88rem}.filter-actions{display:flex;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid #edf0f2}.filter-actions .btn{border-radius:8px;padding:8px 18px;font-size:.86rem;font-weight:600}.audit-table{font-size:.82rem}.audit-table thead th{font-size:.71rem;font-weight:700;text-transform:uppercase;color:#677581;letter-spacing:.04em;border-bottom:2px solid #e5eaf0}.audit-table tbody tr{border-bottom:1px solid #edf0f2;transition:background .2s}.audit-table tbody tr:hover{background:#f9fbfc}.audit-badge{display:inline-block;padding:4px 10px;border-radius:10px;font-size:.68rem;font-weight:700;text-transform:uppercase}.badge-musicalizacao{background:#e8f8f4;color:#087d69}.badge-darpe{background:#fff3e0;color:#e65100}.badge-cartas{background:#fce4ec;color:#c2185b}.badge-visitas{background:#e1f5fe;color:#0277bd}.badge-sam{background:#f3e5f5;color:#7b1fa2}.badge-gem{background:#ebf5ff;color:#0050b3}.audit-empty{text-align:center;padding:60px 20px;color:#7a8792}.audit-empty i{font-size:4rem;color:#d5dbe0;margin-bottom:16px;display:block}.audit-empty p{font-size:.92rem;margin:0}.section-body{padding:20px;border:1px solid #e8edf1;border-radius:0 0 12px 12px}.section-header{padding:16px 20px;border-bottom:1px solid #edf0f2;background:#f9fbfc;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between}.section-header i{font-size:1rem;color:#0d7377}.section-header h5{font-weight:700;color:#202a35;margin:0}.section-card{border-radius:12px;border:1px solid #e8edf1;background:#fff;box-shadow:0 4px 16px #17384d08;margin-bottom:20px}.loader{display:none;text-align:center;padding:30px}.loader.active{display:block}.spinner-border{width:2.5rem;height:2.5rem}@media(max-width:768px){.audit-header-banner h1{font-size:1.45rem}.module-selector{gap:8px}.filter-row{grid-template-columns:1fr}.premium-stat{min-height:160px}.premium-value{font-size:1.75rem}}@media(max-width:575.98px){.audit-header-banner{padding:20px 16px}.audit-header-banner h1{font-size:1.25rem}.audit-header-banner p{font-size:.8rem}.module-selector{gap:6px;flex-direction:column}.module-btn{width:100%}.premium-stat{min-height:140px;padding:14px}.premium-value{font-size:1.5rem}.mini-bars{height:32px}.audit-table{font-size:.75rem}.filter-actions{flex-direction:column}.filter-actions .btn{width:100%}}
 </style>
 {% endblock %}
 
 {% block content %}
 {% csrf_token %}
 <ol class="breadcrumb float-xl-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item"><a href="/auditoria/">Auditoria</a></li><li class="breadcrumb-item active">Módulos</li></ol>
-<div class="audit-heading mb-4">
-  <h1>Auditoria de Módulos
-    <small>Rastreamento centralizado de operações em todos os módulos</small>
-  </h1>
+
+<div class="audit-header-banner">
+  <h1>Auditoria de Módulos</h1>
+  <p>Rastreamento centralizado de operações em todos os módulos da instituição</p>
 </div>
 
-<!-- Seletor de Módulos -->
 <div class="module-selector" id="module-selector">
-  <button class="module-btn active" data-module="musicalizacao" title="Musicalização Infantil"><i class="fa fa-music"></i>Musicalização</button>
-  <button class="module-btn" data-module="darpe" title="DARPE - Serviços"><i class="fa fa-handshake"></i>DARPE</button>
-  <button class="module-btn" data-module="cartas" title="Cartas de Exames"><i class="fa fa-envelope"></i>Cartas</button>
-  <button class="module-btn" data-module="visitas" title="Programa de Visitas"><i class="fa fa-person-hiking"></i>Visitas</button>
-  <button class="module-btn" data-module="sam" title="Sistema de Acompanhamento Musical"><i class="fa fa-graduation-cap"></i>SAM</button>
-  <button class="module-btn" data-module="gem" title="GEM - Educação Musical"><i class="fa fa-book"></i>GEM</button>
+  <button class="module-btn active" data-module="musicalizacao"><i class="fa fa-music"></i>Musicalização</button>
+  <button class="module-btn" data-module="darpe"><i class="fa fa-handshake"></i>DARPE</button>
+  <button class="module-btn" data-module="cartas"><i class="fa fa-envelope"></i>Cartas</button>
+  <button class="module-btn" data-module="visitas"><i class="fa fa-person-hiking"></i>Visitas</button>
+  <button class="module-btn" data-module="sam"><i class="fa fa-graduation-cap"></i>SAM</button>
+  <button class="module-btn" data-module="gem"><i class="fa fa-book"></i>GEM</button>
 </div>
 
-<!-- KPIs -->
-<div class="row mb-3" id="audit-kpis">
-  <div class="col-xl-3 col-md-6">
+<div class="row mt-4">
+  <div class="col-lg-3 col-md-6 mb-3">
     <div class="card premium-stat" style="--accent:#00acac;--tint:#e8f8f4">
       <div class="card-body">
         <div class="premium-top">
-          <span class="premium-title">Total de eventos</span>
+          <span class="premium-title">Total de Eventos</span>
           <div class="premium-icon"><i class="fa fa-chart-line"></i></div>
         </div>
         <div class="premium-value" id="kpi-total">0</div>
         <div class="premium-context">últimos 30 dias</div>
-        <div class="mini-bars" id="mini-bars-1"><i style="--h:40%"></i><i style="--h:65%"></i><i style="--h:45%"></i><i style="--h:75%"></i><i style="--h:55%"></i></div>
+        <div class="mini-bars"><i style="--h:30%"></i><i style="--h:55%"></i><i style="--h:40%"></i><i style="--h:70%"></i><i style="--h:45%"></i></div>
       </div>
     </div>
   </div>
-  <div class="col-xl-3 col-md-6">
+  <div class="col-lg-3 col-md-6 mb-3">
     <div class="card premium-stat" style="--accent:#6c5ce7;--tint:#f7f5ff">
       <div class="card-body">
         <div class="premium-top">
-          <span class="premium-title">Operadores ativos</span>
+          <span class="premium-title">Operadores Ativos</span>
           <div class="premium-icon"><i class="fa fa-users"></i></div>
         </div>
-        <div class="premium-value" id="kpi-actors">0</div>
+        <div class="premium-value" id="kpi-operators">0</div>
         <div class="premium-context">realizaram alterações</div>
+        <div class="mini-bars"><i style="--h:50%"></i><i style="--h:35%"></i><i style="--h:65%"></i><i style="--h:42%"></i><i style="--h:58%"></i></div>
       </div>
     </div>
   </div>
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#eb8c35;--tint:#fef5f0">
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="card premium-stat" style="--accent:#f59e0b;--tint:#fef3f2">
       <div class="card-body">
         <div class="premium-top">
           <span class="premium-title">Período</span>
@@ -63,255 +60,194 @@
         </div>
         <div class="premium-value" id="kpi-period">30</div>
         <div class="premium-context">dias selecionados</div>
+        <div class="mini-bars"><i style="--h:45%"></i><i style="--h:60%"></i><i style="--h:50%"></i><i style="--h:75%"></i><i style="--h:40%"></i></div>
       </div>
     </div>
   </div>
-  <div class="col-xl-3 col-md-6">
-    <div class="card premium-stat" style="--accent:#0a7aa1;--tint:#ebf5ff">
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="card premium-stat" style="--accent:#0891b2;--tint:#ecfdf5">
       <div class="card-body">
         <div class="premium-top">
-          <span class="premium-title">Seu escopo</span>
-          <div class="premium-icon"><i class="fa fa-shield"></i></div>
+          <span class="premium-title">Seu Escopo</span>
+          <div class="premium-icon"><i class="fa fa-shield-alt"></i></div>
         </div>
-        <div class="premium-value" id="kpi-scope">REGIONAL</div>
-        <div class="premium-context" id="kpi-scope-detail">visualiza todos os dados</div>
+        <div class="premium-value" id="kpi-scope">-</div>
+        <div class="premium-context">visualiza todos os dados</div>
+        <div class="mini-bars"><i style="--h:100%"></i><i style="--h:85%"></i><i style="--h:95%"></i><i style="--h:80%"></i><i style="--h:90%"></i></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Filtros -->
-<div class="section-card">
+<div class="filter-section">
   <div class="section-header">
-    <div><i class="fa fa-filter"></i><strong>Filtros de auditoria</strong></div>
+    <div><i class="fa fa-funnel"></i><h5>Filtros de Auditoria</h5></div>
   </div>
-  <div class="section-body">
-    <div class="audit-filter-row">
-      <div>
-        <label class="form-label" style="font-size:.75rem;font-weight:700;color:#677481;text-transform:uppercase">Tipo de Registro</label>
-        <select class="form-select form-select-sm" id="filter-resource">
-          <option value="">Todos</option>
-        </select>
-      </div>
-      <div>
-        <label class="form-label" style="font-size:.75rem;font-weight:700;color:#677481;text-transform:uppercase">Ação</label>
-        <select class="form-select form-select-sm" id="filter-action">
-          <option value="">Todas</option>
-          <option value="created">Criado</option>
-          <option value="updated">Atualizado</option>
-        </select>
-      </div>
-      <div>
-        <label class="form-label" style="font-size:.75rem;font-weight:700;color:#677481;text-transform:uppercase">Operador</label>
-        <input type="text" class="form-control form-control-sm" id="filter-actor" placeholder="Nome parcial...">
-      </div>
-      <div>
-        <label class="form-label" style="font-size:.75rem;font-weight:700;color:#677481;text-transform:uppercase">Período (dias)</label>
-        <select class="form-select form-select-sm" id="filter-days">
-          <option value="7">Últimos 7 dias</option>
-          <option value="30" selected>Últimos 30 dias</option>
-          <option value="60">Últimos 60 dias</option>
-          <option value="90">Últimos 90 dias</option>
-          <option value="365">Últimos 365 dias</option>
-        </select>
-      </div>
+  <div class="filter-row">
+    <div>
+      <label class="form-label fw-600" style="font-size:.8rem">Tipo de Registro</label>
+      <select class="form-select" id="filter-resource">
+        <option value="">Todos</option>
+      </select>
     </div>
-    <div class="audit-filter-row actions">
-      <button class="btn btn-sm btn-primary" id="btn-filter"><i class="fa fa-search me-1"></i>Buscar</button>
-      <button class="btn btn-sm btn-outline-secondary" id="btn-clear"><i class="fa fa-rotate me-1"></i>Limpar</button>
+    <div>
+      <label class="form-label fw-600" style="font-size:.8rem">Ação</label>
+      <select class="form-select" id="filter-action">
+        <option value="">Todas</option>
+        <option value="CREATE">Criar</option>
+        <option value="UPDATE">Atualizar</option>
+        <option value="DELETE">Deletar</option>
+      </select>
     </div>
+    <div>
+      <label class="form-label fw-600" style="font-size:.8rem">Operador</label>
+      <input type="text" class="form-control" id="filter-operator" placeholder="Nome parcial...">
+    </div>
+    <div>
+      <label class="form-label fw-600" style="font-size:.8rem">Período</label>
+      <select class="form-select" id="filter-period">
+        <option value="30">Últimos 30 dias</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="1">Hoje</option>
+        <option value="0">Todos</option>
+      </select>
+    </div>
+  </div>
+  <div class="filter-actions">
+    <button class="btn btn-primary btn-sm" id="btn-search"><i class="fa fa-search me-2"></i>Buscar</button>
+    <button class="btn btn-secondary btn-sm" id="btn-clear"><i class="fa fa-redo me-2"></i>Limpar</button>
   </div>
 </div>
 
-<!-- Eventos de Auditoria -->
 <div class="section-card">
   <div class="section-header">
-    <div><i class="fa fa-history"></i><strong>Eventos de auditoria</strong></div>
+    <div><i class="fa fa-history"></i><h5>Eventos de Auditoria</h5></div>
     <span class="badge bg-secondary" id="record-count">0 registros</span>
   </div>
   <div class="section-body">
-    <div id="audit-loading" class="audit-loading d-none">
+    <div class="loader active" id="loader">
       <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Carregando...</span></div>
     </div>
-    <div id="audit-empty" class="audit-empty d-none">
-      <i class="fa fa-inbox"></i>
-      <p><strong>Nenhum evento encontrado</strong><br><small>Tente ajustar os filtros</small></p>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-hover audit-table" id="audit-table">
-        <thead>
-          <tr>
-            <th style="width:18%">Tipo</th>
-            <th style="width:24%">Quem criou</th>
-            <th style="width:20%">Data de criação</th>
-            <th style="width:20%">Quem atualizou</th>
-            <th style="width:18%">Data de atualização</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+    <table class="table audit-table" id="audit-table" style="display:none">
+      <thead>
+        <tr><th>Tipo</th><th>Ação</th><th>Operador</th><th>Data/Hora</th><th>Detalhes</th></tr>
+      </thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+    <div class="audit-empty" id="audit-empty" style="display:none"><i class="fa fa-inbox"></i><p>Nenhum registro encontrado</p></div>
   </div>
 </div>
 
 <script>
-const API_BASE = '/api/auditoria/generic/';
-let currentModule = 'musicalizacao';
-let currentFilters = { days: 30 };
+const resourceMap = {
+  musicalizacao: [{value:'musicalizacao_aulas',label:'Aulas'},{value:'musicalizacao_presenca',label:'Presença'}],
+  darpe: [{value:'darpe_atendimentos',label:'Atendimentos'}],
+  cartas: [{value:'cartas_exames',label:'Cartas'}],
+  visitas: [{value:'visitas_acompanhamentos',label:'Acompanhamentos'}],
+  sam: [{value:'sam_audit_events',label:'Eventos'}],
+  gem: [{value:'gem_classes',label:'Turmas'}]
+};
 
-// Module Selector
+let currentModule = 'musicalizacao';
+
 document.querySelectorAll('.module-btn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.module-btn').forEach(b => b.classList.remove('active'));
+  btn.addEventListener('click',function(){
+    document.querySelectorAll('.module-btn').forEach(b=>b.classList.remove('active'));
     this.classList.add('active');
     currentModule = this.dataset.module;
-    currentFilters = { days: 30 };
-    loadResourcesForModule();
+    updateResourceOptions();
     loadAuditData();
   });
 });
 
-// Resource Dropdown
-function loadResourcesForModule() {
-  const resourceSelect = document.getElementById('filter-resource');
-  resourceSelect.innerHTML = '<option value="">Todos</option>';
-  
-  const resourceMap = {
-    musicalizacao: ['aulas', 'presencas'],
-    darpe: ['atendimentos'],
-    cartas: ['cartas'],
-    visitas: ['apontamentos'],
-    sam: ['eventos'],
-    gem: ['aulas']
-  };
-  
-  const resources = resourceMap[currentModule] || [];
-  const labels = {
-    aulas: 'Aulas', presencas: 'Presenças', atendimentos: 'Atendimentos',
-    cartas: 'Cartas de Exames', apontamentos: 'Apontamentos de Visitas',
-    eventos: 'Eventos de Auditoria'
-  };
-  
-  resources.forEach(r => {
-    const option = document.createElement('option');
-    option.value = r;
-    option.textContent = labels[r] || r;
-    resourceSelect.appendChild(option);
+function updateResourceOptions(){
+  const select = document.getElementById('filter-resource');
+  const resources = resourceMap[currentModule]||[];
+  select.innerHTML = '<option value="">Todos</option>';
+  resources.forEach(r=>{
+    const opt = document.createElement('option');
+    opt.value = r.value;
+    opt.textContent = r.label;
+    select.appendChild(opt);
   });
 }
 
-// Filter Buttons
-document.getElementById('btn-filter').addEventListener('click', loadAuditData);
-document.getElementById('btn-clear').addEventListener('click', () => {
-  document.getElementById('filter-resource').value = '';
-  document.getElementById('filter-action').value = '';
-  document.getElementById('filter-actor').value = '';
-  document.getElementById('filter-days').value = '30';
-  currentFilters = { days: 30 };
-  loadAuditData();
-});
-
-// Load Audit Data
-function loadAuditData() {
-  const loading = document.getElementById('audit-loading');
+function loadAuditData(){
+  const loader = document.getElementById('loader');
+  const table = document.getElementById('audit-table');
   const empty = document.getElementById('audit-empty');
-  const tableBody = document.querySelector('#audit-table tbody');
   
-  loading.classList.remove('d-none');
-  empty.classList.add('d-none');
-  tableBody.innerHTML = '';
-
-  const days = document.getElementById('filter-days').value || '30';
-  const resource = document.getElementById('filter-resource').value || '';
-  const action = document.getElementById('filter-action').value || '';
-  const actor = document.getElementById('filter-actor').value || '';
-
-  currentFilters = { days, resource, action, actor };
-  document.getElementById('kpi-period').textContent = days;
+  loader.style.display = 'block';
+  table.style.display = 'none';
+  empty.style.display = 'none';
 
   const params = new URLSearchParams({
     module: currentModule,
-    days: days,
-    limit: 100,
-    ...(resource && { resource }),
-    ...(action && { action }),
-    ...(actor && { actor })
+    resource: document.getElementById('filter-resource').value,
+    action: document.getElementById('filter-action').value,
+    operator: document.getElementById('filter-operator').value,
+    period: document.getElementById('filter-period').value
   });
 
-  fetch(`${API_BASE}?${params}`)
-    .then(r => {
-      loading.classList.add('d-none');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(data => {
-      const allResults = Object.values(data.results).flat();
-      
-      if (allResults.length === 0) {
-        empty.classList.remove('d-none');
-      } else {
-        allResults.forEach(record => {
-          const resourceClass = `audit-resource-${(record.resource || 'default').toLowerCase()}`;
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><span class="audit-resource-badge ${resourceClass}">${record.description || record.resource}</span></td>
-            <td><span class="audit-actor">${record.created_by || '—'}</span></td>
-            <td><span class="audit-date">${formatDate(record.created_at)}</span></td>
-            <td><span class="audit-actor">${record.updated_by || '—'}</span></td>
-            <td><span class="audit-date">${formatDate(record.updated_at) || '—'}</span></td>
-          `;
-          tableBody.appendChild(tr);
-        });
+  fetch(`/api/auditoria/generic/?${params}`)
+    .then(r=>r.json())
+    .then(data=>{
+      populateTable(data);
+      loader.style.display = 'none';
+      document.getElementById('record-count').textContent = (data.records?.length||0)+' registros';
+      if(data.records?.length>0){
+        table.style.display = 'table';
+      }else{
+        empty.style.display = 'block';
       }
-      
-      document.getElementById('record-count').textContent = `${allResults.length} registros`;
-      document.getElementById('kpi-total').textContent = allResults.length;
-      
-      const actors = new Set(allResults.map(r => r.created_by).filter(Boolean));
-      document.getElementById('kpi-actors').textContent = actors.size;
-
-      // Update scope
-      const scope = data.scope || {};
-      const scopeEl = document.getElementById('kpi-scope');
-      const scopeDetailEl = document.getElementById('kpi-scope-detail');
-      
-      if (scope.type === 'REGIONAL') {
-        scopeEl.textContent = 'REGIONAL';
-        scopeDetailEl.textContent = 'visualiza todos os dados';
-      } else if (scope.type === 'MUNICIPAL') {
-        scopeEl.textContent = 'MUNICIPAL';
-        scopeDetailEl.textContent = scope.municipio || 'sua municipalidade';
-      } else {
-        scopeEl.textContent = 'LOCAL';
-        scopeDetailEl.textContent = scope.comum || 'sua área';
-      }
+      updateKPIs(data);
     })
-    .catch(err => {
-      loading.classList.add('d-none');
-      empty.classList.remove('d-none');
-      empty.innerHTML = `<i class="fa fa-exclamation-triangle" style="color:#d95252"></i><p><strong>Erro ao carregar dados</strong><br><small>${err.message}</small></p>`;
+    .catch(e=>{
+      console.error(e);
+      loader.style.display = 'none';
+      empty.style.display = 'block';
     });
 }
 
-// Helper: Format Date
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  try {
-    const date = new Date(dateStr);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const mins = String(date.getMinutes()).padStart(2, '0');
-    const secs = String(date.getSeconds()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${mins}:${secs}`;
-  } catch (e) {
-    return dateStr;
-  }
+function populateTable(data){
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = '';
+  const badgeClass = 'badge-'+currentModule;
+  (data.records||[]).forEach(record=>{
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><span class="audit-badge ${badgeClass}">${record.resource||'-'}</span></td>
+      <td><strong>${record.action||'-'}</strong></td>
+      <td>${record.created_by||'Sistema'}</td>
+      <td><small>${formatDate(record.created_at)}</small></td>
+      <td><small>${record.details||'-'}</small></td>
+    `;
+    tbody.appendChild(row);
+  });
 }
 
-// Initialize
-loadResourcesForModule();
+function formatDate(dateStr){
+  if(!dateStr)return'-';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR');
+}
+
+function updateKPIs(data){
+  document.getElementById('kpi-total').textContent = data.total_events||0;
+  document.getElementById('kpi-operators').textContent = data.active_operators||0;
+  document.getElementById('kpi-scope').textContent = (data.scope||'REGIONAL');
+}
+
+document.getElementById('btn-search').addEventListener('click',loadAuditData);
+document.getElementById('btn-clear').addEventListener('click',()=>{
+  document.getElementById('filter-resource').value='';
+  document.getElementById('filter-action').value='';
+  document.getElementById('filter-operator').value='';
+  document.getElementById('filter-period').value='30';
+  loadAuditData();
+});
+
+updateResourceOptions();
 loadAuditData();
 </script>
 {% endblock %}
