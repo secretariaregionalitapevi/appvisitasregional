@@ -150,6 +150,24 @@ def audit_center(request):
     return render(request, "pages/auditoria.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
 
 
+def audit_center_generic(request):
+    """Dashboard centralizado de auditoria para todos os módulos."""
+    profile = request.session.get("user_profile") or {}
+    return render(request, "pages/auditoria_centralizada.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
+
+
+@require_http_methods(["GET"])
+def audit_generic_api(request):
+    """API genérica para auditoria de múltiplos módulos."""
+    from .audit_generic import api_audit_generic
+    
+    module = str(request.GET.get('module', '')).lower().strip()
+    if not module:
+        return JsonResponse({"error": "Parâmetro 'module' obrigatório."}, status=400)
+    
+    return api_audit_generic(request, module)
+
+
 @global_only
 @require_http_methods(["GET"])
 def administration_data(request):

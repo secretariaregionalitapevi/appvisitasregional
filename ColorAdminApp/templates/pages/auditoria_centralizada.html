@@ -1,0 +1,357 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Auditoria Centralizada{% endblock %}
+
+{% block css %}
+<style>
+.audit-heading { padding: 4px 2px; }
+.audit-heading h1 { font-size: 1.65rem; letter-spacing: -0.03em; }
+.audit-heading small { color: #73808c; }
+.module-selector { 
+  display: flex; 
+  gap: 12px; 
+  flex-wrap: wrap; 
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px #0000000d;
+}
+.module-btn {
+  padding: 10px 16px;
+  border: 2px solid #e5eaf0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.module-btn:hover {
+  border-color: #687581;
+  background: #f9fbfc;
+}
+.module-btn.active {
+  border-color: #0066cc;
+  background: #ebf5ff;
+  color: #0050b3;
+}
+.module-btn i { font-size: 1.1rem; }
+.audit-kpi { border: 0; border-radius: 18px; box-shadow: 0 8px 28px #17384d12; }
+.audit-kpi-icon { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; }
+.audit-kpi-value { font-size: 1.65rem; font-weight: 750; line-height: 1; }
+.audit-kpi-label { color: #73808c; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.audit-filter { background: #fff; padding: 20px; border-radius: 6px; box-shadow: 0 2px 10px #0000000d; margin-bottom: 20px; }
+.audit-filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 15px; }
+.audit-filter-row.last { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); justify-items: end; margin-bottom: 0; }
+.audit-table { font-size: 0.85rem; }
+.audit-table thead th { font-size: 0.72rem; text-transform: uppercase; color: #687581; font-weight: 700; }
+.audit-table tbody tr { border-bottom: 1px solid #edf0f2; }
+.audit-table tbody tr:hover { background: #f9fbfd; }
+.audit-actor { font-weight: 600; color: #1d2c38; }
+.audit-date { color: #7a8792; font-size: 0.75rem; }
+.audit-resource-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+.audit-resource-aulas { background: #e8f8f4; color: #087d69; }
+.audit-resource-presencas { background: #fef3f2; color: #c53030; }
+.audit-resource-atendimentos { background: #ebf5ff; color: #0050b3; }
+.audit-resource-cartas { background: #fef7f0; color: #b85f1a; }
+.audit-resource-visitas { background: #f0f0ff; color: #4c1d95; }
+.audit-resource-eventos { background: #f5f0ff; color: #6c5ce7; }
+.audit-resource-aulas { background: #e8f8f4; color: #087d69; }
+.audit-empty { text-align: center; padding: 40px 20px; color: #7a8792; }
+.audit-empty i { font-size: 3rem; color: #d5dbe0; margin-bottom: 12px; display: block; }
+.audit-loading { text-align: center; padding: 20px; }
+.audit-loading .spinner-border { width: 2rem; height: 2rem; }
+.breadcrumb { font-size: 0.85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<ol class="breadcrumb float-xl-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Dashboard</a></li><li class="breadcrumb-item active">Auditoria Centralizada</li></ol>
+<div class="audit-heading mb-4">
+  <h1>Auditoria Centralizada
+    <small>Rastreamento de operações em todos os módulos</small>
+  </h1>
+</div>
+
+<div class="module-selector" id="module-selector">
+  <!-- Botões de módulo carregados dinamicamente -->
+</div>
+
+<div class="row mb-3" id="audit-kpis">
+  <!-- KPIs carregados dinamicamente -->
+</div>
+
+<div class="panel panel-inverse">
+  <div class="panel-heading">
+    <h4 class="panel-title"><i class="fa fa-shield-halved me-2"></i>Filtros de auditoria</h4>
+  </div>
+  <div class="panel-body">
+    <div class="audit-filter">
+      <div class="audit-filter-row">
+        <div>
+          <label class="form-label text-muted small" style="display: block; margin-bottom: 5px; font-weight: 700;">TIPO DE REGISTRO</label>
+          <select class="form-select" id="filter-resource">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label text-muted small" style="display: block; margin-bottom: 5px; font-weight: 700;">AÇÃO</label>
+          <select class="form-select" id="filter-action">
+            <option value="">Todas</option>
+            <option value="created">Criações</option>
+            <option value="updated">Edições</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label text-muted small" style="display: block; margin-bottom: 5px; font-weight: 700;">OPERADOR</label>
+          <input type="text" class="form-control" id="filter-actor" placeholder="Nome do operador...">
+        </div>
+        <div>
+          <label class="form-label text-muted small" style="display: block; margin-bottom: 5px; font-weight: 700;">PERÍODO</label>
+          <select class="form-select" id="filter-days">
+            <option value="7">Últimos 7 dias</option>
+            <option value="30" selected>Últimos 30 dias</option>
+            <option value="90">Últimos 90 dias</option>
+            <option value="180">Últimos 6 meses</option>
+            <option value="365">Último ano</option>
+          </select>
+        </div>
+      </div>
+      <div class="audit-filter-row last">
+        <button class="btn btn-primary" id="btn-filter"><i class="fa fa-filter me-2"></i>Filtrar</button>
+        <button class="btn btn-outline-secondary" id="btn-reset"><i class="fa fa-rotate me-2"></i>Limpar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel panel-inverse">
+  <div class="panel-heading">
+    <h4 class="panel-title"><i class="fa fa-list-check me-2"></i>Eventos de auditoria</h4>
+  </div>
+  <div class="panel-body">
+    <div id="audit-content">
+      <div class="audit-loading">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Carregando...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Lista de módulos disponíveis
+const MODULES = {
+  'musicalizacao': { name: 'Musicalização', icon: 'fa-music', color: '#12a594' },
+  'darpe': { name: 'DARPE', icon: 'fa-handshake', color: '#0050b3' },
+  'cartas': { name: 'Cartas', icon: 'fa-envelope', color: '#b85f1a' },
+  'visitas': { name: 'Visitas', icon: 'fa-person-hiking', color: '#4c1d95' },
+  'sam': { name: 'SAM', icon: 'fa-graduation-cap', color: '#6c5ce7' },
+  'gem': { name: 'GEM', icon: 'fa-book', color: '#087d69' },
+};
+
+const auditState = {
+  module: 'musicalizacao',
+  filters: { resource: '', action: '', actor: '', days: 30, limit: 50, offset: 0 },
+  data: { results: {}, module: {} },
+};
+
+function formatDate(isoDate) {
+  if (!isoDate) return '—';
+  const date = new Date(isoDate);
+  return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function initModuleSelector() {
+  const selector = document.getElementById('module-selector');
+  let html = '<label style="color: #73808c; font-weight: 700; text-transform: uppercase; font-size: 0.7rem; margin-right: 12px;">MÓDULO:</label>';
+  
+  for (const [key, config] of Object.entries(MODULES)) {
+    const active = key === auditState.module ? 'active' : '';
+    html += `<button class="module-btn ${active}" onclick="switchModule('${key}')">
+      <i class="fa ${config.icon}"></i>
+      ${config.name}
+    </button>`;
+  }
+  
+  selector.innerHTML = html;
+}
+
+function switchModule(module) {
+  auditState.module = module;
+  auditState.filters.offset = 0;
+  
+  // Atualizar botões
+  document.querySelectorAll('.module-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  event.target.closest('.module-btn').classList.add('active');
+  
+  // Recarregar
+  loadAudit();
+}
+
+function updateKPIs(data) {
+  const kpisDiv = document.getElementById('audit-kpis');
+  let totalEvents = 0;
+  let uniqueActors = new Set();
+  
+  for (const [resource, events] of Object.entries(data.results || {})) {
+    totalEvents += (events || []).length;
+    (events || []).forEach(e => {
+      if (e.created_by) uniqueActors.add(e.created_by);
+      if (e.updated_by) uniqueActors.add(e.updated_by);
+    });
+  }
+  
+  const module = data.module || auditState.data.module;
+  const displayName = module.display_name || auditState.module;
+  
+  kpisDiv.innerHTML = `
+    <div class="col-xl-3 col-sm-6">
+      <div class="card audit-kpi">
+        <div class="card-body">
+          <div class="text-muted">${displayName}</div>
+          <h2 class="audit-kpi-value">${totalEvents}</h2>
+          <div class="audit-kpi-label">eventos auditados</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+      <div class="card audit-kpi">
+        <div class="card-body">
+          <div class="text-muted">Operadores ativos</div>
+          <h2 class="audit-kpi-value">${uniqueActors.size}</h2>
+          <div class="audit-kpi-label">realizaram alterações</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+      <div class="card audit-kpi">
+        <div class="card-body">
+          <div class="text-muted">Período</div>
+          <h2 class="audit-kpi-value">${auditState.filters.days}d</h2>
+          <div class="audit-kpi-label">últimos dias</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-sm-6">
+      <div class="card audit-kpi">
+        <div class="card-body">
+          <div class="text-muted">Escopo</div>
+          <h2 class="audit-kpi-value" style="font-size: 1.2rem;">${data.scope?.level || 'regional'}</h2>
+          <div class="audit-kpi-label">acesso de usuário</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAuditTable(data) {
+  const allEvents = [];
+  
+  for (const [resource, events] of Object.entries(data.results || {})) {
+    (events || []).forEach(event => {
+      allEvents.push({
+        ...event,
+        resource: event.resource || resource,
+        timestamp: event.updated_at || event.created_at,
+      });
+    });
+  }
+  
+  allEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  if (allEvents.length === 0) {
+    return `<div class="audit-empty">
+      <i class="fa fa-inbox"></i>
+      <p>Nenhum evento de auditoria encontrado com os filtros aplicados.</p>
+    </div>`;
+  }
+  
+  let html = `<div class="table-responsive">
+    <table class="table table-hover audit-table">
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Descrição</th>
+          <th>Criado por</th>
+          <th>Data de criação</th>
+          <th>Editado por</th>
+          <th>Última edição</th>
+        </tr>
+      </thead>
+      <tbody>`;
+  
+  allEvents.forEach(event => {
+    const resourceClass = `audit-resource-${event.resource}`;
+    html += `<tr>
+      <td><span class="audit-resource-badge ${resourceClass}">${event.resource}</span></td>
+      <td>${event.description}</td>
+      <td><div class="audit-actor">${event.created_by || '—'}</div></td>
+      <td><div class="audit-date">${formatDate(event.created_at)}</div></td>
+      <td><div class="audit-actor">${event.updated_by || '—'}</div></td>
+      <td><div class="audit-date">${formatDate(event.updated_at)}</div></td>
+    </tr>`;
+  });
+  
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+async function loadAudit() {
+  const contentDiv = document.getElementById('audit-content');
+  contentDiv.innerHTML = `<div class="audit-loading"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Carregando...</span></div></div>`;
+  
+  try {
+    const params = new URLSearchParams({
+      ...auditState.filters,
+      module: auditState.module,
+    });
+    
+    const response = await fetch(`/api/auditoria/generic/?${params.toString()}`, {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const result = await response.json();
+    auditState.data = result;
+    
+    updateKPIs(result);
+    const table = renderAuditTable(result);
+    contentDiv.innerHTML = table;
+    
+  } catch (error) {
+    console.error('Erro:', error);
+    contentDiv.innerHTML = `<div class="alert alert-danger"><i class="fa fa-exclamation-circle me-2"></i>Erro ao carregar auditoria: ${error.message}</div>`;
+  }
+}
+
+document.getElementById('btn-filter').addEventListener('click', () => {
+  auditState.filters.resource = document.getElementById('filter-resource').value;
+  auditState.filters.action = document.getElementById('filter-action').value;
+  auditState.filters.actor = document.getElementById('filter-actor').value;
+  auditState.filters.days = parseInt(document.getElementById('filter-days').value);
+  auditState.filters.offset = 0;
+  loadAudit();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('filter-resource').value = '';
+  document.getElementById('filter-action').value = '';
+  document.getElementById('filter-actor').value = '';
+  document.getElementById('filter-days').value = '30';
+  auditState.filters = { resource: '', action: '', actor: '', days: 30, limit: 50, offset: 0 };
+  loadAudit();
+});
+
+// Inicializar
+initModuleSelector();
+loadAudit();
+</script>
+{% endblock %}
