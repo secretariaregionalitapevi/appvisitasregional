@@ -1,5 +1,6 @@
 """Papeletas DARPE: uma API para a administração e o aplicativo mobile."""
 import json
+import logging
 from copy import copy
 from datetime import date, datetime, time
 from urllib.parse import quote
@@ -20,6 +21,7 @@ from .access_control import can_access, common_catalog, scope_details, service_h
 from .darpe_library import SECTORS
 from .module_access import MODULE_DARPE, can_access_module
 
+logger = logging.getLogger(__name__)
 TABLE = {'table': 'darpe_papeletas'}
 ROLES = {'atendente': ('darpe_atendente',), 'colaborador': ('darpe_colaborador',),
          'musico': ('darpe_musico',), 'organista': ('darpe_organista',),
@@ -40,6 +42,34 @@ def read_profile(user_id):
                             params={'user_id': 'eq.' + user_id, 'select': '*', 'limit': 2}, timeout=15)
     response.raise_for_status()
     return response.json()
+
+
+def audit_mobile(request, action, details):
+    profile = request.session['user_profile']
+    payload = {
+        'user_id': request.session['user_id'],
+        'action': action,
+        'module': 'DARPE',
+        'details': {
+            'schema_version': 2,
+            'source': 'APP_DARPE',
+            'actor': {
+                'user_id': request.session['user_id'],
+                'name': profile.get('full_name') or profile.get('username') or 'Usuário autenticado',
+                'role_id': profile.get('role_id'),
+                'scope': profile.get('sector') or profile.get('setor'),
+            },
+            'request': {'method': request.method, 'path': request.path},
+            **details,
+        },
+        'ip_address': request.META.get('REMOTE_ADDR'),
+        'user_agent': str(request.META.get('HTTP_USER_AGENT') or '')[:1000],
+    }
+    response = requests.post(
+        settings.SUPABASE_URL + '/rest/v1/audit_logs',
+        headers=service_headers('return=minimal'), json=payload, timeout=15,
+    )
+    response.raise_for_status()
 
 
 def database_error(exc):
@@ -307,6 +337,11 @@ def mobile_api(request, action='atendimentos'):
         # Não persistir a autenticação Bearer na sessão de navegação Django.
         proxy = copy(request)
         proxy.session = {'user_id': user_id, 'authenticated': True, 'user_profile': profiles[0]}
+        if action == 'audit-login' and request.method == 'POST':
+            if not can_access_module(proxy, MODULE_DARPE):
+                return JsonResponse({'error': 'Acesso DARPE não autorizado.'}, status=403)
+            audit_mobile(proxy, 'LOGIN', {'description': 'Login realizado no aplicativo DARPE.'})
+            return JsonResponse({'message': 'Acesso registrado.'}, status=201)
         if action == 'exportar-pdf' and request.method == 'GET':
             from .darpe_atendimentos_exports import build_papeleta_pdf
             from .darpe import _actor
@@ -330,6 +365,23 @@ def mobile_api(request, action='atendimentos'):
             response['Cache-Control'] = 'no-store'
             response['X-Content-Type-Options'] = 'nosniff'
             return response
-        return api(proxy, action)
+        response = api(proxy, action)
+        changed = (request.method == 'POST' and response.status_code == 201) or (
+            request.method == 'PATCH' and response.status_code == 200
+        )
+        if action == 'atendimentos' and changed:
+            saved = json.loads(response.content).get('item') or {}
+            try:
+                audit_mobile(proxy, 'CREATE' if request.method == 'POST' else 'UPDATE', {
+                    'entity': 'darpe_papeletas', 'entity_id': str(saved.get('id') or ''),
+                })
+            except requests.RequestException:
+                logger.exception('Atendimento mobile salvo, mas a auditoria falhou.')
+                return JsonResponse({
+                    'error': 'O atendimento foi salvo, mas a auditoria falhou. Confira a lista e informe a administração antes de repetir.',
+                    'code': 'audit_write_failed',
+                }, status=503)
+        return response
     except (requests.RequestException, ValueError, KeyError):
+        logger.exception('Falha ao validar acesso ou registrar auditoria DARPE mobile.')
         return JsonResponse({'error': 'Não foi possível validar seu acesso.'}, status=503)

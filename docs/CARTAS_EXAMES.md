@@ -36,3 +36,11 @@ O primeiro comando apenas confere. A importação grava código da comum, nomes,
 Aplicar `scripts/migrations/039_cartas_exames_painel.sql`, que inclui a estrutura compartilhada do APP_CARTAS. A migração e a importação inicial já foram executadas neste ambiente. Foram importadas 183 comuns; BR-21-1644 - Parque Jaguari precisa completar os responsáveis.
 
 Foram validados os filtros, separação de cartas e aprovações, agrupamentos, assinatura por assistência, permissões, PDF/Excel e prevenção de fórmulas em valores do Excel. A confirmação real foi testada em transação com rollback, incluindo aprovação repetida, reversão e auditoria. Nenhuma aprovação fictícia foi conservada.
+
+## Auditoria dos aplicativos
+
+O APP_CARTAS registra no `audit_logs` os logins, a emissão de cartas e as alterações de recebimento municipal. Uma emissão pública é identificada como **Emissão pública sem login**, sem atribuir um usuário fictício; o banco deve aceitar `user_id` nulo para esse evento. As auditorias próprias de emissão e recebimento continuam existindo.
+
+O APP_EXAMES registra o login e o lançamento de exames no mesmo painel. O lançamento exige token válido e perfil aprovado; o nome do responsável é definido no servidor, não pelo formulário. Os antigos endpoints de cadastro público de criança e monitor e o cadastro de perfil não são cobertos por essa integração.
+
+As operações e a escrita na auditoria central são separadas. Se o evento falhar após a gravação, o aplicativo avisa que a operação já ocorreu; verifique os dados e informe a administração antes de tentar novamente. Não há garantia de atomicidade ou recuperação automática de eventos faltantes. Para ativar a integração, publique as alterações do painel e dos aplicativos correspondentes, usando o mesmo Supabase e uma tabela `audit_logs` compatível. Não há migração adicional incluída nesta alteração.

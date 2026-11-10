@@ -57,3 +57,9 @@ O botão Criar conta do APP_DARPE usa `/user/cadastro?origem=darpe` no portal pr
 Em Auditoria, abra o usuário em Pendentes ou Usuários, selecione a pasta D.A.R.P.E, confira município e comum, escolha o nível Local (comum), Municipal (município) ou Regional (região), defina Aprovado e salve. Somente administradores globais podem liberar ou revogar pastas. A concessão e a aprovação são registradas na auditoria existente. Pastas adicionais permanecem independentes do nível territorial.
 
 A tabela de concessões e o suporte à pasta DARPE já fazem parte da migração 045; esta correção não exige nova migração nem libera automaticamente usuários existentes.
+
+## Auditoria do aplicativo
+
+Após validar a conta e a autorização DARPE, o login é registrado em `audit_logs` com origem `APP_DARPE`. Inclusões e edições de atendimentos também são registradas com a identidade validada e o identificador da papeleta; a renovação da sessão não gera um novo evento de login. Uma repetição idempotente que encontra a papeleta existente não gera outro evento de criação.
+
+A gravação da papeleta e a do evento central são operações separadas: se a auditoria falhar após salvar, o aplicativo informa que a papeleta já foi salva. Confira o registro e comunique a administração antes de repetir. Este mecanismo não garante auditoria transacional nem recupera automaticamente eventos ausentes.
