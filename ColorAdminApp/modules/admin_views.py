@@ -2,8 +2,9 @@ import json
 import io
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
+from . import congregation_distribution
 
 import requests
 from openpyxl import Workbook
@@ -153,18 +154,20 @@ def audit_center(request):
 def audit_center_generic(request):
     """Dashboard centralizado de auditoria para todos os módulos."""
     profile = request.session.get("user_profile") or {}
-    return render(request, "pages/auditoria_modulos.html", {"report_user": profile.get("full_name") or profile.get("username") or "Usuário"})
+    from .access_control import user_scope
+    scope = user_scope(request)
+    return render(request, "pages/auditoria_modulos.html", {
+        "report_user": profile.get("full_name") or profile.get("username") or "Usuário",
+        "scope": scope,
+    })
 
 
 @require_http_methods(["GET"])
 def audit_generic_api(request):
     """API genérica para auditoria de múltiplos módulos."""
     from .audit_generic import api_audit_generic
-    
+
     module = str(request.GET.get('module', '')).lower().strip()
-    if not module:
-        return JsonResponse({"error": "Parâmetro 'module' obrigatório."}, status=400)
-    
     return api_audit_generic(request, module)
 
 
@@ -558,34 +561,256 @@ def _common_code(value):
 
 
 def _common_name(value):
-    parts = [part.strip() for part in str(value or "").split(" - ") if part.strip()]
-    return parts[-1] if len(parts) > 1 else str(value or "").strip()
+    import re
+    value = str(value or "").strip()
+    return re.sub(r"^BR-\d{2}-\d{4}\s*-\s*", "", value, flags=re.IGNORECASE).strip()
 
 
-def _congregation_rows():
-    ministry = _get_table("ministerio_regional", {"select": "*", "order": "nome.asc", "limit": "3000"})
-    by_code, by_name = {}, {}
-    for person in ministry:
-        common = str(person.get("comum") or "").strip()
+def _person_matches_congregation(person, common_name, common_code, municipality=""):
+    person_common = str(person.get("comum") or "").strip()
+    person_code = _common_code(person_common)
+    if common_code and person_code:
+        return common_code == person_code
+    expected_name = _catalog_norm(_common_name(common_name))
+    actual_name = _catalog_norm(_common_name(person_common))
+    if not expected_name or expected_name != actual_name:
+        return False
+    person_municipality = _catalog_norm(person.get("municipio") or person.get("cidade"))
+    expected_municipality = _catalog_norm(municipality)
+    return not (person_municipality and expected_municipality) or person_municipality == expected_municipality
+
+
+MINISTRY_HIERARCHY = (
+    ("ANCIAO",),
+    ("DIACONO",),
+    ("COOPERADOR DO OFICIO", "COOPERADOR OFICIO MINISTERIAL", "COOPERADOR OFICIAL"),
+    ("COOPERADOR DE JOVENS", "COOPERADOR DE JOVENS E MENORES"),
+    ("ENCARREGADO REGIONAL",),
+    ("ENCARREGADO LOCAL",),
+    ("EXAMINADORA", "EXAMINADORA DE ORGANISTA", "EXAMINADORA DE ORGANISTAS"),
+    ("SECRETARIO DA MUSICA", "SECRETARIO DE MUSICA", "SECRETARIO (A) DA MUSICA", "SECRETARIO(A) DA MUSICA"),
+    ("SECRETARIA DA MUSICA", "SECRETARIA DE MUSICA"),
+    ("SECRETARIO DO GEM", "SECRETARIO GEM", "SECRETARIA DO GEM", "SECRETARIA GEM"),
+)
+
+
+def _ministry_rank(value):
+    normalized = _catalog_norm(value).replace("_", " ")
+    for rank, aliases in enumerate(MINISTRY_HIERARCHY):
+        if normalized in aliases:
+            return rank
+    return len(MINISTRY_HIERARCHY)
+
+
+def _sort_ministry_rows(rows, catalog=None):
+    if catalog is not None:
+        by_code = {_common_code(common.get("comum")): common for common in catalog}
+        resolved_rows = []
+        for row in rows:
+            common = by_code.get(_common_code(row.get("comum")), {})
+            municipality = common.get("cidade") or common.get("municipio")
+            resolved_rows.append({**row, "municipio": municipality} if municipality else dict(row))
+        rows = resolved_rows
+    return sorted(
+        rows,
+        key=lambda row: (
+            _catalog_norm(row.get("municipio")),
+            _catalog_norm(row.get("comum")),
+            _ministry_rank(row.get("ministerio")),
+            _catalog_norm(row.get("ministerio")),
+            _catalog_norm(row.get("nome")),
+        ),
+    )
+
+
+CONGREGATION_ASSIGNMENT_FIELDS = (
+    "encarregados_regionais",
+    "examinadoras",
+    "secretarios_musica",
+    "encarregados_locais",
+    "secretarios_gem",
+)
+
+
+def _congregation_assignment_category(role):
+    normalized = _catalog_norm(role).replace("_", " ")
+    if "ENCARREGADO REGIONAL" in normalized:
+        return "encarregados_regionais"
+    if "EXAMINADORA" in normalized:
+        return "examinadoras"
+    if ("SECRETARIO" in normalized or "SECRETARIA" in normalized) and "MUSICA" in normalized:
+        return "secretarios_musica"
+    if "ENCARREGADO LOCAL" in normalized:
+        return "encarregados_locais"
+    if ("SECRETARIO" in normalized or "SECRETARIA" in normalized) and "GEM" in normalized:
+        return "secretarios_gem"
+    return ""
+
+
+def _congregation_people(sam_registry, catalog, ministry=()):
+    """Ministério para os quatro ofícios; SAM para os cargos da Música."""
+    import re
+    from .sam_catalog import match_local_common
+
+    by_code = {_common_code(row.get("comum")): row for row in catalog}
+    people, seen = [], set()
+    sources = [("ministerio", {
+        "id": row.get("id"), "nome_aluno": row.get("nome"),
+        "comum_congregacao": row.get("comum"), "municipio": row.get("municipio"),
+        "cargo_ministerio": row.get("ministerio"), "status": row.get("status"),
+    }) for row in ministry]
+    sources.extend(("sam", row) for row in sam_registry)
+    for source, row in sources:
+        name = str(row.get("nome_aluno") or "").strip()
+        common = congregation_distribution.corrected_common(str(row.get("comum_congregacao") or "").strip())
         code = _common_code(common)
-        if code:
-            by_code.setdefault(code, []).append(person)
-        by_name.setdefault(_catalog_norm(common), []).append(person)
+        if not row.get("id") or not name:
+            continue
+        # Um código desconhecido nunca é substituído por outra comum de mesmo nome.
+        resolved = by_code.get(code) if code else match_local_common({
+            "common_name": common,
+            "city": row.get("municipio"),
+        }, catalog)
+        if not resolved:
+            continue
+        canonical_common = resolved["comum"]
+        roles = re.split(r"[,;/|]+", str(row.get("cargo_ministerio") or ""))
+        for role in roles:
+            role = role.strip().replace("_", " ")
+            # O SAM usa um cargo genérico para ambos. A indicação de organista
+            # é explícita no cadastro; nunca inferir pelo primeiro nome.
+            generic_secretary = _catalog_norm(role) in {
+                "SECRETARIO (A) DA MUSICA", "SECRETARIO(A) DA MUSICA",
+            }
+            if generic_secretary:
+                organist = (
+                    bool(re.search(r"\(\s*ORGANISTA\s*\)", _catalog_norm(name)))
+                    or _catalog_norm(row.get("instrumento")) in {"ORGAO", "ORGAN", "ORGANISTA"}
+                    or "ORGANISTA" in _catalog_norm(row.get("nivel"))
+                )
+                role = "Secretária da Música" if organist else "Secretário da Música"
+            rank = _ministry_rank(role)
+            if rank == len(MINISTRY_HIERARCHY) or (source == "ministerio" and rank > 3):
+                continue
+            identity_name = _catalog_norm(re.sub(r"\(\s*ORGANISTA\s*\)", "", name, flags=re.IGNORECASE))
+            identity = (identity_name, _common_code(canonical_common), rank)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            people.append({
+                "id": f"{source}:{row['id']}:{rank}",
+                "person_key": f"{_common_code(canonical_common)}:{identity_name}",
+                "source_id": str(row["id"]),
+                "source": source,
+                "nome": congregation_distribution.person_display_name(name),
+                "ministerio": role,
+                "comum": canonical_common,
+                "municipio": resolved.get("cidade") or resolved.get("municipio") or "",
+                "status": str(row.get("status") or "").strip(),
+                "categoria": _congregation_assignment_category(role) or "ministerio",
+            })
+    return _sort_ministry_rows(people)
+
+
+def _sam_congregation_registry():
+    # PostgREST limita cada resposta: percorrer todas as páginas evita omissões.
     rows = []
-    for common in common_catalog():
+    while True:
+        batch = _get_table("musica_acompanhamento_aluno", {
+            "select": "id,nome_aluno,cargo_ministerio,status,comum_congregacao,municipio,instrumento,nivel",
+            "or": "(cargo_ministerio.ilike.*encarregado*,cargo_ministerio.ilike.*examinadora*,cargo_ministerio.ilike.*secret*)",
+            "order": "id.asc", "offset": str(len(rows)), "limit": "1000",
+        })
+        rows.extend(batch)
+        if len(batch) < 1000:
+            return rows
+
+
+def _fetch_congregation_people():
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        registry = executor.submit(_sam_congregation_registry)
+        ministry = executor.submit(_get_table, "ministerio_regional", {
+            "select": "id,nome,ministerio,comum,municipio,status", "order": "id.asc", "limit": "3000",
+        })
+        return _congregation_people(registry.result(), congregation_distribution.corrected_catalog(common_catalog()), ministry.result())
+
+
+def _congregation_data(include_archived=False, include_people=False):
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        catalog_future = executor.submit(common_catalog)
+        distribution_future = executor.submit(congregation_distribution.load_overrides, _get_table)
+        registry_future = executor.submit(_sam_congregation_registry)
+        ministry_future = executor.submit(_get_table, "ministerio_regional", {
+            "select": "id,nome,ministerio,comum,municipio,status", "order": "id.asc", "limit": "3000",
+        })
+        settings_future = executor.submit(_get_table, "administrative_congregation_settings", {
+            "select": "*", "limit": "3000",
+        })
+        # O catálogo pode trazer mais de uma descrição para o mesmo código BR.
+        catalog = list({
+            _common_code(row.get("comum")) or _catalog_norm(row.get("comum")): row
+            for row in congregation_distribution.corrected_catalog(catalog_future.result())
+        }.values())
+        people = _congregation_people(registry_future.result(), catalog, ministry_future.result())
+        congregation_settings_rows = settings_future.result()
+    settings_by_code = {
+        str(row.get("congregation_code") or "").upper(): row
+        for row in congregation_settings_rows if row.get("congregation_code")
+    }
+    by_code = {}
+    for person in people:
+        by_code.setdefault(_common_code(person["comum"]), []).append(person)
+    rows = []
+    for common in catalog:
         full_name = str(common.get("comum") or common.get("nome") or "").strip()
         code = _common_code(full_name)
-        servants = by_code.get(code, []) if code else by_name.get(_catalog_norm(full_name), [])
+        congregation_settings = settings_by_code.get(code, {})
+        archived = bool(congregation_settings.get("archived_at"))
+        if archived and not include_archived:
+            continue
+        servants = by_code.get(code, [])
         rows.append({
             "id": common.get("id") or code or full_name,
             "codigo": code,
-            "nome": full_name,
-            "nome_comum": _common_name(full_name),
-            "municipio": common.get("cidade") or common.get("municipio") or next((x.get("municipio") for x in servants if x.get("municipio")), ""),
-            "administracao": next((x.get("administracao") for x in servants if x.get("administracao")), ""),
-            "quantidade_servos": len(servants), "servos": servants,
+            "nome": congregation_settings.get("nome") or full_name,
+            "nome_comum": _common_name(congregation_settings.get("nome") or full_name),
+            "municipio": congregation_settings.get("municipio") or common.get("cidade") or common.get("municipio") or "",
+            "administracao": congregation_settings.get("administracao") or "",
+            "arquivada": archived,
+            "responsaveis_sistema": [p for p in servants if p["categoria"] in CONGREGATION_ASSIGNMENT_FIELDS],
+            # Seleções antigas não podem reintroduzir pessoas de outra fonte.
+            "distribuicao": {
+                field: [p["id"] for p in servants if p["categoria"] == field]
+                for field in CONGREGATION_ASSIGNMENT_FIELDS
+            },
+            "quantidade_servos": len({p["person_key"] for p in servants}),
+            "servos": servants,
         })
-    return sorted(rows, key=lambda row: (str(row.get("municipio") or ""), str(row.get("nome") or "")))
+    rows = sorted(rows, key=lambda row: (_catalog_norm(row["municipio"]), _catalog_norm(row["nome"])))
+    overrides, editable = distribution_future.result()
+    congregation_distribution.apply(rows, people, overrides, editable)
+    for row in rows:
+        row["servos"] = _sort_ministry_rows(row["servos"])
+    return rows, people if include_people else []
+
+
+def _congregation_rows(include_archived=False):
+    return _congregation_data(include_archived=include_archived)[0]
+
+
+def _congregation_settings_missing(exc):
+    response = getattr(exc, "response", None)
+    if response is None:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("code") in {"PGRST205", "PGRST204", "42P01"} and (
+        "administrative_congregation_settings" in str(payload)
+    )
 
 
 @administrative_only
@@ -593,17 +818,34 @@ def _congregation_rows():
 def operational_data(request, section):
     try:
         if section == "congregacoes":
-            return JsonResponse({"rows": _congregation_rows()})
+            rows, people = _congregation_data(include_archived=True, include_people=True)
+            catalog = congregation_distribution.corrected_catalog(common_catalog())
+            persons = congregation_distribution.directory(people, [{"assignments": [item for row in rows for item in row.get("assignments", [])]}])
+            administration_by_code = {_common_code(c["comum"]): congregation_distribution.administration(c.get("cidade") or c.get("municipio")) for c in catalog}
+            for row in rows:
+                row["administration_id"] = administration_by_code.get(row["codigo"], "")
+            return JsonResponse({
+                "rows": rows,
+                "people": people,
+                "assignment_people": list(congregation_distribution.scoped_directory(persons, catalog).values()),
+            })
         config = OPERATIONAL_CONFIG.get(section)
         if not config:
             return JsonResponse({"error": "Secao administrativa invalida."}, status=404)
         rows = _get_table(config["table"], {"select": "*", "order": config["order"], "limit": "2000"})
+        if section == "ministerio":
+            rows = _sort_ministry_rows(rows, common_catalog())
         payload = {"rows": rows}
         if section == "santa-ceia":
             payload["counts"] = _get_table("santa_ceia_contagem", {"select": "*", "order": "created_at.desc", "limit": "2000"})
         return JsonResponse(payload)
     except requests.RequestException as exc:
         logger.exception("Falha ao consultar %s: %s", section, exc)
+        if section == "congregacoes" and _congregation_settings_missing(exc):
+            return JsonResponse({
+                "error": "A configuração de Congregações ainda não foi criada no Supabase.",
+                "migration": "scripts/migrations/052_administrative_congregation_settings.sql",
+            }, status=503)
         return JsonResponse({"error": "Nao foi possivel consultar os dados administrativos."}, status=502)
 
 
@@ -677,6 +919,193 @@ def operational_record(request, section, record_id=None):
         log_audit(request, "MUTATION_FAILED", config["module"], {"entity": config["table"], "entity_id": str(record_id or ""), "outcome": "failure", "error_type": type(exc).__name__})
         return JsonResponse({"error": "Nao foi possivel concluir a operacao."}, status=502)
 
+
+@administrative_only
+@require_http_methods(["PATCH", "DELETE"])
+def congregation_record(request, record_id):
+    code = _common_code(record_id)
+    if not code or code != str(record_id).upper():
+        return JsonResponse({"error": "Código da congregação inválido."}, status=400)
+
+    table = "administrative_congregation_settings"
+    try:
+        common = next(
+            (
+                row for row in congregation_distribution.corrected_catalog(common_catalog())
+                if _common_code(row.get("comum") or row.get("nome")) == code
+            ),
+            None,
+        )
+        if not common:
+            return JsonResponse({"error": "Congregação não encontrada no catálogo."}, status=404)
+        existing_rows = _get_table(
+            table,
+            {"select": "*", "congregation_code": f"eq.{code}", "limit": "1"},
+        )
+        before = existing_rows[0] if existing_rows else {}
+        source_name = str(common.get("comum") or common.get("nome") or "").strip()
+        source_municipality = str(common.get("cidade") or common.get("municipio") or "").strip()
+
+        if request.method == "DELETE":
+            changes = {}
+            archived_at = datetime.now(timezone.utc).isoformat()
+            event = "ARCHIVE"
+        else:
+            body = _request_json(request)
+            allowed = {"nome", "municipio", "administracao", "arquivada", *CONGREGATION_ASSIGNMENT_FIELDS}
+            unknown = set(body) - allowed
+            if unknown:
+                return JsonResponse({"error": "A solicitação contém campos não permitidos."}, status=400)
+            changes = {key: body[key] for key in {"nome", "municipio", "administracao"} if key in body}
+            selected_people = {}
+            for field in CONGREGATION_ASSIGNMENT_FIELDS:
+                if field not in body:
+                    continue
+                value = body[field]
+                if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                    return JsonResponse({"error": f"A lista de pessoas em {field} é inválida."}, status=400)
+                if len(value) != len(set(value)):
+                    return JsonResponse({"error": f"A lista de pessoas em {field} contém duplicatas."}, status=400)
+                changes[field] = value
+                selected_people.update({item: field for item in value})
+            if selected_people:
+                available_people = {person["id"]: person for person in _fetch_congregation_people()}
+                for person_id, field in selected_people.items():
+                    person = available_people.get(person_id)
+                    if (
+                        not person
+                        or person["categoria"] != field
+                        or not _person_matches_congregation(
+                            person, source_name, code, source_municipality
+                        )
+                    ):
+                        return JsonResponse({
+                            "error": "Uma ou mais pessoas selecionadas não correspondem ao cargo ou à comum."
+                        }, status=400)
+            if not changes and "arquivada" not in body:
+                return JsonResponse({"error": "Nenhum campo permitido foi enviado."}, status=400)
+
+            if "arquivada" in body:
+                if not isinstance(body["arquivada"], bool):
+                    return JsonResponse({"error": "O estado de arquivamento deve ser verdadeiro ou falso."}, status=400)
+                archived_at = datetime.now(timezone.utc).isoformat() if body["arquivada"] else None
+                event = "ARCHIVE" if body["arquivada"] else "RESTORE"
+            else:
+                archived_at = before.get("archived_at")
+                event = "UPDATE" if before else "CREATE"
+
+        candidate = {
+            "nome": before.get("nome") or source_name,
+            "municipio": before.get("municipio") or source_municipality,
+            "administracao": before.get("administracao") or "",
+            **{field: before.get(field) or [] for field in CONGREGATION_ASSIGNMENT_FIELDS},
+            **changes,
+        }
+        for field in ("nome", "municipio"):
+            candidate[field] = str(candidate.get(field) or "").strip()
+            if not candidate[field]:
+                return JsonResponse({"error": "Nome e município são obrigatórios."}, status=400)
+        candidate["administracao"] = str(candidate.get("administracao") or "").strip()
+
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "congregation_code": code,
+            **candidate,
+            "archived_at": archived_at,
+            "updated_by": str(request.session.get("user_id") or ""),
+            "updated_at": now,
+        }
+        response = requests.post(
+            f"{settings.SUPABASE_URL}/rest/v1/{table}",
+            headers=_headers("resolution=merge-duplicates,return=representation"),
+            params={"on_conflict": "congregation_code"},
+            json=payload,
+            timeout=15,
+        )
+        response.raise_for_status()
+        result_rows = response.json()
+        if not isinstance(result_rows, list) or len(result_rows) != 1:
+            raise requests.RequestException("O banco não confirmou a alteração da congregação.")
+        result = result_rows[0]
+        log_audit(request, event, "ADMINISTRACAO_CONGREGACOES", {
+            "entity": table,
+            "entity_id": code,
+            "before": before or None,
+            "after": result,
+            "changes": _audit_changes(
+                before, result,
+                {"nome", "municipio", "administracao", "archived_at", *CONGREGATION_ASSIGNMENT_FIELDS},
+            ),
+            "outcome": "success",
+        })
+        return JsonResponse(result)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except requests.RequestException as exc:
+        logger.exception("Falha ao atualizar a congregação %s: %s", code, exc)
+        log_audit(request, "MUTATION_FAILED", "ADMINISTRACAO_CONGREGACOES", {
+            "entity": table, "entity_id": code, "outcome": "failure", "error_type": type(exc).__name__,
+        })
+        if _congregation_settings_missing(exc):
+            return JsonResponse({
+                "error": "A configuração de Congregações ainda não foi criada no Supabase.",
+                "migration": "scripts/migrations/052_administrative_congregation_settings.sql",
+            }, status=503)
+        return JsonResponse({"error": "Não foi possível concluir a operação da congregação."}, status=502)
+
+
+@administrative_only
+@require_http_methods(["PATCH"])
+def congregation_distribution_record(request, record_id):
+    """Substitui só os atendimentos desta comum, com controle de concorrência."""
+    try:
+        catalog = congregation_distribution.corrected_catalog(common_catalog())
+        if record_id not in {_common_code(c["comum"]) for c in catalog}:
+            return JsonResponse({"error": "Congregação não encontrada."}, status=404)
+        body = _request_json(request)
+        revision = body.get("revision")
+        if type(revision) is not int or revision < 0:
+            raise ValueError("Versão da distribuição inválida. Atualize a página.")
+        overrides, editable = congregation_distribution.load_overrides(_get_table)
+        if not editable:
+            return JsonResponse({"error": "A edição de assistências ainda precisa ser habilitada na configuração do sistema."}, status=503)
+        persons = congregation_distribution.directory(_fetch_congregation_people(), overrides)
+        assignments = congregation_distribution.validate_assignments(body.get("assignments"), persons, catalog, record_id)
+        before = next((r for r in overrides if r["congregation_code"] == record_id), None)
+        if (before["revision"] if before else 0) != revision:
+            return JsonResponse({"error": "Outra pessoa alterou esta distribuição. Atualize antes de salvar."}, status=409)
+        actor = str(request.session.get("user_id") or "")
+        payload = {"congregation_code": record_id, "assignments": assignments,
+                   "revision": revision + 1, "updated_by": actor,
+                   "updated_at": datetime.now(timezone.utc).isoformat()}
+        url = f"{settings.SUPABASE_URL}/rest/v1/{congregation_distribution.TABLE}"
+        if revision == 0:
+            response = requests.post(url, headers=_headers("return=representation"), json=payload, timeout=15)
+        else:
+            response = requests.patch(url, headers=_headers("return=representation"),
+                                      params={"congregation_code": f"eq.{record_id}", "revision": f"eq.{revision}"},
+                                      json=payload, timeout=15)
+        if response.status_code == 409:
+            return JsonResponse({"error": "A distribuição foi alterada. Atualize antes de salvar."}, status=409)
+        response.raise_for_status()
+        confirmed = response.json()
+        if not confirmed:
+            return JsonResponse({"error": "A distribuição foi alterada. Atualize antes de salvar."}, status=409)
+        log_audit(request, "UPDATE", "ADMINISTRACAO_CONGREGACOES", {
+            "entity": congregation_distribution.TABLE, "entity_id": record_id,
+            "before": before or {"assignments": [a for a in congregation_distribution.seed()["assignments"] if a["congregation_code"] == record_id]},
+            "after": confirmed[0], "outcome": "success",
+        })
+        return JsonResponse(confirmed[0])
+    except congregation_distribution.ResidenceConflict as exc:
+        return JsonResponse({"error": str(exc)}, status=409)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except requests.RequestException:
+        logger.exception("Falha ao salvar distribuição da comum %s", record_id)
+        return JsonResponse({"error": "Não foi possível salvar a distribuição."}, status=502)
+
+
 @administrative_only
 @require_http_methods(["GET"])
 def export_congregations_excel(request):
@@ -749,11 +1178,14 @@ def export_ministerio_excel(request):
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
-    rows = _get_table("ministerio_regional", {"select": "*", "order": "nome.asc", "limit": "3000"})
+    rows = _sort_ministry_rows(
+        _get_table("ministerio_regional", {"select": "*", "order": "nome.asc", "limit": "3000"}),
+        common_catalog(),
+    )
     municipality = str(request.GET.get("municipio") or "").strip()
     query = _catalog_norm(request.GET.get("q"))
     if municipality:
-        rows = [row for row in rows if str(row.get("municipio") or "") == municipality]
+        rows = [row for row in rows if _catalog_norm(row.get("municipio")) == _catalog_norm(municipality)]
     if query:
         rows = [row for row in rows if query in _catalog_norm(" ".join(str(row.get(key) or "") for key in ("nome", "ministerio", "comum", "municipio", "administracao", "rrm")))]
     profile = request.session.get("user_profile") or {}

@@ -1,204 +1,1015 @@
 {% extends 'base.html' %}{% load static %}
-{% block title %}Auditoria de Módulos{% endblock %}
-{% block css %}<style>
-.audit-hero{background:linear-gradient(135deg,#0d7377 0,#16a89a 100%);padding:24px 0;border-radius:12px;margin-bottom:20px;position:relative;overflow:hidden;color:#fff}.audit-hero:before{content:'';position:absolute;top:-40%;right:-10%;width:300px;height:300px;background:rgba(255,255,255,.05);border-radius:50%}.audit-hero-inner{position:relative;z-index:1}.audit-hero .eyebrow{color:rgba(255,255,255,.7);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;display:block}.audit-hero h1{font-size:2rem;font-weight:800;margin-bottom:8px;line-height:1.2}.audit-hero p{font-size:.95rem;margin-bottom:0;color:rgba(255,255,255,.95)}.audit-scope{text-align:right;font-size:.85rem;color:rgba(255,255,255,.8)}.audit-scope strong{display:block;color:#fff;font-size:1.1rem;margin-top:4px;font-weight:800}
-.module-tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}.module-tab{padding:9px 14px;border:2px solid #e5eaf0;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;transition:all .2s;font-size:.87rem;color:#687581}.module-tab:hover{border-color:#0d7377;background:#f0fffe;color:#0d7377}.module-tab.active{border-color:#0d7377;background:#0d7377;color:#fff}.module-tab i{margin-right:6px}
-.filter-section{background:#fff;padding:20px;border-radius:6px;box-shadow:0 2px 10px #0000000d;margin-bottom:20px}.filter-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:12px;align-items:flex-end}.filter-row label{font-size:.75rem;font-weight:700;color:#687581;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.filter-row select,.filter-row input{border:1px solid #d5dbe0;border-radius:5px;font-size:.9rem;padding:8px 10px;height:36px}.filter-row .btn{height:36px}.filter-actions{display:flex;gap:8px}.filter-actions .btn{min-height:36px;border-radius:5px;padding:7px 13px;font-size:.85rem;white-space:nowrap;border:1px solid #d5dbe0}.filter-actions .btn-primary{background:#0d7377;border-color:#0d7377;color:#fff}.filter-actions .btn-primary:hover{background:#0a5a5f;border-color:#0a5a5f}
-@media(max-width:1199px){.filter-row{grid-template-columns:1fr 1fr 1fr;}.filter-row:nth-child(2){grid-template-columns:1fr 1fr;}.filter-actions{grid-column:1/-1}}@media(max-width:767px){.filter-row{grid-template-columns:1fr;}.filter-row:nth-child(2){grid-template-columns:1fr;}.filter-actions{grid-template-columns:repeat(2,1fr)}.filter-actions .btn-primary{grid-column:1/-1}}.vision-header{color:#687581;font-size:.8rem;text-transform:uppercase;font-weight:700;letter-spacing:.08em;margin:24px 0 16px 0;display:block}
-.premium-stat{position:relative;min-height:160px;border:1px solid #e9edf2;border-radius:18px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 34px #28374a12;overflow:hidden}.premium-stat:after{content:'';position:absolute;width:100px;height:100px;border-radius:50%;right:-50px;top:-50px;background:var(--tint)}.premium-stat .card-body{position:relative;z-index:1;padding:18px}.premium-top{display:flex;justify-content:space-between;align-items:flex-start}.premium-icon{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:var(--tint)}.premium-title{font-size:.7rem;font-weight:700;color:#677481;text-transform:uppercase;letter-spacing:.06em}.premium-value{font-size:1.8rem;line-height:1;font-weight:750;color:#202a35;margin-top:10px}.premium-context{font-size:.68rem;color:#87919b;margin-top:5px}.mini-bars{height:36px;display:flex;align-items:flex-end;gap:4px;margin-top:12px}.mini-bars i{display:block;flex:1;height:var(--h);border-radius:4px 4px 2px 2px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 60%,white));opacity:.85}
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px}.audit-panel{border:0;border-radius:16px;box-shadow:0 8px 28px #17384d12}.audit-panel .panel-heading{border-radius:16px 16px 0 0;padding:16px 20px;background:#fff;color:#1d2c38;border-bottom:1px solid #edf0f2;display:flex;justify-content:space-between;align-items:center}.audit-panel .panel-heading h4{margin:0;font-size:.95rem;font-weight:700}.audit-panel .panel-body{padding:0}.audit-table{margin-bottom:0}.audit-table thead th{font-size:.7rem;text-transform:uppercase;color:#687581;font-weight:700;border-color:#edf0f2;background:#f8fafb;padding:12px}.audit-table tbody td{font-size:.9rem;vertical-align:middle;border-color:#f5f7f9;padding:12px}.audit-badge{display:inline-block;padding:4px 9px;border-radius:6px;font-size:.65rem;font-weight:700;text-transform:uppercase}.badge-musicalizacao{background:#e8f8f4;color:#087d69}.badge-darpe{background:#fff3e0;color:#e65100}.badge-cartas{background:#fce4ec;color:#c2185b}.badge-visitas{background:#e1f5fe;color:#0277bd}.badge-sam{background:#f3e5f5;color:#7b1fa2}.badge-gem{background:#ebf5ff;color:#0050b3}
-.pagination-row{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid #edf0f2;background:#f8fafb;font-size:.85rem;color:#7a8791;border-radius:0 0 16px 16px}.pagination-info{flex:1}.pagination-controls{display:flex;gap:6px}.pagination-controls button{min-height:32px;padding:5px 11px;border:1px solid #d5dbe0;background:#fff;border-radius:4px;cursor:pointer;font-size:.85rem;color:#687581;transition:all .2s}.pagination-controls button:hover:not(:disabled){background:#f5f7f9;border-color:#0d7377}.pagination-controls button.active{background:#0d7377;color:#fff;border-color:#0d7377}.pagination-controls button:disabled{opacity:.5;cursor:not-allowed}
-.loading-spinner{text-align:center;padding:40px;color:#687581}.loading-spinner i{font-size:2rem;margin-bottom:10px;display:block}.empty-state{text-align:center;padding:40px;color:#7a8791}.empty-state i{font-size:2rem;margin-bottom:10px;display:block}
+{% block title %}Auditoria de Módulos - CCB Regional Itapevi{% endblock %}
+{% block css %}
+<link href="{% static 'plugins/apexcharts/dist/apexcharts.css' %}" rel="stylesheet">
+<style>
+.audit-dashboard{--ink:#15253a;--muted:#718096}
+.audit-dashboard:before{content:'';position:fixed;inset:0 0 0 var(--app-sidebar-width,220px);z-index:-1;background:radial-gradient(circle at 72% 4%,#dff6f5 0,transparent 28%),linear-gradient(145deg,#f4f8fb,#edf2f6)}
+.audit-hero{position:relative;overflow:hidden;padding:25px 28px;border:1px solid #ffffffb8;border-radius:24px;background:linear-gradient(120deg,#153149 0%,#176478 55%,#13aa9e 100%);box-shadow:0 18px 46px #183b5524;color:#fff}
+.audit-hero:after{content:'';position:absolute;width:330px;height:330px;right:-90px;top:-190px;border:1px solid #ffffff38;border-radius:50%;box-shadow:0 0 0 45px #ffffff0a,0 0 0 90px #ffffff08}
+.audit-hero .eyebrow,.section-kicker{font-size:.67rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
+.audit-hero .eyebrow{color:#8eebe2}
+.audit-hero h1{font-size:1.75rem;letter-spacing:-.035em}
+.audit-hero p{max-width:680px;color:#d7edf0}
+.audit-scope{position:relative;z-index:1;border:1px solid #ffffff42;border-radius:14px;background:#ffffff17;backdrop-filter:blur(12px);padding:10px 14px}
+
+.module-pills{display:flex;gap:8px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.module-pill{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;color:#4a5568;font-size:.82rem;font-weight:650;cursor:pointer;white-space:nowrap;transition:all .2s;box-shadow:0 2px 6px #00000008}
+.module-pill:hover{border-color:#13aa9e;color:#0d7377;background:#f0fffe}
+.module-pill.active{border-color:#0d7377;background:#0d7377;color:#fff;box-shadow:0 4px 12px #0d737735}
+.module-pill .badge{font-size:.65rem;border-radius:20px;padding:3px 7px}
+
+.filter-section{background:#fff;padding:20px;border-radius:16px;box-shadow:0 4px 20px #0000000d;margin-bottom:24px;border:1px solid #eef2f6}
+.filter-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;width:100%}
+.filter-section .form-label{font-size:.625rem!important}
+.filter-actions .btn{min-height:36px;white-space:nowrap;border-radius:8px!important;padding-left:12px;padding-right:12px;font-size:12px;font-weight:600}
+.period-field{display:flex;flex:1;min-width:0}
+.period-field .form-control{width:100%}
+.period-mobile-label{display:none}
+
+.dashboard-section-title{display:flex;align-items:end;justify-content:space-between;margin:4px 2px 14px}
+.dashboard-section-title h2{font-size:1.05rem;font-weight:800;color:var(--ink);margin:0}
+.dashboard-section-title p{font-size:.75rem;color:var(--muted);margin:3px 0 0}
+.section-kicker{color:#0c9e92}
+
+.premium-stat{position:relative;min-height:176px;border:1px solid #e9edf2;border-radius:20px;background:linear-gradient(145deg,#fff,#fbfcff);box-shadow:0 12px 34px #28374a12;overflow:hidden;transition:transform .2s}
+.premium-stat:hover{transform:translateY(-2px)}
+.premium-stat:after{content:'';position:absolute;width:120px;height:120px;border-radius:50%;right:-55px;top:-55px;background:var(--tint)}
+.premium-stat .card-body{position:relative;z-index:1;padding:20px}
+.premium-top{display:flex;justify-content:space-between;align-items:flex-start}
+.premium-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:var(--tint);font-size:16px}
+.premium-title{font-size:.72rem;font-weight:700;color:#526275;text-transform:uppercase;letter-spacing:.055em}
+.premium-value{font-size:2rem;line-height:1;font-weight:750;color:#202a35;margin-top:12px}
+.premium-context{font-size:.71rem;color:#87919b;margin-top:6px;min-height:24px}
+.mini-bars{height:36px;display:flex;align-items:flex-end;gap:5px;margin-top:14px}
+.mini-bars i{display:block;flex:1;min-width:5px;height:var(--h);border-radius:5px 5px 2px 2px;background:linear-gradient(to top,var(--accent),color-mix(in srgb,var(--accent) 55%,white));opacity:.9}
+
+.executive-note{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;border:1px solid #e3e8f4;border-left:0;background:#fff;border-radius:16px;padding:15px 18px;box-shadow:0 8px 24px #26364a0d;color:#4d5260;font-size:.78rem}
+.executive-note strong{color:#242936}
+.executive-note .health-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:#eeeaff;color:#6c5ce7;font-size:15px}
+
+.audit-panel{border:1px solid #e8edf2;border-radius:18px;box-shadow:0 8px 28px #17384d12;background:#ffffffed;backdrop-filter:blur(10px);overflow:hidden}
+.audit-panel .panel-heading{padding:16px 20px;background:#fff;color:#1d2c38;border-bottom:1px solid #edf0f2;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.audit-panel .panel-title{font-size:.95rem;font-weight:800;margin:0}
+.audit-panel .table-responsive{overflow-x:auto;overflow-y:hidden}
+
+.audit-table thead th{font-size:.68rem;text-transform:uppercase;color:#687581;letter-spacing:.05em;background:#f8fafc;border-bottom:2px solid #edf0f2;padding:12px 14px}
+.audit-table tbody td{padding:14px;vertical-align:middle;font-size:.78rem;border-bottom:1px solid #f1f5f9;line-height:1.45}
+.audit-table tbody tr:hover td{background:#f8fbfc}
+
+.audit-module-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:8px;font-size:.62rem;font-weight:750;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.audit-action-badge{display:inline-block;padding:4px 8px;border-radius:6px;font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.audit-operator{display:flex;align-items:center;gap:9px}
+.audit-operator strong{white-space:nowrap}
+.audit-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#e2e8f0;color:#334155;font-weight:750;font-size:11px;flex:0 0 auto}
+.audit-details-cell{max-width:440px}
+.audit-details-cell .main-desc{font-size:.75rem;font-weight:550;color:#1e293b}
+.audit-details-cell .sub-desc{font-size:.7rem;color:#64748b;margin-top:2px}
+.audit-location-main{display:block;font-size:.76rem;font-weight:600;white-space:nowrap}
+.audit-location-city{display:block;margin-top:2px;font-size:.64rem;color:#64748b;white-space:nowrap}
+.audit-gem-details{display:grid;gap:3px}
+.audit-gem-title{font-size:.62rem;font-weight:750;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.audit-gem-student{font-size:.78rem;font-weight:700;color:#1e293b}
+.audit-gem-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:.7rem;color:#64748b}
+.audit-gem-status{display:inline-flex;align-items:center;padding:2px 6px;border-radius:5px;background:#dcfce7;color:#15803d;font-size:.62rem;font-weight:800;text-transform:uppercase}
+.modal-gem-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.modal-gem-detail{padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+.modal-gem-detail span{display:block;font-size:.62rem;font-weight:750;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.modal-gem-detail strong{display:block;margin-top:3px;font-size:.82rem;color:#1e293b}
+
+.table-toolbar{display:flex;align-items:end;gap:12px;margin-left:auto}
+.table-result-count{font-size:.72rem;color:#64748b;white-space:nowrap;padding-bottom:5px}
+.table-search{min-width:230px}
+.table-search label{display:block;margin:0 0 3px;font-size:.62rem;font-weight:700;color:#718096;letter-spacing:.04em;text-transform:uppercase}
+
+.pagination-footer{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#f8fafc;border-top:1px solid #edf0f2;font-size:.8rem;color:#64748b;flex-wrap:wrap;gap:10px}
+.pagination-controls{display:flex;align-items:center;gap:5px}
+.pagination-controls .btn-page{min-width:32px;height:32px;padding:0 8px;border:1px solid #d5dbe0;background:#fff;border-radius:6px;font-size:.8rem;font-weight:600;color:#475569;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.pagination-controls .btn-page:hover:not(:disabled){background:#f1f5f9;border-color:#cbd5e1;color:#0f172a}
+.pagination-controls .btn-page.active{background:#0d7377;border-color:#0d7377;color:#fff}
+.pagination-controls .btn-page:disabled{opacity:.4;cursor:not-allowed}
+
+#audit-detail-modal .modal-content{border-radius:20px;overflow:hidden;border:0;box-shadow:0 24px 50px #17384d35}
+#audit-detail-modal .modal-header{padding:20px 24px;border:0;background:linear-gradient(115deg,#15364e,#087f80 62%,#14b89f);color:#fff}
+#audit-detail-modal .modal-title{font-size:1.25rem;font-weight:750}
+#audit-detail-modal .btn-close{filter:invert(1);opacity:.8}
+#audit-detail-modal .modal-body{padding:24px;background:#f8fafc}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.detail-card{background:#fff;padding:12px 14px;border-radius:12px;border:1px solid #e2e8f0}
+.detail-card span{display:block;font-size:.62rem;font-weight:750;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+.detail-card strong{display:block;margin-top:3px;font-size:.85rem;color:#0f172a}
+.detail-card .detail-record-id{font-size:.75rem;overflow-wrap:anywhere}
+.detail-relative-time{display:block;margin-top:2px;font-size:.72rem;color:#64748b}
+.detail-relative-time:empty{display:none}
+.detail-json{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;font-family:monospace;font-size:.76rem;max-height:260px;overflow-y:auto;white-space:pre-wrap}
+
+@media(max-width:991.98px){
+  .audit-dashboard:before{inset:0}
+  .audit-hero{padding:20px}
+  .audit-scope{margin-top:16px}
+  .filter-actions{justify-content:flex-start;padding-top:12px;border-top:1px solid #edf2f7}
+}
+@media(max-width:575.98px){
+  .filter-section{padding:14px}
+  .filter-actions{display:grid;grid-template-columns:repeat(2,1fr)}
+  .filter-actions .btn{width:100%}
+  .audit-details-cell{max-width:240px}
+  .table-toolbar{width:100%;margin-left:0;align-items:stretch}
+  .table-search{flex:1;min-width:0}
+}
 </style>
 {% endblock %}
+
 {% block content %}
-<ol class="breadcrumb float-end"><li class="breadcrumb-item"><a href="/dashboard/v3">Início</a></li><li class="breadcrumb-item"><a href="/auditoria/">Auditoria</a></li><li class="breadcrumb-item active">Auditoria de Módulos</li></ol>
+<div class="audit-dashboard">
+  <!-- Hero Banner -->
+  <div class="audit-hero mb-4">
+    <div class="row align-items-center">
+      <div class="col-md">
+        <div class="eyebrow mb-2">Painel de Auditoria e Conformidade</div>
+        <h1 class="mb-2 fw-bold">Auditoria de Módulos</h1>
+        <p class="mb-0">Rastreamento centralizado de operações realizadas em todos os módulos educacionais e operacionais. Acompanhe criações, atualizações e exclusões com detalhes completos.</p>
+      </div>
+      <div class="col-md-auto">
+        <div class="audit-scope text-md-end">
+          <div class="small text-white-50 mb-1">Escopo desta visão</div>
+          <strong id="scope-badge">{{ scope.nivel|default:'Regional'|title }}{% if scope.municipio %} · {{ scope.municipio }}{% endif %}</strong>
+          <div class="small text-white-50 mt-1" id="last-update">Atualizando dados…</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-<div class="audit-hero"><div class="audit-hero-inner"><div class="row align-items-center"><div class="col-md"><span class="eyebrow">Trilha de auditoria</span><h1 class="fw-bold">Auditoria de Módulos</h1><p>Rastreamento centralizado de operações realizadas em todos os módulos educacionais. Acompanhe criações, atualizações e exclusões com detalhes completos.</p></div><div class="col-md-auto"><div class="audit-scope">Escopo desta visão<br><strong id="header-scope">REGIONAL</strong></div></div></div></div></div>
+  <!-- Pílulas de Navegação por Módulo -->
+  <div class="module-pills" id="module-pills" role="tablist" aria-label="Módulos auditados">
+    <button type="button" class="module-pill active" data-module="all"><i class="fa fa-cubes"></i>Todos os Módulos <span class="badge bg-secondary" id="count-all">0</span></button>
+    <button type="button" class="module-pill" data-module="musicalizacao"><i class="fa fa-music text-teal"></i>Musicalização <span class="badge bg-light text-dark" id="count-musicalizacao">0</span></button>
+    <button type="button" class="module-pill" data-module="cartas"><i class="fa fa-envelope-open-text text-danger"></i>Cartas <span class="badge bg-light text-dark" id="count-cartas">0</span></button>
+    <button type="button" class="module-pill" data-module="visitas"><i class="fa fa-person-walking text-primary"></i>Visitas <span class="badge bg-light text-dark" id="count-visitas">0</span></button>
+    <button type="button" class="module-pill" data-module="darpe"><i class="fa fa-handshake-angle text-warning"></i>DARPE <span class="badge bg-light text-dark" id="count-darpe">0</span></button>
+    <button type="button" class="module-pill" data-module="sam"><i class="fa fa-graduation-cap text-purple"></i>Histórico SAM <span class="badge bg-light text-dark" id="count-sam">0</span></button>
+    <button type="button" class="module-pill" data-module="gem"><i class="fa fa-book-open-reader text-blue"></i>GEM <span class="badge bg-light text-dark" id="count-gem">0</span></button>
+    <button type="button" class="module-pill" data-module="admin"><i class="fa fa-shield-halved text-dark"></i>Acessos & Segurança <span class="badge bg-light text-dark" id="count-admin">0</span></button>
+  </div>
 
-<div class="module-tabs" id="module-tabs">
-<button class="module-tab active" data-module="musicalizacao"><i class="fa fa-music"></i>Musicalização</button>
-<button class="module-tab" data-module="darpe"><i class="fa fa-handshake"></i>DARPE</button>
-<button class="module-tab" data-module="cartas"><i class="fa fa-envelope"></i>Cartas</button>
-<button class="module-tab" data-module="visitas"><i class="fa fa-person-hiking"></i>Visitas</button>
-<button class="module-tab" data-module="sam"><i class="fa fa-graduation-cap"></i>SAM</button>
-<button class="module-tab" data-module="gem"><i class="fa fa-book"></i>GEM</button>
+  <!-- Barra de Filtros Unificada -->
+  <div class="filter-section py-3 mb-4 bg-white shadow-sm border-0">
+    <div class="row g-3 align-items-end">
+      <div class="col-6 col-md-2 col-xl-2">
+        <label class="form-label fw-bold small text-muted text-uppercase mb-1">Período Rápido</label>
+        <select id="filter-period-preset" class="form-select border-gray-300 shadow-none">
+          <option value="7">Últimos 7 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
+          <option value="90">Últimos 90 dias</option>
+          <option value="365">Último ano</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-4 col-xl-3">
+        <label class="form-label fw-bold small text-muted text-uppercase mb-1">Data Inicial e Final</label>
+        <div class="input-group">
+          <span class="input-group-text bg-light border-gray-300"><i class="fa fa-calendar-alt"></i></span>
+          <input id="filter-start" type="date" class="form-control border-gray-300 shadow-none" aria-label="Data inicial">
+          <span class="input-group-text bg-white border-0 small px-1">até</span>
+          <input id="filter-end" type="date" class="form-control border-gray-300 shadow-none" aria-label="Data final">
+        </div>
+      </div>
+
+      <div class="col-6 col-md-2 col-xl-2">
+        <label class="form-label fw-bold small text-muted text-uppercase mb-1">Tipo de Ação</label>
+        <select id="filter-action" class="form-select border-gray-300 shadow-none">
+          <option value="">Todas as ações</option>
+          <option value="CREATE">Criação / Inclusão</option>
+          <option value="UPDATE">Atualização</option>
+          <option value="DELETE">Exclusão</option>
+          <option value="APPROVE">Aprovação / Avaliação</option>
+          <option value="ACCESS">Acesso / Sessão</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2 col-xl-2">
+        <label class="form-label fw-bold small text-muted text-uppercase mb-1">Usuário</label>
+        <input type="text" id="filter-operator" class="form-control border-gray-300 shadow-none" placeholder="Nome ou email…">
+      </div>
+
+      <div class="col-12 col-md-2 col-xl-3">
+        <div class="filter-actions">
+          <button id="btn-refresh" class="btn btn-white border-gray-400" title="Atualizar"><i class="fa fa-sync-alt text-primary"></i><span class="d-none d-sm-inline ms-1">Atualizar</span></button>
+          <button id="btn-csv" class="btn btn-white border-gray-400" title="Exportar CSV"><i class="fa fa-file-csv text-success"></i><span class="d-none d-sm-inline ms-1">CSV</span></button>
+          <button id="btn-pdf" class="btn btn-white border-gray-400" title="PDF"><i class="fa fa-file-pdf text-danger"></i><span class="d-none d-sm-inline ms-1">PDF</span></button>
+          <button id="btn-clear" class="btn btn-white border-gray-400" title="Limpar"><i class="fa fa-eraser text-dark"></i><span class="d-none d-sm-inline ms-1">Limpar</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Título da Seção: Visão Geral -->
+  <div class="dashboard-section-title">
+    <div>
+      <div class="section-kicker">Visão Geral</div>
+      <h2>O que está acontecendo agora</h2>
+      <p>Indicadores de conformidade e volumetria das operações no período selecionado.</p>
+    </div>
+  </div>
+
+  <!-- 4 Cards KPI Idênticos ao Padrão Musicalização -->
+  <div class="row g-3 mb-4" id="kpi-grid">
+    <div class="col-6 col-xl-3">
+      <div class="card premium-stat" style="--accent:#12a594;--tint:#e8f8f4">
+        <div class="card-body">
+          <div class="premium-top">
+            <div>
+              <div class="premium-title">Total de Eventos</div>
+              <div class="premium-value" id="kpi-total">0</div>
+            </div>
+            <div class="premium-icon"><i class="fa fa-clipboard-list"></i></div>
+          </div>
+          <div class="premium-context" id="kpi-total-context">operações no período</div>
+          <div class="mini-bars" id="bars-total"><i style="--h:35%"></i><i style="--h:60%"></i><i style="--h:45%"></i><i style="--h:80%"></i><i style="--h:65%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-xl-3">
+      <div class="card premium-stat" style="--accent:#6c5ce7;--tint:#f7f5ff">
+        <div class="card-body">
+          <div class="premium-top">
+            <div>
+              <div class="premium-title">Usuários Ativos</div>
+              <div class="premium-value" id="kpi-operators">0</div>
+            </div>
+            <div class="premium-icon"><i class="fa fa-users"></i></div>
+          </div>
+          <div class="premium-context">usuários realizaram ações</div>
+          <div class="mini-bars" id="bars-operators"><i style="--h:50%"></i><i style="--h:35%"></i><i style="--h:70%"></i><i style="--h:40%"></i><i style="--h:60%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-xl-3">
+      <div class="card premium-stat" style="--accent:#f59e0b;--tint:#fff8f0">
+        <div class="card-body">
+          <div class="premium-top">
+            <div>
+              <div class="premium-title">Criações & Inclusões</div>
+              <div class="premium-value" id="kpi-creates">0</div>
+            </div>
+            <div class="premium-icon"><i class="fa fa-plus-circle"></i></div>
+          </div>
+          <div class="premium-context">novos registros inseridos</div>
+          <div class="mini-bars" id="bars-creates"><i style="--h:40%"></i><i style="--h:75%"></i><i style="--h:55%"></i><i style="--h:90%"></i><i style="--h:45%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-xl-3">
+      <div class="card premium-stat" style="--accent:#0891b2;--tint:#ecfdf5">
+        <div class="card-body">
+          <div class="premium-top">
+            <div>
+              <div class="premium-title">Atualizações & Ações</div>
+              <div class="premium-value" id="kpi-updates">0</div>
+            </div>
+            <div class="premium-icon"><i class="fa fa-pen-to-square"></i></div>
+          </div>
+          <div class="premium-context">modificações registradas</div>
+          <div class="mini-bars" id="bars-updates"><i style="--h:30%"></i><i style="--h:65%"></i><i style="--h:40%"></i><i style="--h:85%"></i><i style="--h:50%"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leitura de Gestão Executiva -->
+  <div class="executive-note mb-4" id="executive-note">
+    <div class="health-icon"><i class="fa fa-list-check"></i></div>
+    <div>
+      <strong>Analisando a trilha de auditoria…</strong>
+      <div class="text-muted small mt-1">Carregando os apontamentos consolidados do banco de dados.</div>
+    </div>
+  </div>
+
+  <!-- Título da Seção: Distribuição e Tendência -->
+  <div class="dashboard-section-title">
+    <div>
+      <div class="section-kicker">Distribuição e Tendência</div>
+      <h2>Onde a auditoria precisa olhar</h2>
+      <p>Evolução diária das operações e divisão por modalidade de ação e módulo.</p>
+    </div>
+  </div>
+
+  <!-- Gráficos Visuais ApexCharts -->
+  <div class="row g-3 mb-4">
+    <div class="col-xl-8">
+      <div class="panel audit-panel h-100">
+        <div class="panel-heading">
+          <div>
+            <h4 class="panel-title fw-bold">Como as operações estão evoluindo?</h4>
+            <div class="text-muted small mt-1">Volume diário de operações registradas na trilha de auditoria</div>
+          </div>
+          <span class="badge bg-light text-dark ms-auto" id="chart-badge">Volume diário</span>
+        </div>
+        <div class="panel-body p-3">
+          <div id="audit-timeline-chart" style="min-height:280px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="panel audit-panel h-100">
+        <div class="panel-heading">
+          <div>
+            <h4 class="panel-title fw-bold">Composição por ação</h4>
+            <div class="text-muted small mt-1">Proporção das operações no recorte selecionado</div>
+          </div>
+        </div>
+        <div class="panel-body p-3">
+          <div id="audit-action-chart" style="min-height:280px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Painel da Tabela de Eventos Detalhada -->
+  <div class="panel audit-panel">
+    <div class="panel-heading">
+      <div>
+        <h4 class="panel-title fw-bold">Eventos de auditoria</h4>
+        <div class="text-muted small mt-1">Histórico completo com usuário, data/hora, localização e descrição detalhada da operação</div>
+      </div>
+      <div class="table-toolbar">
+        <span class="table-result-count" id="record-count">0 registros</span>
+        <div class="table-search">
+          <label for="table-search">Busca rápida nos resultados</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-white border-end-0"><i class="fa fa-search text-muted"></i></span>
+            <input type="text" id="table-search" class="form-control border-start-0" placeholder="Pesquisar evento, usuário ou local…">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover audit-table mb-0">
+          <thead>
+            <tr>
+              <th style="width:200px">Módulo / Recurso</th>
+              <th style="width:110px">Ação</th>
+              <th style="width:170px">Usuário</th>
+              <th style="width:140px">Data / Hora</th>
+              <th style="width:270px">Localização</th>
+              <th>Detalhes da Operação</th>
+              <th style="width:80px;text-align:center">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="audit-tbody">
+            <tr>
+              <td colspan="7" class="text-center py-5 text-muted">
+                <i class="fa fa-spinner fa-spin fa-2x mb-2 d-block text-primary"></i>
+                Carregando eventos de auditoria consolidados…
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Paginação -->
+    <div class="pagination-footer">
+      <div id="page-info">Mostrando 0 registros</div>
+      <div class="pagination-controls" id="pagination-controls">
+        <button class="btn-page" id="btn-prev" disabled><i class="fa fa-chevron-left me-1"></i>Anterior</button>
+        <div id="page-numbers" class="d-inline-flex gap-1"></div>
+        <button class="btn-page" id="btn-next" disabled>Próxima<i class="fa fa-chevron-right ms-1"></i></button>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="filter-section py-3 mb-4 bg-white shadow-sm border-0"><div class="row g-3"><div class="col-12"><div class="filter-row"><div><label>Recurso</label><select id="filter-resource" class="form-select form-select-sm"><option value="">Todos</option></select></div><div><label>Ação</label><select id="filter-action" class="form-select form-select-sm"><option value="">Todas</option><option value="CREATE">Criar</option><option value="UPDATE">Atualizar</option><option value="DELETE">Deletar</option></select></div><div><label>Operador</label><input type="text" id="filter-operator" class="form-control form-control-sm" placeholder="Nome ou email..."></div><div><label>Período</label><select id="filter-period" class="form-select form-select-sm"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="0">Todos</option></select></div><div class="filter-actions"><button type="button" id="btn-search" class="btn btn-primary btn-sm"><i class="fa fa-search"></i> Buscar</button><button type="button" id="btn-excel" class="btn btn-sm" style="border:1px solid #d5dbe0"><i class="fa fa-file-excel text-success"></i> Excel</button><button type="button" id="btn-pdf" class="btn btn-sm" style="border:1px solid #d5dbe0"><i class="fa fa-file-pdf text-danger"></i> PDF</button><button type="button" id="btn-clear" class="btn btn-sm" style="border:1px solid #d5dbe0"><i class="fa fa-eraser"></i> Limpar</button></div></div></div></div></div>
+<!-- Modal de Detalhes do Evento de Auditoria -->
+<div class="modal fade" id="audit-detail-modal" tabindex="-1" aria-labelledby="auditDetailTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="auditDetailTitle">Detalhamento da Operação</h5>
+          <div class="small text-white-50 mt-1" id="modal-sub-title">Visualização enriquecida do registro de auditoria</div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-grid">
+          <div class="detail-card">
+            <span>Usuário Responsável</span>
+            <strong id="modal-operator">—</strong>
+          </div>
+          <div class="detail-card">
+            <span>Data e Hora</span>
+            <strong id="modal-datetime">—</strong>
+            <small class="detail-relative-time" id="modal-relative-time"></small>
+          </div>
+          <div class="detail-card">
+            <span>Módulo / Recurso</span>
+            <strong id="modal-module">—</strong>
+          </div>
+          <div class="detail-card">
+            <span>Tipo de Ação</span>
+            <strong id="modal-action">—</strong>
+          </div>
+          <div class="detail-card">
+            <span>Identificador do Registro</span>
+            <strong class="detail-record-id" id="modal-record-id">—</strong>
+          </div>
+          <div class="detail-card">
+            <span>Origem do Registro</span>
+            <strong id="modal-origin">—</strong>
+          </div>
+          <div class="detail-card" style="grid-column:1/-1">
+            <span>Localização / Recorte Territorial</span>
+            <strong id="modal-location">—</strong>
+          </div>
+        </div>
 
-<div class="vision-header">O que está acontecendo agora</div>
+        <div class="mb-3">
+          <label class="form-label fw-bold small text-muted text-uppercase mb-1" id="modal-description-label">Descrição Semântica do Evento</label>
+          <div class="p-3 bg-white rounded border" id="modal-description" style="font-size:.85rem;line-height:1.5;color:#1e293b"></div>
+        </div>
 
-<div class="kpi-grid"><div class="card premium-stat" style="--accent:#00acac;--tint:#e8f8f4"><div class="card-body"><div class="premium-top"><span class="premium-title">Total de Eventos</span><div class="premium-icon"><i class="fa fa-chart-line"></i></div></div><div class="premium-value" id="kpi-total">0</div><div class="premium-context">período selecionado</div><div class="mini-bars"><i style="--h:30%"></i><i style="--h:55%"></i><i style="--h:40%"></i><i style="--h:70%"></i><i style="--h:45%"></i></div></div></div><div class="card premium-stat" style="--accent:#6c5ce7;--tint:#f7f5ff"><div class="card-body"><div class="premium-top"><span class="premium-title">Operadores Ativos</span><div class="premium-icon"><i class="fa fa-users"></i></div></div><div class="premium-value" id="kpi-operators">0</div><div class="premium-context">realizaram alterações</div><div class="mini-bars"><i style="--h:50%"></i><i style="--h:35%"></i><i style="--h:65%"></i><i style="--h:42%"></i><i style="--h:58%"></i></div></div></div><div class="card premium-stat" style="--accent:#f59e0b;--tint:#fef3f2"><div class="card-body"><div class="premium-top"><span class="premium-title">Criações</span><div class="premium-icon"><i class="fa fa-plus-circle"></i></div></div><div class="premium-value" id="kpi-creates">0</div><div class="premium-context">novos registros</div><div class="mini-bars"><i style="--h:45%"></i><i style="--h:60%"></i><i style="--h:50%"></i><i style="--h:75%"></i><i style="--h:40%"></i></div></div></div><div class="card premium-stat" style="--accent:#0891b2;--tint:#ecfdf5"><div class="card-body"><div class="premium-top"><span class="premium-title">Atualizações</span><div class="premium-icon"><i class="fa fa-pen-to-square"></i></div></div><div class="premium-value" id="kpi-updates">0</div><div class="premium-context">registros modificados</div><div class="mini-bars"><i style="--h:35%"></i><i style="--h:58%"></i><i style="--h:42%"></i><i style="--h:68%"></i><i style="--h:50%"></i></div></div></div></div>
+        <div>
+          <label class="form-label fw-bold small text-muted text-uppercase mb-1">Carga de Dados Técnicos (Payload Auditado)</label>
+          <pre class="detail-json" id="modal-json">{}</pre>
+        </div>
+      </div>
+      <div class="modal-footer bg-white border-top">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
 
-<div class="panel audit-panel"><div class="panel-heading"><h4>Eventos de auditoria</h4><span class="badge bg-light text-dark" id="record-count">0 registros</span></div><div class="panel-body"><div class="table-responsive"><table class="table table-hover audit-table"><thead><tr><th>Tipo</th><th>Ação</th><th>Operador</th><th>Data/Hora</th><th>Localização</th></tr></thead><tbody id="audit-tbody"><tr><td colspan="5" class="text-center py-4"><span class="empty-state"><i class="fa fa-info-circle"></i><br>Clique em "Buscar" para ver eventos</span></td></tr></tbody></table></div></div><div class="pagination-row"><div class="pagination-info">Página <strong id="current-page">1</strong> de <strong id="total-pages">1</strong> | <span id="page-info">0 registros</span></div><div class="pagination-controls"><button id="btn-prev" onclick="prevPage()" disabled>← Anterior</button><span id="page-numbers"></span><button id="btn-next" onclick="nextPage()">Próxima →</button></div></div></div>
-
+{% block js %}
+<script src="{% static 'plugins/apexcharts/dist/apexcharts.min.js' %}"></script>
+<script src="{% static 'plugins/pdfmake/build/pdfmake.min.js' %}"></script>
+<script src="{% static 'plugins/pdfmake/build/vfs_fonts.js' %}"></script>
 <script>
-const resourceMap={musicalizacao:[{v:'aulas',l:'Aulas'},{v:'presencas',l:'Presença'}],darpe:[{v:'atendimentos',l:'Atendimentos'}],cartas:[{v:'cartas',l:'Cartas'}],visitas:[{v:'visitas',l:'Visitas'}],sam:[{v:'eventos',l:'Eventos'}],gem:[{v:'aulas',l:'Aulas'}]};
-let currentModule='musicalizacao',currentPage=1,pageSize=10,allRecords=[],totalPages=1;
+(()=>{
+  let currentModule = 'all';
+  let allRecords = [];
+  let displayedRecords = [];
+  let currentPage = 1;
+  const pageSize = 15;
+  let timelineChart = null;
+  let actionChart = null;
 
-// Module tabs
-document.querySelectorAll('.module-tab').forEach(btn=>{
-  btn.addEventListener('click',function(){
-    document.querySelectorAll('.module-tab').forEach(b=>b.classList.remove('active'));
-    this.classList.add('active');
-    currentModule=this.dataset.module;
-    updateResources();
-    currentPage=1;
-  });
-});
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const reportUser = '{{ report_user|escapejs }}';
 
-// Update resource dropdown
-function updateResources(){
-  const resources=resourceMap[currentModule]||[];
-  const select=document.getElementById('filter-resource');
-  select.innerHTML='<option value="">Todos</option>';
-  resources.forEach(r=>{
-    const opt=document.createElement('option');
-    opt.value=r.v;
-    opt.textContent=r.l;
-    select.appendChild(opt);
-  });
-}
+  // Configuração inicial de datas (default: últimos 30 dias)
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 
-// Load audit data
-function loadData(){
-  const tbody=document.getElementById('audit-tbody');
-  tbody.innerHTML='<tr><td colspan="5"><div class="loading-spinner"><i class="fa fa-spinner fa-spin"></i><br>Carregando eventos...</div></td></tr>';
-  
-  const params=new URLSearchParams({
-    module:currentModule,
-    resource:document.getElementById('filter-resource').value,
-    action:document.getElementById('filter-action').value,
-    operator:document.getElementById('filter-operator').value,
-    period:document.getElementById('filter-period').value
+  function applyDatePreset(days){
+    const end = new Date();
+    if(days === 'custom') return;
+    const start = new Date();
+    start.setDate(end.getDate() - parseInt(days));
+    document.getElementById('filter-end').value = fmtDate(end);
+    document.getElementById('filter-start').value = fmtDate(start);
+  }
+  applyDatePreset(30);
+
+  document.getElementById('filter-period-preset').addEventListener('change', function(){
+    if(this.value !== 'custom'){
+      applyDatePreset(this.value);
+      loadAuditData();
+    }
   });
-  
-  fetch(`/api/auditoria/generic/?${params}`)
-    .then(r=>r.json())
-    .then(data=>{
-      allRecords=(data.records||[]).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-      totalPages=Math.ceil(allRecords.length/pageSize)||1;
-      currentPage=1;
-      renderPage();
-      
-      document.getElementById('kpi-total').textContent=data.total_events||0;
-      document.getElementById('kpi-operators').textContent=data.active_operators||0;
-      document.getElementById('header-scope').textContent=data.scope||'REGIONAL';
-      
-      const creates=allRecords.filter(r=>r.action==='Criação').length;
-      const updates=allRecords.filter(r=>r.action==='Atualização').length;
-      document.getElementById('kpi-creates').textContent=creates;
-      document.getElementById('kpi-updates').textContent=updates;
-    })
-    .catch(e=>{
-      console.error(e);
-      tbody.innerHTML='<tr><td colspan="5" class="text-center py-4 text-danger"><i class="fa fa-exclamation-triangle"></i> Erro ao carregar</td></tr>';
+
+  // Pílulas de Módulos
+  document.querySelectorAll('.module-pill').forEach(btn => {
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.module-pill').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      currentModule = this.dataset.module;
+      loadAuditData();
     });
-}
-
-// Render current page
-function renderPage(){
-  const tbody=document.getElementById('audit-tbody');
-  tbody.innerHTML='';
-  
-  if(allRecords.length===0){
-    tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><i class="fa fa-inbox"></i><br>Nenhum evento encontrado</div></td></tr>';
-    document.getElementById('record-count').textContent='0 registros';
-    document.getElementById('page-info').textContent='0 registros';
-    updatePageNumbers();
-    return;
-  }
-  
-  const start=(currentPage-1)*pageSize;
-  const end=Math.min(start+pageSize,allRecords.length);
-  const pageData=allRecords.slice(start,end);
-  const badgeClass='badge-'+currentModule;
-  
-  pageData.forEach(record=>{
-    const date=new Date(record.created_at);
-    const dateStr=date.toLocaleDateString('pt-BR')+' '+date.toLocaleTimeString('pt-BR');
-    const row=tbody.insertRow();
-    row.innerHTML=`
-      <td><span class="audit-badge ${badgeClass}">${record.resource||'-'}</span></td>
-      <td><strong>${record.action||'-'}</strong></td>
-      <td>${record.created_by||'Sistema'}</td>
-      <td><small>${dateStr}</small></td>
-      <td><small>${record.details||'-'}</small></td>
-    `;
   });
-  
-  document.getElementById('current-page').textContent=currentPage;
-  document.getElementById('total-pages').textContent=totalPages;
-  document.getElementById('page-info').textContent=`${start+1} a ${end} de ${allRecords.length} registros`;
-  document.getElementById('record-count').textContent=allRecords.length+' registros';
-  updatePageNumbers();
-}
 
-function updatePageNumbers(){
-  document.getElementById('btn-prev').disabled=currentPage===1;
-  document.getElementById('btn-next').disabled=currentPage===totalPages;
-  
-  let html='';
-  const maxPages=5;
-  for(let i=1;i<=Math.min(totalPages,maxPages);i++){
-    html+=`<button ${i===currentPage?'class="active"':''}onclick="goto(${i})">${i}</button>`;
+  // Parâmetros de consulta
+  function buildParams(){
+    const params = new URLSearchParams();
+    params.set('module', currentModule);
+    const start = document.getElementById('filter-start').value;
+    const end = document.getElementById('filter-end').value;
+    if(start) params.set('date_from', start);
+    if(end) params.set('date_to', end);
+    const action = document.getElementById('filter-action').value;
+    if(action) params.set('action', action);
+    const operator = document.getElementById('filter-operator').value.trim();
+    if(operator) params.set('operator', operator);
+    return params;
   }
-  if(totalPages>maxPages)html+='<span>…</span>';
-  document.getElementById('page-numbers').innerHTML=html;
-}
 
-function goto(page){currentPage=page;renderPage();}
-function nextPage(){if(currentPage<totalPages){currentPage++;renderPage();}}
-function prevPage(){if(currentPage>1){currentPage--;renderPage();}}
+  // Carregamento de dados com feedback visual
+  async function loadAuditData(){
+    const tbody = document.getElementById('audit-tbody');
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5 text-muted"><i class="fa fa-spinner fa-spin fa-2x mb-2 d-block text-primary"></i>Consultando a trilha de auditoria dos módulos…</td></tr>`;
+    document.getElementById('last-update').textContent = 'Sincronizando…';
 
-// Event listeners
-document.getElementById('btn-search').addEventListener('click',loadData);
-document.getElementById('btn-clear').addEventListener('click',()=>{
-  document.getElementById('filter-resource').value='';
-  document.getElementById('filter-action').value='';
-  document.getElementById('filter-operator').value='';
-  document.getElementById('filter-period').value='30';
-  currentPage=1;
-  loadData();
-});
+    try {
+      const response = await fetch(`/api/auditoria/generic/?${buildParams()}`);
+      if(!response.ok) throw new Error('Não foi possível carregar a auditoria.');
+      const data = await response.json();
 
-document.getElementById('btn-excel').addEventListener('click',()=>{
-  const headers=['Tipo','Ação','Operador','Data/Hora','Localização'];
-  const data=allRecords.map(r=>[
-    r.resource||'-',
-    r.action||'-',
-    r.created_by||'Sistema',
-    new Date(r.created_at).toLocaleString('pt-BR'),
-    r.details||'-'
-  ]);
-  const csv='\ufeff'+[headers,...data].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='Auditoria_'+currentModule+'_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
+      allRecords = data.records || [];
+      displayedRecords = allRecords.slice();
+      currentPage = 1;
 
-document.getElementById('btn-pdf').addEventListener('click',()=>{
-  const w=window.open('','','width=900,height=600');
-  const title='AUDITORIA DE '+currentModule.toUpperCase();
-  const table=document.querySelector('.audit-table').outerHTML;
-  w.document.write(`
-    <html><head><meta charset="UTF-8">
-    <style>body{font-family:Arial,sans-serif;padding:20px}h1{color:#0d7377;margin-bottom:10px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#0d7377;color:#fff;font-weight:bold}tr:nth-child(even){background:#f9f9f9}</style>
-    </head><body>
-    <h1>${title}</h1>
-    <p>Gerado em ${new Date().toLocaleString('pt-BR')}</p>
-    ${table}
-    </body></html>
-  `);
-  w.print();
-  w.close();
-});
+      // Atualiza KPIs
+      document.getElementById('kpi-total').textContent = (data.total_events || 0).toLocaleString('pt-BR');
+      document.getElementById('kpi-operators').textContent = (data.active_operators || 0).toLocaleString('pt-BR');
+      document.getElementById('kpi-creates').textContent = (data.action_counts?.creates || 0).toLocaleString('pt-BR');
+      document.getElementById('kpi-updates').textContent = (data.action_counts?.updates || 0).toLocaleString('pt-BR');
+      document.getElementById('kpi-total-context').textContent = `${data.total_events || 0} operações no período`;
 
-// Initialize
-updateResources();
+      if(data.scope) document.getElementById('scope-badge').textContent = data.scope;
+      document.getElementById('last-update').textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}`;
+
+      // Nota executiva
+      document.getElementById('executive-note').innerHTML = `
+        <div class="health-icon"><i class="fa fa-list-check"></i></div>
+        <div>
+          <strong>Prioridades da Gestão e Conformidade</strong>
+          <div class="mt-1">${esc(data.executive_note || 'Auditoria atualizada sem inconformidades no período.')}</div>
+        </div>
+      `;
+
+      // Atualiza contadores nas pílulas se fornecidos
+      if(data.module_counts){
+        let sumAll = 0;
+        Object.entries(data.module_counts).forEach(([m, count]) => {
+          sumAll += count;
+          const badge = document.getElementById(`count-${m}`);
+          if(badge) badge.textContent = count.toLocaleString('pt-BR');
+        });
+        document.getElementById('count-all').textContent = sumAll.toLocaleString('pt-BR');
+      }
+
+      // Renderiza gráficos e tabela
+      renderCharts(data);
+      renderTable();
+
+    } catch (err) {
+      console.error(err);
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5 text-danger"><i class="fa fa-triangle-exclamation fa-2x mb-2 d-block"></i>Erro ao carregar a trilha de auditoria: ${esc(err.message)}</td></tr>`;
+      document.getElementById('last-update').textContent = 'Falha na conexão';
+    }
+  }
+
+  // Renderização de Gráficos com ApexCharts
+  function renderCharts(data){
+    const timelineData = data.timeline_series || [];
+    const timelineDates = timelineData.map(d => d.label);
+    const timelineCounts = timelineData.map(d => d.count);
+
+    // 1. Gráfico Temporal (Linha/Área Suave)
+    const timelineOptions = {
+      series: [{ name: 'Operações Auditadas', data: timelineCounts }],
+      chart: { type: 'area', height: 260, toolbar: { show: false }, zoom: { enabled: false } },
+      colors: ['#0d7377'],
+      fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 95, 100] } },
+      dataLabels: { enabled: false },
+      stroke: { curve: 'smooth', width: 2.5 },
+      xaxis: { categories: timelineDates, labels: { style: { fontSize: '10px', colors: '#64748b' } }, tickAmount: 10 },
+      yaxis: { labels: { style: { fontSize: '10px', colors: '#64748b' } } },
+      tooltip: { y: { formatter: v => `${v} registros` } }
+    };
+
+    if(timelineChart) timelineChart.destroy();
+    timelineChart = new ApexCharts(document.querySelector('#audit-timeline-chart'), timelineOptions);
+    timelineChart.render();
+
+    // 2. Gráfico Donut de Ações
+    const counts = data.action_counts || { creates: 0, updates: 0, deletes: 0, accesses: 0, others: 0 };
+    const actionLabels = ['Criações', 'Atualizações', 'Exclusões', 'Acessos / Sessões', 'Outros'];
+    const actionValues = [counts.creates, counts.updates, counts.deletes, counts.accesses, counts.others];
+
+    const actionOptions = {
+      series: actionValues.some(v => v > 0) ? actionValues : [1],
+      labels: actionValues.some(v => v > 0) ? actionLabels : ['Sem operações'],
+      chart: { type: 'donut', height: 260 },
+      colors: ['#16a34a', '#2563eb', '#dc2626', '#7c3aed', '#64748b'],
+      legend: { position: 'bottom', fontSize: '11px', markers: { radius: 12 } },
+      dataLabels: { enabled: true, formatter: val => `${val.toFixed(0)}%` },
+      plotOptions: { pie: { donut: { size: '65%', labels: { show: true, total: { show: true, label: 'Total', formatter: () => (data.total_events || 0).toLocaleString('pt-BR') } } } } },
+      tooltip: { y: { formatter: v => `${v} operações` } }
+    };
+
+    if(actionChart) actionChart.destroy();
+    actionChart = new ApexCharts(document.querySelector('#audit-action-chart'), actionOptions);
+    actionChart.render();
+  }
+
+  // Filtro instantâneo na busca de texto da tabela
+  document.getElementById('table-search').addEventListener('input', function(){
+    const query = this.value.toLowerCase().trim();
+    if(!query){
+      displayedRecords = allRecords.slice();
+    } else {
+      displayedRecords = allRecords.filter(r =>
+        (r.details && r.details.toLowerCase().includes(query)) ||
+        (r.created_by && r.created_by.toLowerCase().includes(query)) ||
+        (r.location && r.location.toLowerCase().includes(query)) ||
+        (r.resource && r.resource.toLowerCase().includes(query)) ||
+        (r.action_label && r.action_label.toLowerCase().includes(query))
+      );
+    }
+    currentPage = 1;
+    renderTable();
+  });
+
+  function renderDetails(rec){
+    const fields = rec.detail_fields || {};
+    if(fields.kind !== 'gem'){
+      return `<div class="main-desc">${esc(rec.details)}</div>`;
+    }
+
+    const metadata = [fields.instrument, fields.level]
+      .filter(Boolean)
+      .map(value => `<span>${esc(value)}</span>`)
+      .join('<span>•</span>');
+    const status = fields.status
+      ? `<span class="audit-gem-status">${esc(fields.status)}</span>`
+      : '';
+    return `
+      <div class="audit-gem-details">
+        <div class="audit-gem-title">${esc(fields.title || 'Ficha pedagógica')}</div>
+        <div class="audit-gem-student">${esc(fields.student_name || 'Aluno não informado')}</div>
+        <div class="audit-gem-meta">${metadata}${status}</div>
+      </div>
+    `;
+  }
+
+  function renderLocation(location){
+    const parts = String(location || '—').split(' · ');
+    if(parts.length < 2){
+      return `<span class="audit-location-main">${esc(parts[0])}</span>`;
+    }
+    const city = parts.shift();
+    return `
+      <span class="audit-location-main">${esc(parts.join(' · '))}</span>
+      <span class="audit-location-city">${esc(city)}</span>
+    `;
+  }
+
+  // Renderização da Tabela de Eventos e Paginação
+  function renderTable(){
+    const tbody = document.getElementById('audit-tbody');
+    tbody.innerHTML = '';
+
+    const total = displayedRecords.length;
+    document.getElementById('record-count').textContent = `${total.toLocaleString('pt-BR')} registros`;
+
+    if(!total){
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5 text-muted"><i class="fa fa-inbox fa-2x mb-2 d-block"></i>Nenhum evento auditado encontrado para os filtros selecionados.</td></tr>`;
+      document.getElementById('page-info').textContent = 'Nenhum registro para exibir';
+      renderPaginationControls(0);
+      return;
+    }
+
+    const totalPages = Math.ceil(total / pageSize);
+    if(currentPage > totalPages) currentPage = totalPages;
+    const startIdx = (currentPage - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, total);
+    const pageRecords = displayedRecords.slice(startIdx, endIdx);
+
+    document.getElementById('page-info').textContent = `Mostrando ${startIdx + 1} a ${endIdx} de ${total.toLocaleString('pt-BR')} registros`;
+
+    pageRecords.forEach(rec => {
+      const tr = document.createElement('tr');
+      const initials = (rec.created_by || 'S').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+      tr.innerHTML = `
+        <td>
+          <span class="audit-module-badge" style="background:${rec.module_badge_bg};color:${rec.module_badge_color}">
+            <i class="fa ${rec.module_icon}"></i>${esc(rec.module_label)}
+          </span>
+          <div class="small text-muted mt-1 font-monospace" style="font-size:10px">${esc(rec.resource)}</div>
+        </td>
+        <td>
+          <span class="audit-action-badge" style="background:${rec.action_bg};color:${rec.action_color}">
+            ${esc(rec.action_label)}
+          </span>
+        </td>
+        <td>
+          <div class="audit-operator">
+            <div class="audit-avatar">${esc(initials)}</div>
+            <div>
+              <strong class="d-block" style="font-size:.78rem;color:#1e293b">${esc(rec.created_by || 'Sistema')}</strong>
+              <small class="text-muted" style="font-size:9px">${esc(rec.location || 'Regional')}</small>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div style="font-weight:600;color:#1e293b">${esc(rec.created_at_display)}</div>
+          <small class="text-muted" style="font-size:9px">${esc(rec.time_ago)}</small>
+        </td>
+        <td class="audit-location-cell">
+          ${renderLocation(rec.location)}
+        </td>
+        <td class="audit-details-cell">
+          ${renderDetails(rec)}
+        </td>
+        <td class="text-center">
+          <button type="button" class="btn btn-xs btn-white border shadow-none btn-inspect" title="Inspecionar detalhes completos">
+            <i class="fa fa-eye text-primary"></i>
+          </button>
+        </td>
+      `;
+
+      tr.querySelector('.btn-inspect').addEventListener('click', () => openDetailModal(rec));
+      tbody.appendChild(tr);
+    });
+
+    renderPaginationControls(totalPages);
+  }
+
+  function renderPaginationControls(totalPages){
+    const container = document.getElementById('page-numbers');
+    container.innerHTML = '';
+    const prevBtn = document.getElementById('btn-prev');
+    const nextBtn = document.getElementById('btn-next');
+
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = currentPage >= totalPages;
+
+    if(totalPages <= 1) return;
+
+    const maxVisible = 5;
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if(endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+
+    for(let i = startPage; i <= endPage; i++){
+      const btn = document.createElement('button');
+      btn.className = `btn-page ${i === currentPage ? 'active' : ''}`;
+      btn.textContent = i;
+      btn.addEventListener('click', () => { currentPage = i; renderTable(); });
+      container.appendChild(btn);
+    }
+  }
+
+  document.getElementById('btn-prev').addEventListener('click', () => {
+    if(currentPage > 1){ currentPage--; renderTable(); }
+  });
+  document.getElementById('btn-next').addEventListener('click', () => {
+    currentPage++; renderTable();
+  });
+
+  // Modal de Detalhes
+  function openDetailModal(rec){
+    const raw = rec.raw_data || {};
+    const recordId = String(rec.id || '');
+    const origin = rec.source_label || raw.device || raw.platform || 'Aplicação web';
+    const fields = rec.detail_fields || {};
+
+    document.getElementById('modal-operator').textContent = rec.created_by || 'Sistema';
+    document.getElementById('modal-datetime').textContent = rec.created_at_display || '—';
+    document.getElementById('modal-relative-time').textContent = rec.time_ago || '';
+    document.getElementById('modal-module').textContent = `${rec.module_label} · ${rec.resource}`;
+    document.getElementById('modal-action').innerHTML = `<span class="audit-action-badge" style="background:${rec.action_bg};color:${rec.action_color}">${esc(rec.action_label)}</span>`;
+    document.getElementById('modal-record-id').textContent = recordId || '—';
+    document.getElementById('modal-record-id').title = recordId;
+    document.getElementById('modal-origin').textContent = origin;
+    document.getElementById('modal-location').textContent = rec.location || 'Regional Itapevi';
+    const descriptionLabel = document.getElementById('modal-description-label');
+    const description = document.getElementById('modal-description');
+    if(fields.kind === 'gem'){
+      descriptionLabel.textContent = 'Dados da Ficha Pedagógica';
+      description.innerHTML = `
+        <div class="modal-gem-details">
+          <div class="modal-gem-detail"><span>Aluno</span><strong>${esc(fields.student_name || 'Não informado')}</strong></div>
+          <div class="modal-gem-detail"><span>Instrumento</span><strong>${esc(fields.instrument || 'Não informado')}</strong></div>
+          <div class="modal-gem-detail"><span>Nível</span><strong>${esc(fields.level || 'Não informado')}</strong></div>
+          <div class="modal-gem-detail"><span>Status</span><strong><span class="audit-gem-status">${esc(fields.status || 'Não informado')}</span></strong></div>
+        </div>
+      `;
+    } else {
+      descriptionLabel.textContent = 'Descrição Semântica do Evento';
+      description.textContent = rec.details || 'Sem descrição adicional.';
+    }
+
+    document.getElementById('modal-json').textContent = JSON.stringify(raw, null, 2);
+
+    const modal = new bootstrap.Modal(document.getElementById('audit-detail-modal'));
+    modal.show();
+  }
+
+  function showFeedback(type, title, message, detail){
+    if(window.AppFeedback){
+      return window.AppFeedback.show({ type, title, message, detail, flow: 'export' });
+    }
+    return null;
+  }
+
+  // Exportação CSV UTF-8 com BOM para abertura compatível no Excel.
+  document.getElementById('btn-csv').addEventListener('click', () => {
+    if(!displayedRecords.length){
+      showFeedback('warning', 'Nenhum registro para exportar', 'Ajuste os filtros e tente novamente.', 'Não há dados no recorte atual.');
+      return;
+    }
+    const headers = ['Módulo', 'Recurso', 'Ação', 'Usuário', 'Data e Hora', 'Localização', 'Descrição Completa'];
+    const rows = displayedRecords.map(r => [
+      r.module_label || '',
+      r.resource || '',
+      r.action_label || '',
+      r.created_by || '',
+      r.created_at_display || '',
+      r.location || '',
+      r.details || ''
+    ]);
+
+    const csvContent = '\ufeff' + [headers, ...rows].map(row =>
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';')
+    ).join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0, 10);
+    link.download = `Auditoria_Modulos_${currentModule}_${stamp}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showFeedback('success', 'Arquivo CSV gerado', 'O download da auditoria foi iniciado.', `${displayedRecords.length} registro(s) exportado(s).`);
+  });
+
+  // Exportação PDF Canônica em 3 colunas (conforme REPORT_EXPORT_STANDARD.md)
+  document.getElementById('btn-pdf').addEventListener('click', () => {
+    if(!displayedRecords.length){
+      showFeedback('warning', 'Nenhum registro para exportar', 'Ajuste os filtros e tente novamente.', 'Não há dados no recorte atual.');
+      return;
+    }
+    const button = document.getElementById('btn-pdf');
+    button.disabled = true;
+    const origHtml = button.innerHTML;
+    button.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i>Gerando…';
+    const loadingFeedback = showFeedback('loading', 'Gerando PDF', 'Preparando o relatório de auditoria.', 'Aguarde a conclusão do download.');
+
+    try {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const stamp = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const fileStamp = `${pad(now.getDate())}-${pad(now.getMonth()+1)}-${now.getFullYear()}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+      const scopeLabel = document.getElementById('scope-badge').textContent || 'Regional Itapevi';
+
+      const tableBody = [
+        [
+          { text: 'MÓDULO', style: 'tableHeader' },
+          { text: 'AÇÃO', style: 'tableHeader' },
+          { text: 'OPERADOR', style: 'tableHeader' },
+          { text: 'DATA/HORA', style: 'tableHeader' },
+          { text: 'LOCALIZAÇÃO', style: 'tableHeader' },
+          { text: 'DETALHES DA OPERAÇÃO AUDITADA', style: 'tableHeader' }
+        ]
+      ];
+
+      displayedRecords.forEach(r => {
+        tableBody.push([
+          { text: r.module_label || '', fontSize: 7, bold: true },
+          { text: r.action_label || '', fontSize: 7, alignment: 'center' },
+          { text: r.created_by || 'Sistema', fontSize: 7 },
+          { text: r.created_at_display || '', fontSize: 7, alignment: 'center' },
+          { text: r.location || '—', fontSize: 7 },
+          { text: r.details || '', fontSize: 7 }
+        ]);
+      });
+
+      const docDefinition = {
+        pageSize: 'A4',
+        pageOrientation: 'landscape',
+        pageMargins: [28, 100, 28, 34],
+        header: (currentPage, pageCount) => ({
+          margin: [28, 16, 28, 0],
+          columns: [
+            { width: 220, text: '' },
+            {
+              width: '*',
+              stack: [
+                { text: 'CONGREGAÇÃO CRISTÃ NO BRASIL', style: 'entityName' },
+                { text: 'Regional Itapevi - São Paulo', style: 'entitySub' },
+                { text: 'TRILHA DE AUDITORIA', style: 'moduleName' },
+                { text: 'Auditoria Consolidada de Módulos Educacionais e Operacionais', style: 'reportTitle' }
+              ]
+            },
+            {
+              width: 220,
+              stack: [
+                { text: `Página ${currentPage} de ${pageCount}`, bold: true },
+                { text: [{ text: 'Emissão: ', bold: true }, { text: stamp }] },
+                { text: [{ text: 'Recorte: ', bold: true }, { text: scopeLabel }], fontSize: 7 },
+                { text: [{ text: 'Impresso por: ', bold: true }, { text: reportUser }], fontSize: 7 }
+              ],
+              alignment: 'right',
+              fontSize: 8
+            }
+          ]
+        }),
+        footer: (currentPage, pageCount) => ({
+          margin: [28, 5, 28, 0],
+          columns: [
+            { text: `Auditoria de Módulos · ${displayedRecords.length} registro(s) auditado(s) · ${scopeLabel}`, color: '#6b7280', fontSize: 7 },
+            { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', color: '#6b7280', fontSize: 7 }
+          ]
+        }),
+        content: [
+          {
+            table: {
+              widths: ['*'],
+              body: [
+                [{
+                  text: `RECORTE DE AUDITORIA • ${scopeLabel.toUpperCase()} • ${displayedRecords.length} OPERAÇÕES AUDITADAS NO PERÍODO`,
+                  fillColor: '#eaf2f8',
+                  color: '#1e4b7a',
+                  bold: true,
+                  fontSize: 8,
+                  margin: [6, 4, 6, 4]
+                }]
+              ]
+            },
+            layout: 'noBorders',
+            margin: [0, 0, 0, 8]
+          },
+          {
+            table: {
+              headerRows: 1,
+              dontBreakRows: true,
+              widths: [110, 75, 120, 85, 120, '*'],
+              body: tableBody
+            },
+            layout: {
+              fillColor: (row) => row > 0 ? (row % 2 ? '#ffffff' : '#f4f6f8') : null,
+              hLineColor: () => '#c8d1da',
+              vLineColor: () => '#d8dee5',
+              hLineWidth: () => 0.45,
+              vLineWidth: () => 0.35,
+              paddingLeft: () => 4,
+              paddingRight: () => 4,
+              paddingTop: () => 3,
+              paddingBottom: () => 3
+            }
+          }
+        ],
+        styles: {
+          entityName: { fontSize: 15, bold: true, alignment: 'center' },
+          entitySub: { fontSize: 9, alignment: 'center' },
+          moduleName: { fontSize: 12, bold: true, color: '#1e4b7a', alignment: 'center', margin: [0, 5, 0, 0] },
+          reportTitle: { fontSize: 9, alignment: 'center' },
+          tableHeader: { color: '#ffffff', bold: true, alignment: 'center', fillColor: '#1e4b7a', fontSize: 7.5 }
+        },
+        defaultStyle: { fontSize: 7.2, color: '#263238' }
+      };
+
+      pdfMake.createPdf(docDefinition).download(`Auditoria_Modulos_${currentModule}_${fileStamp}.pdf`);
+      loadingFeedback?.close();
+      showFeedback('success', 'Relatório PDF gerado', 'O download do relatório foi iniciado.', `${displayedRecords.length} registro(s) exportado(s).`);
+    } catch (e) {
+      console.error(e);
+      loadingFeedback?.close();
+      showFeedback('error', 'Falha ao gerar o PDF', 'Não foi possível gerar o relatório de auditoria.', 'Tente novamente em alguns instantes.');
+    } finally {
+      button.disabled = false;
+      button.innerHTML = origHtml;
+    }
+  });
+
+  // Botões de Ação
+  document.getElementById('btn-refresh').addEventListener('click', loadAuditData);
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    document.getElementById('filter-period-preset').value = '30';
+    applyDatePreset(30);
+    document.getElementById('filter-action').value = '';
+    document.getElementById('filter-operator').value = '';
+    document.getElementById('table-search').value = '';
+    currentModule = 'all';
+    document.querySelectorAll('.module-pill').forEach(b => b.classList.remove('active'));
+    document.querySelector('.module-pill[data-module="all"]')?.classList.add('active');
+    loadAuditData();
+  });
+
+  document.getElementById('filter-action').addEventListener('change', loadAuditData);
+  document.getElementById('filter-operator').addEventListener('keyup', e => { if(e.key === 'Enter') loadAuditData(); });
+  document.getElementById('filter-start').addEventListener('change', () => {
+    document.getElementById('filter-period-preset').value = 'custom';
+    loadAuditData();
+  });
+  document.getElementById('filter-end').addEventListener('change', () => {
+    document.getElementById('filter-period-preset').value = 'custom';
+    loadAuditData();
+  });
+
+  // Carregamento inicial automático
+  loadAuditData();
+})();
 </script>
 {% endblock %}

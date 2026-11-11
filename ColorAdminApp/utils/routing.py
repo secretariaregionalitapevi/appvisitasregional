@@ -35,10 +35,10 @@ def haversine_distance(coord1, coord2):
     """
     if not coord1 or not coord2:
         return float('inf')
-        
+
     lat1, lon1 = coord1
     lat2, lon2 = coord2
-    
+
     R = 6371000  # Raio da Terra em metros
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -48,9 +48,9 @@ def haversine_distance(coord1, coord2):
     a = math.sin(delta_phi / 2.0)**2 + \
         math.cos(phi1) * math.cos(phi2) * \
         math.sin(delta_lambda / 2.0)**2
-    
+
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
+
     return R * c
 
 def extract_coords_from_address(address):
@@ -76,7 +76,7 @@ def geocode_address_fallback(address, city='', neighborhood=''):
     """
     if not address:
         return None
-        
+
     # Limpa a string de coordenadas se houver
     clean_addr = re.sub(r'^\[.*?\]\s*', '', address)
     clean_addr = ', '.join(filter(None, (clean_addr, neighborhood, city, 'SP, Brasil')))
@@ -94,7 +94,7 @@ def geocode_address_fallback(address, city='', neighborhood=''):
         return (normalize_text(city) in {normalize_text(c) for c in cities}
                 and 'SP' in states and not candidate.get('partial_match')
                 and bool(precise_types & set(candidate.get('types') or [])))
-    
+
     api_key = settings.GOOGLE_MAPS_API_KEY
     if api_key:
         try:
@@ -140,7 +140,7 @@ def geocode_address_fallback(address, city='', neighborhood=''):
                 return (float(location['y']), float(location['x']))
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
         pass
-        
+
     return None
 
 
@@ -239,7 +239,7 @@ def discover_nearby_neighborhoods(comum, cidade='', data_referencia=None):
     return bairros
 
 def resolve_visit_coordinates(address, city='', neighborhood='', origin=None):
-    """Rejeita coordenadas legadas incompatíveis com a área da congregação.
+    """Rejeita coordenadas legadas incompatíveis com a área da Congregação.
 
     O raio é uma barreira contra erros grosseiros, não prova de endereço.
     Não inventa coordenadas quando o geocodificador não confirma o município.
@@ -439,11 +439,11 @@ def _optimize_route_nearest_neighbor_legacy(visits, start_coords=None):
     """
     if not visits:
         return []
-        
+
     # Coordenadas padrão da igreja
     if not start_coords:
         start_coords = (-23.538263, -46.926524)
-        
+
     enriched_visits = []
     for v in visits:
         coords = get_visit_coordinates(v)
@@ -473,16 +473,16 @@ def _optimize_route_nearest_neighbor_legacy(visits, start_coords=None):
         unvisited = [v for v in valid_visits if not v['visited']]
         if not unvisited:
             break
-            
+
         closest = None
         min_dist = float('inf')
-        
+
         for v in unvisited:
             dist = haversine_distance(current_loc, v['coords'])
             if dist < min_dist:
                 min_dist = dist
                 closest = v
-                
+
         if closest:
             closest['visited'] = True
             closest['data']['distance_meters'] = min_dist
@@ -706,7 +706,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         return []
     if existing_visits is None:
         existing_visits = []
-        
+
     existing_address_keys = {
         route_address_key(visit, fallback=f"__EXISTENTE_{position}")
         for position, visit in enumerate(existing_visits)
@@ -716,13 +716,13 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         return []
     url_irmandade = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_IRMANDADE}"
     url_agenda = f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_AGENDA}"
-    
+
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     # 1. Buscar todos os irmãos
     # Nunca carregue apontamentos_restritos neste fluxo compartilhado. A rota
     # operacional pode ser usada por Instrutores e não deve transportar dados sensíveis.
@@ -758,7 +758,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         if not str(item.get('equipe_id') or item.get('equipe_visita') or '').strip()
     ]
     member_ids_da_comum = {str(item.get('id')) for item in todos_irmaos if item.get('id')}
-    
+
     # 2. Buscar todo o histórico necessário para priorizar corretamente as
     # casas nunca visitadas e, depois, as visitas mais antigas.
     params_agenda = [
@@ -768,7 +768,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     resp_agenda = requests.get(url_agenda, headers=headers, params=params_agenda, timeout=10)
     if resp_agenda.status_code != 200:
         raise RuntimeError('Não foi possível conferir a agenda existente. Nenhuma nova visita foi atribuída.')
-    
+
     neighborhood_owners = {}
     occupied_day_addresses = set(existing_address_keys)
     scheduled_future_addresses = set()
@@ -807,12 +807,12 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
                 neighborhood_owners.setdefault(neighborhood_key(v), v.get('equipe_responsavel'))
                 if not is_final:
                     occupied_day_addresses.add(address_key)
-                
+
     # 3. Filtrar elegíveis e extrair coordenadas
     igreja_coords = get_common_coordinates(comum, cidade) if comum else None
     elegiveis = []
     sem_coords = []
-    
+
     for irmao in todos_irmaos:
         addr = irmao.get('endereco') or ''
         coords = extract_coords_from_address(addr)
@@ -843,7 +843,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             )
         else:
             priority = (1, history['latest_event_date'], '')  # Agendamento antigo/inconclusivo
-        
+
         item = {
             'irmao': irmao,
             'coords': coords,
@@ -851,25 +851,25 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             'address_key': address_key,
             'priority': priority,
         }
-        
+
         if coords:
             elegiveis.append(item)
         else:
             sem_coords.append(item)
-            
+
     # Geocodificação paralela para quem não tem coordenada (com CEP se existir)
     if sem_coords:
         def fetch_geocode_and_update(item):
             cep = item['irmao'].get('cep') or ''
             addr = item['irmao'].get('endereco') or ''
             search_query = f"{cep} {addr}".strip()
-            
+
             # Tentar geocodificar no Google Maps
             return resolve_visit_coordinates(search_query, cidade, item['setor'], igreja_coords)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             resultados = list(executor.map(fetch_geocode_and_update, sem_coords))
-            
+
         for i, item in enumerate(sem_coords):
             item['coords'] = resultados[i]
             if item['coords']:
@@ -878,14 +878,14 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
                 # Falha geral de GPS, mas não descartamos
                 item['dist'] = 999999
                 elegiveis.append(item)
-            
+
     # 4. Calcular distância real até a igreja
     for item in elegiveis:
         if item['coords'] and igreja_coords:
             item['dist'] = haversine_distance(igreja_coords, item['coords'])
         elif 'dist' not in item:
-            item['dist'] = 999999 
-            
+            item['dist'] = 999999
+
     # Ordenar pela menor distância
     grupos_bairro = {}
     for item in elegiveis:
@@ -916,7 +916,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     ))
     # Quando a equipe já possui uma primeira parada, ela passa a ser o marco
     # zero temporário. Assim a expansão continua daquele ponto, sem obrigar um
-    # retorno artificial à congregação antes de cobrir as ruas adjacentes.
+    # retorno artificial à Congregação antes de cobrir as ruas adjacentes.
     selection_origin = route_selection_origin(existing_visits, igreja_coords)
     selected_households = [
         (address_key, household)
@@ -928,16 +928,16 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             neighborhood_owners=neighborhood_owners,
         )
     ]
-    
+
     if not selected_households:
         return []
-        
+
     # 5. Criar na Agenda
     novas_visitas = []
-    
+
     # Prepara payload em lote (Supabase permite bulk insert)
     payload_bulk = []
-    
+
     # Reserva os horários já ocupados, inclusive ao aumentar de 6 para 7 casas.
     # Distribui o total entre manhã e tarde sem mover agendamentos existentes.
     from dateutil import parser
@@ -967,18 +967,18 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
         extra_position += 1
         if start.strftime('%Y-%m-%dT%H:%M:%S') not in occupied_times:
             available_times.append(start)
-    
+
     for i, (_, household) in enumerate(selected_households):
         item = household[0]
         irmao = item['irmao']
-        
+
         hora_inicio = available_times[i]
         hora_fim = hora_inicio + timedelta(minutes=15)
-        
+
         # Forçando o Fuso de São Paulo (-03:00)
         str_inicio = f"{hora_inicio.strftime('%Y-%m-%dT%H:%M:%S')}-03:00"
         str_fim = f"{hora_fim.strftime('%Y-%m-%dT%H:%M:%S')}-03:00"
-        
+
         visit = {
             'irmandade_id': irmao.get('id'),
             # Consolida visualmente os moradores elegíveis da casa sem criar
@@ -1011,7 +1011,7 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
     post_headers = headers.copy()
     post_headers["Prefer"] = "return=representation"
     resp_post = requests.post(url_agenda, headers=post_headers, json=payload_bulk, timeout=10)
-    
+
     if resp_post.status_code in [200, 201]:
         created = resp_post.json()
         if not isinstance(created, list) or len(created) != len(payload_bulk):
@@ -1022,5 +1022,5 @@ def auto_dispatch_visits(equipe, data_filtro, existing_visits=None, comum=None, 
             visit['comum'] = comum or ''
             visit['municipio'] = cidade or ''
         return created
-        
+
     raise RuntimeError('Falha ao gravar o roteiro na agenda. Nenhuma visita foi confirmada; consulte a agenda antes de tentar novamente.')

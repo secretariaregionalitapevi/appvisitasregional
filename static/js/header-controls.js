@@ -67,7 +67,8 @@
         el('pending-access-toast-close').addEventListener('click', () => el('pending-access-toast').classList.add('d-none'));
         container.addEventListener('click', e => { if (e.target.closest('[data-bs-toggle=dropdown]')) el('pending-access-toast').classList.add('d-none'); });
         refresh();
-        window.setInterval(refresh, 60000);
+        window.setInterval(refresh, 300000);
+        window.addEventListener('visibilitychange', refresh);
         window.addEventListener('letters-updated', refresh);
     }
 

@@ -3,7 +3,7 @@
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fields={ano:'year',comum:'common',municipio:'city',tipo:'type',modalidade:'mode',resultado:'result',evento:'event',mes:'month',inicio:'start',fim:'end',busca:'search'};
   const day=v=>String(v||'').slice(0,10).split('-').reverse().join('/');
-  let data=null,review=null,loading=false,queued=false,searchTimer;
+  let data=null,review=null,loading=false,queued=false,queuedRefreshNotifications=false,searchTimer;
   const query=()=>new URLSearchParams(Object.entries(fields).map(([k,id])=>[k,$('#letters-'+id).value]));
   const csrf=()=>$('[name=csrfmiddlewaretoken]').value;
   const feedback=(text,tone='danger')=>$('#letters-feedback').innerHTML=text?`<div class="alert alert-${tone}">${esc(text)}</div>`:'';
@@ -60,9 +60,9 @@
     if(window.jQuery?.fn.select2)jQuery('#'+prefix+'-common').on('change',render);else $('#'+prefix+'-common').addEventListener('change',render);
     $('#'+prefix+'-clear').addEventListener('click',()=>{$('#'+prefix+'-city').value='';$('#'+prefix+'-common').value='';render();});
   }
-  async function load(){
-    if(loading){queued=true;return;}loading=true;$('#letters-refresh').disabled=true;
-    try{data=await request('/musica/cartas-exames/api/painel/?'+query());window.dispatchEvent(new Event('letters-updated'));
+  async function load({refreshNotifications=false}={}){
+    if(loading){queued=true;queuedRefreshNotifications=queuedRefreshNotifications||refreshNotifications;return;}loading=true;$('#letters-refresh').disabled=true;
+    try{data=await request('/musica/cartas-exames/api/painel/?'+query());if(refreshNotifications)window.dispatchEvent(new Event('letters-updated'));
       options('#letters-year',(data.years||[]).map(v=>[v,v]),'Todos');options('#letters-common',(data.commons||[]).map(v=>[v,v]),'Todas as comuns');options('#letters-city',data.municipalities.map(v=>[v,v]),'Todos os municípios');options('#letters-mode',Object.entries(data.modalities),'Todas');options('#letters-result',Object.entries(data.results),'Todos');options('#letters-event',data.events.map(e=>[e.id,day(e.data)+' — '+e.evento]),'Todos os exames');
       const t=data.totals;const approved=g=>['musicos_culto_oficial','musicos_oficializacao','musicos_troca_instrumento','organistas_rjm','organistas_culto_oficial','organistas_oficializacao','organistas_testes_especiais'].reduce((sum,k)=>sum+Number(g[k]||0),0);$('#letters-metrics').innerHTML=MusicManagement.cards([{label:'Cartas preenchidas',value:t.cartas,color:'#2f8de4',icon:'fa-envelope-open-text',note:'Cartas emitidas no recorte',valueFor:g=>g.cartas},{label:'Aguardando confirmação',value:t.pendentes,color:'#e6a124',icon:'fa-clock',note:'Pendentes de conferência do secretário',valueFor:g=>g.pendentes},{label:'Aprovações confirmadas',value:t.aprovados,color:'#12a594',icon:'fa-user-check',note:t.cartas?(t.aprovados/t.cartas*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'% das cartas do recorte':'Sem cartas no recorte',valueFor:approved},{label:'PDFs conservados',value:t.pdfs,color:'#8265df',icon:'fa-file-pdf',note:'Documentos emitidos e armazenados',valueFor:g=>g.cartas}],data.groups);$('#letters-reading').textContent=[$('#letters-event').selectedOptions[0]?.textContent,$('#letters-year').value,$('#letters-city').value||'Todos os municípios',$('#letters-common').value||'Todas as comuns'].filter(Boolean).join(' · ');
 
@@ -70,9 +70,10 @@
       renderLetters();
       renderMinistry();
       $('#letters-pdf').href='/musica/cartas-exames/exportar-pdf/?'+query();$('#letters-excel').href='/musica/cartas-exames/exportar-excel/?'+query();feedback('');
-    }catch(e){feedback(e.message);}finally{loading=false;$('#letters-refresh').disabled=false;if(queued){queued=false;load();}}
+    }catch(e){feedback(e.message);}finally{loading=false;$('#letters-refresh').disabled=false;if(queued){const notify=queuedRefreshNotifications;queued=false;queuedRefreshNotifications=false;load({refreshNotifications:notify});}}
   }
   $('#letters-refresh').addEventListener('click',load);Object.values(fields).forEach(id=>$('#letters-'+id).addEventListener(id==='search'?'input':'change',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(load,id==='search'?300:0);}));$('#letters-clear').addEventListener('click',()=>{$('#letters-only-pending').checked=false;Object.values(fields).forEach(id=>$('#letters-'+id).value='');for(const prefix of ['letters-list','ministry-list']){$('#'+prefix+'-city').value='';$('#'+prefix+'-common').value='';}load();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load();});
   $('#letters-only-pending').checked=false;
   $('#letters-only-pending').addEventListener('change',renderLetters);
   $('#letters-list-clear').addEventListener('click',()=>{$('#letters-only-pending').checked=false;renderLetters();});
@@ -95,8 +96,8 @@
     $('#letters-program-dialog').showModal();
   });
   $('#letters-body').addEventListener('click',e=>{const button=e.target.closest('[data-review-letter]');if(!button)return;review=data.items.find(r=>r.id===button.dataset.reviewLetter);if(!review)return;$('#letters-review-person').textContent=review.nome+' · '+review.comum+' · '+day(review.evento.data);$('#letters-review-state').innerHTML=Object.entries(data.results).map(([value,text])=>`<option value="${esc(value)}">${esc(text)}</option>`).join('');$('#letters-review-state').value=review.review_result||'PENDENTE';$('#letters-review-notes').value=review.review_notes||'';$('#letters-review-dialog').showModal();});
-  $('#letters-cancel-review').addEventListener('click',()=>$('#letters-review-dialog').close());$('#letters-review-form').addEventListener('submit',async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{await request(`/musica/cartas-exames/api/cartas/${review.id}/confirmar/`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...Object.fromEntries(new FormData(e.target)),version:review.review_version})});$('#letters-review-dialog').close();await load();feedback('Resultado confirmado. Carta, exame e contagem atualizados.','success');}catch(error){feedback(error.message);$('#letters-review-dialog').close();}finally{button.disabled=false;}});
-  $('#letters-ministry-file')?.addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;const body=new FormData();body.append('arquivo',file);try{const result=await request('/musica/cartas-exames/api/ministerio/importar/',{method:'POST',headers:{'X-CSRFToken':csrf()},body});await load();feedback(`${result.importados} comuns importadas; ${result.incompletos} relações precisam de conferência.`,'success');}catch(error){feedback(error.message);}finally{e.target.value='';}});
+  $('#letters-cancel-review').addEventListener('click',()=>$('#letters-review-dialog').close());$('#letters-review-form').addEventListener('submit',async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{await request(`/musica/cartas-exames/api/cartas/${review.id}/confirmar/`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...Object.fromEntries(new FormData(e.target)),version:review.review_version})});$('#letters-review-dialog').close();await load({refreshNotifications:true});feedback('Resultado confirmado. Carta, exame e contagem atualizados.','success');}catch(error){feedback(error.message);$('#letters-review-dialog').close();}finally{button.disabled=false;}});
+  $('#letters-ministry-file')?.addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;const body=new FormData();body.append('arquivo',file);try{const result=await request('/musica/cartas-exames/api/ministerio/importar/',{method:'POST',headers:{'X-CSRFToken':csrf()},body});await load({refreshNotifications:true});feedback(`${result.importados} comuns importadas; ${result.incompletos} relações precisam de conferência.`,'success');}catch(error){feedback(error.message);}finally{e.target.value='';}});
 
   let ministryRecord=null,deletion=null;
   function notify(message){if(window.AppFeedback)AppFeedback.show({type:'success',flow:'save',title:'Operação concluída',message});else feedback(message,'success');}
@@ -115,7 +116,7 @@
   $('#letters-ministry-close').addEventListener('click',()=>$('#letters-ministry-dialog').close());
   $('#letters-ministry-form').addEventListener('submit',async e=>{
     e.preventDefault();if(!data.can_manage_ministry||!ministryRecord)return;const button=e.submitter;button.disabled=true;
-    try{await request('/musica/cartas-exames/api/ministerio/'+encodeURIComponent(ministryRecord.common_code)+'/gerir/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...Object.fromEntries(new FormData(e.target)),action:'save',version:ministryRecord.manage_version})});$('#letters-ministry-dialog').close();await load();notify('Relação ministerial atualizada e registrada em auditoria.');}catch(error){$('#letters-ministry-error').textContent=error.message;}finally{button.disabled=false;}
+    try{await request('/musica/cartas-exames/api/ministerio/'+encodeURIComponent(ministryRecord.common_code)+'/gerir/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...Object.fromEntries(new FormData(e.target)),action:'save',version:ministryRecord.manage_version})});$('#letters-ministry-dialog').close();await load({refreshNotifications:true});notify('Relação ministerial atualizada e registrada em auditoria.');}catch(error){$('#letters-ministry-error').textContent=error.message;}finally{button.disabled=false;}
   });
   $('#letters-delete-cancel').addEventListener('click',()=>$('#letters-delete-dialog').close());
   $('#letters-delete-dialog').addEventListener('cancel',e=>{if($('#letters-delete-cancel').disabled)e.preventDefault();});
@@ -127,11 +128,11 @@
     try{
       const url=kind==='letter'?'/musica/cartas-exames/api/cartas/'+encodeURIComponent(row.id)+'/excluir/':'/musica/cartas-exames/api/ministerio/'+encodeURIComponent(row.common_code)+'/gerir/';
       await request(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({action:'delete',version:kind==='letter'?row.review_version:row.manage_version})});
-      $('#letters-delete-dialog').close();deletion=null;await load();
+      $('#letters-delete-dialog').close();deletion=null;await load({refreshNotifications:true});
       if(window.AppFeedback)AppFeedback.show({type:'success',flow:'delete',toast:true,title:kind==='letter'?'Carta excluída':'Relação ministerial excluída',message:kind==='letter'?'Carta excluída e contagens atualizadas.':'Relação ministerial excluída do cadastro de novas cartas.',detail:'O histórico de auditoria foi preservado.'});
       else notify(kind==='letter'?'Carta excluída e contagens atualizadas.':'Relação ministerial excluída do cadastro de novas cartas.');
     }catch(error){notice?.close();$('#letters-delete-error').textContent=error.message;window.AppFeedback?.show({type:'error',flow:'delete',toast:true,title:'Não foi possível excluir',message:error.message});}
     finally{button.disabled=false;button.innerHTML=original;$('#letters-delete-cancel').disabled=false;}
   });
-  setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load();},45000);load();
+  setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load();},300000);load();
 })();

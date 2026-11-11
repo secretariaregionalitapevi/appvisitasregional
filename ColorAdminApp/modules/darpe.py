@@ -479,7 +479,7 @@ def api_resource(request, resource, record_id=None):
                 return JsonResponse({"error": "Informe o nome completo."}, status=400)
             if resource == "cadastros":
                 if not candidate.get('comum_congregacao'):
-                    return JsonResponse({'error': 'Informe a comum congregação.'}, status=400)
+                    return JsonResponse({'error': 'Informe a comum Congregação.'}, status=400)
                 if any(key in payload for key in ('darpe_musico', 'darpe_organista')):
                     payload['darpe_musico_organista'] = bool(candidate.get('darpe_musico') or candidate.get('darpe_organista'))
             actor = _actor(request)

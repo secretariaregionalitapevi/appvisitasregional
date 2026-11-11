@@ -99,6 +99,18 @@ TONALITY_OPTIONS = ['D\u00d3', 'F\u00c1', 'F\u00c1 / SI\u266d', 'L\u00c1', 'MI\u
 STUDENT_CREATE_FIELDS = {'nome_aluno', 'comum_congregacao', 'municipio', 'cargo_ministerio', 'nivel', 'instrumento', 'possui_instrumento', 'instrumento_proprio', 'tonalidade', 'data_inicio_gem', 'data_nascimento', 'estado_civil', 'telefone', 'nome_responsavel', 'grau_parentesco', 'consentimento_lgpd'}
 
 
+def audit_actor_name(request):
+    """Obtém o nome canônico do usuário que executa um lançamento no GEM."""
+    profile = request.session.get("user_profile") or {}
+    return (
+        profile.get("full_name")
+        or profile.get("nome")
+        or profile.get("username")
+        or profile.get("email")
+        or "Usuário não identificado"
+    )
+
+
 def _norm(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
     return " ".join("".join(char for char in text if not unicodedata.combining(char)).upper().split())
@@ -446,6 +458,7 @@ def api_students(request):
         try:
             raw = json.loads(request.body or '{}')
             payload = {key: raw.get(key) for key in STUDENT_CREATE_FIELDS if key in raw}
+            payload["lancado_por"] = audit_actor_name(request)
             required = ('nome_aluno', 'comum_congregacao', 'municipio', 'cargo_ministerio', 'nivel', 'instrumento')
             if any(not str(payload.get(key) or '').strip() for key in required):
                 return JsonResponse({'error': 'Preencha todos os campos obrigatorios.'}, status=400)

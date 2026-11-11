@@ -90,7 +90,7 @@
         padding: 2px 5px !important;
         cursor: pointer;
     }
-    
+
     .fc-event-title {
         font-weight: 600 !important;
         font-size: 11px !important;
@@ -217,7 +217,7 @@
         line-height: 1 !important;
     }
     .select2-container .select2-selection--single .select2-selection__rendered {
-        padding-left: 8px !important; 
+        padding-left: 8px !important;
         display: flex !important;
         align-items: center !important;
         gap: 2px !important; /* Deixa o texto mais próximo do x */
@@ -444,7 +444,7 @@
                 $('#event-titulo').val(member.nome);
                 showAddressWithoutCoordinates(member.endereco || '');
                 $('#event-setor').val(member.setor || 'Não Definido');
-                
+
                 const comumVal = member.comum || '';
                 if (comumVal) {
                     if ($('#event-comum').find("option[value='" + comumVal + "']").length) {
@@ -471,9 +471,9 @@
             eventData: function (eventEl) {
                 return {
                     title: 'Agendando...',
-                    extendedProps: { 
+                    extendedProps: {
                         categoria: eventEl.getAttribute('data-category'),
-                        is_new: true 
+                        is_new: true
                     }
                 };
             }
@@ -523,12 +523,12 @@
                         const baseColor = categoryColors[category === 'GVMU' ? 'GVE' : category] || '#1e4b7a';
                         const spTime = new Date(item.data_inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
                         let displayTitle = `${spTime} ${item.titulo}`;
-                        
+
                         if (item.status === 'Cancelada') displayTitle = `${spTime} (C) ${item.titulo}`;
                         else if (item.status === 'Não realizada') displayTitle = `${spTime} (NR) ${item.titulo}`;
                         else if (item.status === 'Realizada') displayTitle = `${spTime} (R) ${item.titulo}`;
                         else displayTitle = `${spTime} (A) ${item.titulo}`;
-                        
+
                         return {
                             id: item.id,
                             title: displayTitle,
@@ -549,15 +549,15 @@
                     AppFeedback.show({type:'warning', title:'Falha ao recarregar a agenda', message:error.message});
                 });
             },
-            
+
             // CORREÇÃO: Drop agora abre o modal em vez de salvar direto
             // CORREÇÃO: Drop agora abre o modal e remove o 'fantasma' imediatamente
             eventReceive: function (info) {
                 const categoria = info.draggedEl.getAttribute('data-category');
                 const droppedDate = moment(info.event.start).format('YYYY-MM-DDTHH:mm');
-                
+
                 // Remove o evento 'fantasma' que o FullCalendar cria ao receber o drop
-                info.event.remove(); 
+                info.event.remove();
 
                 openNewVisitModal(droppedDate, categoria);
             },
@@ -570,7 +570,7 @@
                 if (info.jsEvent.target.closest('.agenda-event-check')) return;
                 const e = info.event.extendedProps;
                 resetModal();
-                
+
                 $('#event-id').val(e.id);
                 $('#event-member-select').val(e.irmandade_id).trigger('change');
                 $('#event-titulo').val(e.titulo);
@@ -716,14 +716,14 @@
                     comum: $('#event-comum').val() || '{{ request.session.user_profile.comum|default:""|escapejs }}',
                     status: 'Ativo'
                 };
-                
+
                 try {
                     const irmRes = await fetch('/visitas/api/irmandade/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                         body: JSON.stringify(newMemberData)
                     });
-                    
+
                     if (irmRes.ok) {
                         const newIrm = await irmRes.json();
                         irmandade_id = newIrm[0].id;
@@ -801,7 +801,7 @@
         $('#btn-import-agenda').on('click', function () {
             const selectedCommon = commonFilter.length ? commonFilter.val() : agendaDefaultCommon;
             if (!selectedCommon) {
-                AppFeedback.show({type: 'warning', title: 'Selecione a comum', message: 'Escolha a comum congregação antes de importar a agenda.'});
+                AppFeedback.show({type: 'warning', title: 'Selecione a comum', message: 'Escolha a comum Congregação antes de importar a agenda.'});
                 return;
             }
             agendaImportToken = '';
@@ -942,7 +942,7 @@
             <div class="fc-event" data-category="GVE"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">GVE: Encarregados</div><div class="fc-event-dot color-gve"></div></div>
             <div class="fc-event" data-category="RF"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">RF: Reunião Familiar</div><div class="fc-event-dot color-rf"></div></div>
             <div class="fc-event" data-category="RE"><div class="fc-event-icon"><i class="fas fa-arrows-alt"></i></div><div class="fc-event-text">RE: Reunião de Evangelização</div><div class="fc-event-dot color-re"></div></div>
-            
+
             <hr class="my-3" />
             <h5 class="mb-3">Equipes</h5>
             <button type="button" class="team-box bg-team-1" data-team="Equipe 1" aria-pressed="false">EQUIPE 01</button>

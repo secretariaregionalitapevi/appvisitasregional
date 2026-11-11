@@ -2243,28 +2243,58 @@ def apiVisitasAgenda(request):
             member_locations = {}
             known_member_ids = set()
             scoped_members = []
-            offset = 0
-            page_size = 1000
-            while True:
-                page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
+            agenda_member_ids = sorted({
+                str(row.get('irmandade_id')).strip()
+                for row in rows if row.get('irmandade_id')
+            })
+            member_id_batch_size = 100
+            for start in range(0, len(agenda_member_ids), member_id_batch_size):
+                member_id_batch = agenda_member_ids[start:start + member_id_batch_size]
                 members_response = supabase_get(
                     members_url,
-                    headers=page_headers,
-                    params=[("select", "id,comum,nome,endereco")],
+                    headers=headers,
+                    params=[
+                        ("select", "id,comum"),
+                        ("id", f"in.({','.join(member_id_batch)})"),
+                    ],
                     timeout=(3.05, 15),
                 )
                 members_response.raise_for_status()
-                member_page = members_response.json()
-                for item in member_page:
+                for item in members_response.json():
                     if item.get('id'):
                         known_member_ids.add(str(item['id']))
                     member_common = canonical_common_names.get(normalize_text(item.get('comum')), '')
                     if item.get('id') and member_common in target_commons:
                         member_locations[str(item['id'])] = member_common
-                        scoped_members.append(item)
-                if len(member_page) < page_size:
-                    break
-                offset += page_size
+
+            needs_orphan_repair = any(
+                not str(row.get('irmandade_id') or '').strip()
+                or str(row.get('irmandade_id')).strip() not in known_member_ids
+                for row in rows
+            )
+            if target_commons and needs_orphan_repair:
+                offset = 0
+                page_size = 1000
+                while True:
+                    page_headers = {**headers, "Range": f"{offset}-{offset + page_size - 1}"}
+                    members_response = supabase_get(
+                        members_url,
+                        headers=page_headers,
+                        params=[("select", "id,comum,nome,endereco")],
+                        timeout=(3.05, 15),
+                    )
+                    members_response.raise_for_status()
+                    member_page = members_response.json()
+                    for item in member_page:
+                        if item.get('id'):
+                            known_member_ids.add(str(item['id']))
+                        member_common = canonical_common_names.get(normalize_text(item.get('comum')), '')
+                        if item.get('id') and member_common in target_commons:
+                            member_locations[str(item['id'])] = member_common
+                            scoped_members.append(item)
+                    if len(member_page) < page_size:
+                        break
+                    offset += page_size
 
             hydrated_rows = []
             repaired_links = []

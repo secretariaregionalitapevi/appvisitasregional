@@ -11,6 +11,9 @@ from ColorAdminApp.views import _sanitize_audit_value
 class AdministrativeSplitTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
+        seed_patch = patch.object(admin_views.congregation_distribution, "seed", return_value={"assignments": [], "pending": [], "catalog_corrections": []})
+        seed_patch.start()
+        self.addCleanup(seed_patch.stop)
 
     def request(self, path, role_id):
         request = self.factory.get(path)
@@ -43,16 +46,45 @@ class AdministrativeSplitTests(SimpleTestCase):
 
     @patch("ColorAdminApp.admin_views.common_catalog")
     @patch("ColorAdminApp.admin_views._get_table")
-    def test_congregations_are_linked_to_ministry_by_br_code(self, get_table, common_catalog):
+    def test_congregations_are_linked_to_sam_by_br_code(self, get_table, common_catalog):
         common_catalog.return_value = [{"comum": "BR-21-0797 - JABOTICABEIRA", "cidade": "SANTANA DE PARNAIBA"}]
-        get_table.return_value = [
-            {"id": "1", "comum": "BR-21-0797 - SANTANA DE PARNAIBA - JABOTICABEIRA", "nome": "Servo 1", "administracao": "ITAPEVI"},
-            {"id": "2", "comum": "BR-21-0797 - SANTANA DE PARNAIBA - JABOTICABEIRA", "nome": "Servo 2", "administracao": "ITAPEVI"},
+        registry = [
+            {"id": "1", "comum_congregacao": "BR-21-0797 - OUTRO ROTULO", "nome_aluno": "Servo 1", "cargo_ministerio": "ANCIAO"},
+            {"id": "2", "comum_congregacao": "BR-21-0797 - OUTRO ROTULO", "nome_aluno": "Servo 2", "cargo_ministerio": "DIACONO"},
         ]
+        get_table.side_effect = lambda table, params: registry if table == "musica_acompanhamento_aluno" else []
         rows = admin_views._congregation_rows()
         self.assertEqual(rows[0]["codigo"], "BR-21-0797")
         self.assertEqual(rows[0]["nome_comum"], "JABOTICABEIRA")
         self.assertEqual(rows[0]["quantidade_servos"], 2)
+
+    def test_ministry_hierarchy_has_the_institutional_order(self):
+        rows = admin_views._sort_ministry_rows([
+            {"municipio": "ITAPEVI", "comum": "BR-22-0001 - CENTRAL", "nome": "Secretária", "ministerio": "Secretária da Música"},
+            {"municipio": "ITAPEVI", "comum": "BR-22-0001 - CENTRAL", "nome": "Cooperador", "ministerio": "Cooperador do Ofício"},
+            {"municipio": "ITAPEVI", "comum": "BR-22-0001 - CENTRAL", "nome": "Ancião", "ministerio": "Ancião"},
+            {"municipio": "ITAPEVI", "comum": "BR-22-0001 - CENTRAL", "nome": "Diácono", "ministerio": "Diácono"},
+        ])
+        self.assertEqual(
+            [row["nome"] for row in rows],
+            ["Ancião", "Diácono", "Cooperador", "Secretária"],
+        )
+
+    def test_ministry_municipality_follows_common_code_without_changing_source(self):
+        source = [
+            {"nome": "Pessoa A", "comum": "BR-22-0001 - COMUM A", "municipio": "COTIA"},
+            {"nome": "Pessoa B", "comum": "BR-22-0002 - COMUM B", "municipio": "COTIA"},
+            {"nome": "Pessoa C", "comum": "BR-22-9999 - DESCONHECIDA", "municipio": "ITAPEVI"},
+        ]
+        catalog = [
+            {"comum": "BR-22-0001 - COMUM A", "cidade": "CAUCAIA DO ALTO"},
+            {"comum": "BR-22-0002 - COMUM B", "cidade": "VARGEM GRANDE PAULISTA"},
+        ]
+        result = admin_views._sort_ministry_rows(source, catalog)
+        self.assertEqual({r["municipio"] for r in result}, {
+            "CAUCAIA DO ALTO", "VARGEM GRANDE PAULISTA", "ITAPEVI",
+        })
+        self.assertEqual(source[0]["municipio"], "COTIA")
 
     @patch("ColorAdminApp.admin_views.log_audit")
     @patch("ColorAdminApp.admin_views._congregation_rows")
@@ -76,6 +108,29 @@ class AdministrativeSplitTests(SimpleTestCase):
         self.assertEqual(sheet["A7"].value, "BR-22-1234")
         self.assertEqual(sheet["B7"].value, "COMUM TESTE")
         self.assertFalse(sheet.sheet_view.showGridLines)
+        log_mock.assert_called_once()
+
+    @patch("ColorAdminApp.admin_views.common_catalog", return_value=[])
+    @patch("ColorAdminApp.admin_views.log_audit")
+    @patch("ColorAdminApp.admin_views._get_table")
+    def test_ministry_excel_uses_hierarchy_order(self, get_table, log_mock, catalog):
+        from io import BytesIO
+        from openpyxl import load_workbook
+
+        get_table.return_value = [
+            {"nome": "Secretária", "ministerio": "Secretária da Música", "comum": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI"},
+            {"nome": "Diácono", "ministerio": "Diácono", "comum": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI"},
+            {"nome": "Ancião", "ministerio": "Ancião", "comum": "BR-22-0001 - CENTRAL", "municipio": "ITAPEVI"},
+        ]
+        response = admin_views.export_ministerio_excel(
+            self.request("/administracao/api/operacional/ministerio/exportar-excel/", 1)
+        )
+        sheet = load_workbook(BytesIO(response.content))["MINISTERIO"]
+        self.assertEqual(sheet["A7"].value, "Ancião")
+        self.assertEqual(sheet["A8"].value, "Diácono")
+        self.assertEqual(sheet["A9"].value, "Secretária")
+        self.assertEqual(sheet["A1"].value, "CONGREGAÇÃO CRISTÃ NO BRASIL")
+        self.assertEqual(sheet.freeze_panes, "A7")
         log_mock.assert_called_once()
 
     @patch("ColorAdminApp.admin_views.requests.post")

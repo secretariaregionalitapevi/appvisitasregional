@@ -253,6 +253,7 @@
         let infoWindow;
         let agendaEvents = [];
         let autoSyncInterval;
+        let autoSyncRunning = false;
         let churchMarker;
         let coverageCircles = [];
 
@@ -350,13 +351,26 @@
 
         const startAutoSync = () => {
             if (autoSyncInterval) clearInterval(autoSyncInterval);
-            autoSyncInterval = setInterval(async () => {
-                if (!hasSelectedScope()) return;
-                // Sincronismo leve: apenas busca a agenda e atualiza ícones
-                const resAgenda = await fetch('/visitas/api/agenda/');
-                agendaEvents = await resAgenda.json();
-                markers.forEach(updateMarkerStatus);
-            }, 5000); // A cada 5 segundos para ser "tempo real"
+            const syncAgenda = async () => {
+                if (autoSyncRunning || document.hidden || !hasSelectedScope()) return;
+                autoSyncRunning = true;
+                try {
+                    const response = await fetch('/visitas/api/agenda/');
+                    if (!response.ok) throw new Error(`Agenda indisponível (${response.status}).`);
+                    const rows = await response.json();
+                    if (!Array.isArray(rows)) throw new Error(rows.error || 'Resposta inválida da agenda.');
+                    agendaEvents = rows;
+                    markers.forEach(updateMarkerStatus);
+                } catch (error) {
+                    console.error('Falha ao sincronizar a agenda do mapa:', error);
+                } finally {
+                    autoSyncRunning = false;
+                }
+            };
+            autoSyncInterval = setInterval(syncAgenda, 60000);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) syncAgenda();
+            });
         };
 
         const loadInitialData = async () => {

@@ -20,7 +20,6 @@ class AgendaCommonIsolationTests(SimpleTestCase):
         }]
         members = Mock()
         members.json.return_value = [
-            {'id': 'member-a', 'comum': 'COMUM A', 'nome': 'Maria', 'endereco': 'Rua A, 10'},
             {'id': 'member-b', 'comum': 'COMUM B', 'nome': 'Maria', 'endereco': 'Rua A, 10'},
         ]
         get.side_effect = [agenda, members]
@@ -30,3 +29,6 @@ class AgendaCommonIsolationTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(json.loads(response.content), [])
         update.assert_not_called()
+        member_query = get.call_args_list[1].kwargs
+        self.assertIn(('select', 'id,comum'), member_query['params'])
+        self.assertIn(('id', 'in.(member-b)'), member_query['params'])
