@@ -103,3 +103,23 @@ class AdministrativeMutationTests(SimpleTestCase):
         for body in [{'ano_anterior': 'abc'}, {'data_evento': '2026-02-30'}]:
             self.assertEqual(admin_views.operational_record(self.request('patch', body), 'santa-ceia', self.user_id).status_code, 400)
         update.assert_not_called()
+
+    @patch.object(admin_views, 'log_audit')
+    @patch.object(admin_views.requests, 'patch')
+    @patch.object(admin_views, '_get_table')
+    def test_ordained_ministries_move_legacy_date_on_save(self, get, update, audit):
+        for role in ['ANCI\u00c3O', 'DI\u00c1CONO']:
+            get.return_value = [{'id': self.user_id, 'nome': 'Teste', 'ministerio': role,
+                                 'comum': 'Teste', 'municipio': 'Teste',
+                                 'data_apresentacao': '2013-06-22', 'data_ordenacao': None}]
+            update.return_value = self.response(200, get.return_value)
+            result = admin_views.operational_record(self.request('patch', {'nome': 'Teste'}), 'ministerio', self.user_id)
+            self.assertEqual(result.status_code, 200)
+            payload = update.call_args.kwargs['json']
+            self.assertEqual(payload['data_ordenacao'], '2013-06-22')
+            self.assertIsNone(payload['data_apresentacao'])
+
+    def test_ministry_date_normalization_preserves_other_dates(self):
+        for role, ordination in [('ANCI\u00c3O', '2010-01-01'), ('Cooperador', None)]:
+            row = {'ministerio': role, 'data_ordenacao': ordination, 'data_apresentacao': '2013-06-22'}
+            self.assertEqual(admin_views._normalize_ministry_dates(row), row)

@@ -3,6 +3,13 @@
   multi.setupAll($('.music-events'));
   const category=$('.music-events').dataset.eventCategory;
   const state={items:[],data:null,page:0,version:0};
+  let loadingCount=0,loadingNotice=null;
+  function loading(message='Consultando os eventos e as presen\u00e7as. Aguarde a conclus\u00e3o.'){
+    if(loadingCount++===0)loadingNotice=window.AppFeedback.show({type:'loading',flow:'update',title:'Carregando dados',message});
+    let closed=false;
+    return ()=>{if(closed)return;closed=true;if(--loadingCount===0){loadingNotice?.close();loadingNotice=null;}};
+  }
+
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const date=v=>v?String(v).slice(0,10).split('-').reverse().join('/'):'—';
   function downloadName(response,fallback){const header=response.headers.get('Content-Disposition')||'',utf8=header.match(/filename\*=UTF-8''([^;]+)/i);if(utf8){try{return decodeURIComponent(utf8[1]);}catch{}}return header.match(/filename="([^"]+)"/)?.[1]||fallback;}
@@ -55,15 +62,15 @@
     $('#events-count').textContent=`${number(t.eventos)} eventos`;table();document.dispatchEvent(new CustomEvent('music-events-data',{detail:data}));
   }
   let dashboardController, historyController;
-  async function loadHistory(params,version){
+  async function loadHistory(params,version){const finishLoading=loading();
     historyController=new AbortController();
     try{const history=await request('/musica/eventos/api/historico/?'+params,{signal:historyController.signal});
       if(version!==state.version)return;
       state.data.evolution=history.evolution;
       document.dispatchEvent(new CustomEvent('music-events-history',{detail:history}));
-    }catch(error){if(version===state.version&&error.name!=='AbortError')document.dispatchEvent(new CustomEvent('music-events-history',{detail:{error:error.message}}));}
+    }catch(error){if(version===state.version&&error.name!=='AbortError')document.dispatchEvent(new CustomEvent('music-events-history',{detail:{error:error.message}}));}finally{finishLoading();}
   }
-  async function load(preloaded){const version=++state.version;state.data=null;$('.music-events').classList.add('events-data-pending');$('.music-events').setAttribute('aria-busy','true');$('#events-metrics').innerHTML='';$('#events-attendance-overview').hidden=true;$('#events-scope-reading').textContent='Carregando o recorte selecionado...';dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
+  async function load(preloaded){const finishLoading=loading();const version=++state.version;state.data=null;$('.music-events').classList.add('events-data-pending');$('.music-events').setAttribute('aria-busy','true');$('#events-metrics').innerHTML='';$('#events-attendance-overview').hidden=true;$('#events-scope-reading').textContent='Carregando o recorte selecionado...';dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
     try{const d=preloaded?.totals?preloaded:await request('/musica/eventos/api/painel/?'+params,{signal:dashboardController.signal});if(version!==state.version)return;
       multi.setOptions($('#events-city'),d.options.cities,'Todos os municípios');
       const selected=multi.values($('#events-common'));const cities=multi.normalizedValues($('#events-city'));
@@ -73,9 +80,9 @@
       render(d);$('.music-events').classList.remove('events-data-pending');feedback('');$('#events-excel').disabled=$('#events-pdf').disabled=false;
       void loadHistory(params,version);
     }catch(error){if(version===state.version){feedback(error.message);$('#events-scope-reading').textContent='Recorte indisponivel. Tente atualizar novamente.';$('#events-management-note').textContent='Não foi possível atualizar o recorte. Use Atualizar para tentar novamente.';}}
-    finally{if(version===state.version){$('#events-refresh').disabled=false;$('.music-events').setAttribute('aria-busy','false');}}
+    finally{finishLoading();if(version===state.version){$('#events-refresh').disabled=false;$('.music-events').setAttribute('aria-busy','false');}}
   }
-  async function initialize(selectedId){try{const initialParams=query();initialParams.delete('evento');initialParams.set('inicial','1');if(typeof selectedId==='string')initialParams.set('evento',selectedId);
+  async function initialize(selectedId){const finishLoading=loading();try{const initialParams=query();initialParams.delete('evento');initialParams.set('inicial','1');if(typeof selectedId==='string')initialParams.set('evento',selectedId);
     const [data,initialDashboard]=await Promise.all([request('/musica/eventos/api/eventos/'),request('/musica/eventos/api/painel/?'+initialParams)]);state.items=data.items;
     options($('#events-event'),data.items.map(e=>[e.id,eventLabel(e)]),'Todos os eventos');
     options($('#events-year'),[...new Set(data.items.map(e=>e.data_evento.slice(0,4)))].sort().reverse().map(x=>[x,x]),'Todos');
@@ -84,7 +91,7 @@
     options($('#event-base'),bases.map(x=>[x.id,`${date(x.referencia)} · ${x.origem}`]),'Selecione a base');
     $('#events-base-state').textContent='O painel abre nos sete municípios da Regional. Visitantes ficam na visão complementar. O percentual considera somente presenças vinculadas ao público elegível do SAM. Cargos são dimensões sobrepostas e não devem ser somados novamente ao total.';
     await load(initialDashboard);
-  }catch(error){feedback(error.message);}}
+  }catch(error){feedback(error.message);}finally{finishLoading();}}
   options($('#events-month'),['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((x,i)=>[String(i+1).padStart(2,'0'),x]),'Todos');
   Object.values(map).filter(x=>x!=='#events-search').forEach(s=>$(s).addEventListener('change',()=>{if(['#events-year','#events-month','#events-start','#events-end','#events-type'].includes(s)){$('#events-event').value='';$('#events-local').value='';}if(s==='#events-event')$('#events-local').value='';load();}));
   $('#events-city').addEventListener('change',()=>{multi.clear($('#events-common'));load();});$('#events-common').addEventListener('change',load);
@@ -102,7 +109,7 @@
   async function download(format,report,extra={},button){if(button?.disabled)return;if(window.AppExport){const q=query();if(report)q.set('relatorio',report);for(const [key,value]of Object.entries(extra)){q.delete(key);if(value)q.append(key,value);}return AppExport.download(button,`/musica/eventos/exportar-${format}/?${q}`,{filename:`Ensaios_RTs.${format==='excel'?'xlsx':'pdf'}`});}const restore=generating(button);try{const q=query();if(report)q.set('relatorio',report);for(const [key,value] of Object.entries(extra)){q.delete(key);if(value)q.append(key,value);}const response=await fetch(`/musica/eventos/exportar-${format}/?${q}`,{cache:'no-store'});if(!response.ok||response.redirected)throw Error('Não foi possível exportar. Confira sua sessão e tente novamente.');const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=downloadName(response,`Ensaios_RTs.${format==='excel'?'xlsx':'pdf'}`);a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){feedback(error.message);}finally{restore();}}
   $('#events-excel').onclick=e=>download('excel',undefined,{},e.currentTarget);$('#events-pdf').onclick=e=>download('pdf','comuns',{},e.currentTarget);$('#events-commons-pdf').onclick=e=>download('pdf','comuns',{},e.currentTarget);
   async function selectEvent(id){Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));await initialize(id);}
-  window.MusicEventsDashboard={generating,downloadName,load:initialize,refresh:load,download,selectEvent,feedback,request,esc,date};
+  window.MusicEventsDashboard={loading,generating,downloadName,load:initialize,refresh:load,download,selectEvent,feedback,request,esc,date};
   $('#events-metrics').innerHTML=['Músicos presentes','Organistas presentes','Presenças totais','Comuns representadas'].map(label=>`<article class="events-metric events-loading"><small>${label}</small><strong>—</strong><p>Carregando indicadores…</p></article>`).join('');
   initialize();
 })();

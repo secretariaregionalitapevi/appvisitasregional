@@ -73,7 +73,7 @@
       $('#annual-message').textContent=`Ano ${data.year} · ${data.sessions.filter(s=>s.loaded).length} datas com dados carregados. Acompanhamento separado por ciclo e município. Itapevi / Pirapora: janeiro, maio e setembro. Demais municípios: março, julho e novembro. Encarregado local: PRESENTE, J, NJ, SE ou EF.`;
       render();$('#annual-pdf').disabled=false;
     }catch(error){if(current===version&&error.name!=='AbortError')$('#annual-message').textContent=error.message;}
-    finally{if(current===version){$('#annual-refresh').disabled=false;controller=null;}}
+    finally{finishLoading();if(current===version){$('#annual-refresh').disabled=false;controller=null;}}
   }
   async function download(city,day,button){
     if(!data||button?.disabled)return;

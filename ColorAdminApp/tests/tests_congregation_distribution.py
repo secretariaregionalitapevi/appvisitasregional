@@ -76,6 +76,21 @@ class CongregationDistributionTests(SimpleTestCase):
         self.assertTrue(all(set(names) == {"HELENA PINHEIRO RODRIGUES", "MARISTELA MATIAS LIMA"} for names in joint))
         self.assertEqual({a["nome"] for a in records}, {"HELENA PINHEIRO RODRIGUES", "MARISTELA MATIAS LIMA"})
 
+    def test_itapevi_examiner_workbook_covers_all_51_commons(self):
+        records = [a for a in distribution.seed()["assignments"]
+                   if a["role"] == "examinadora" and a.get("source_sheet") == "Dados"
+                   and a.get("source_column") == "F"]
+        self.assertEqual(len(records), 51)
+        self.assertEqual(len({a["congregation_code"] for a in records}), 51)
+        self.assertEqual(sum(a["nome"] == "MAGDA DERTINATI SABINO" for a in records), 26)
+        self.assertEqual(sum(a["nome"] == "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO" for a in records), 25)
+        by_common = {a["congregation_code"]: a for a in records}
+        self.assertEqual(by_common["BR-21-1039"]["nome"], "MAGDA DERTINATI SABINO")
+        self.assertEqual(by_common["BR-22-0679"]["nome"], "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO")
+        self.assertEqual(by_common["BR-21-1481"]["source_row"], 45)
+        self.assertEqual(by_common["BR-22-2934"]["nome"], "MAGDA DERTINATI SABINO")
+        self.assertEqual(by_common["BR-22-2934"]["residence_codes"], ["BR-21-1039"])
+
     def test_residence_to_confirm_is_not_assumed(self):
         self.assertEqual(distribution.annotate({"residence_codes": []}, "BR-22-0001")["relationship"], "a_confirmar")
 

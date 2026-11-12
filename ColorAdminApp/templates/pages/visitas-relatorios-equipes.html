@@ -200,13 +200,14 @@ document.addEventListener('DOMContentLoaded', () => {
       [report.title],
       ['Período', period],
       ['Localidade', location],
-      ['Impresso por', userName],
+      ['Responsável', 'Secretaria Regional da Música'],
       ['Impresso em', new Date().toLocaleString('pt-BR')],
       [], headers,
       ...report.rows.map(row => regional
         ? [row.municipio,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas]
         : [row.municipio,row.comum,row.equipe,row.total,row.realizadas,row.agendadas,row.nao_realizadas,row.canceladas])
     ];
+    rows.push([],['Impresso por:',userName]);
     const worksheet = XLSX.utils.aoa_to_sheet(rows);
     worksheet['!merges'] = [0,1,2,3].map(row => ({s:{r:row,c:0},e:{r:row,c:headers.length-1}}));
     worksheet['!cols'] = headers.map((header,index) => ({wch:index < (regional?2:3) ? 34 : Math.max(14,header.length+2)}));
@@ -242,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.text(`Emissão: ${now.toLocaleDateString('pt-BR')}`, pageWidth - 14, 15, {align:'right'});
       doc.text(`Período: ${periodDescription()}`, pageWidth - 14, 20, {align:'right'});
       doc.text(`Localidade: ${locationDescription()}`, pageWidth - 14, 25, {align:'right'});
-      doc.text(`Impresso por: ${userName}`, pageWidth - 14, 30, {align:'right'});
+      window.AppReportIdentity.jsPdfHeader(doc,pageWidth-14,30);
       doc.setTextColor(100,100,100); doc.setFontSize(7);
       doc.text(`${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`, pageWidth - 14, 34, {align:'right'});
     };
@@ -269,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     drawHeader(1); drawExecutiveSummary();
     doc.autoTable({head:headers,body,startY:70,margin:{top:46},theme:'grid',styles:{fontSize:8},headStyles:{fillColor:[30,75,122],textColor:255},alternateRowStyles:{fillColor:[245,245,245]},didDrawPage:data=>{ drawHeader(data.pageNumber); if(data.pageNumber === 1) drawExecutiveSummary(); }});
-    doc.save(`${report.file}_${new Date().toISOString().slice(0,10).replaceAll('-','')}.pdf`);
+    window.AppReportIdentity.jsPdfFooter(doc,userName);doc.save(`${report.file}_${new Date().toISOString().slice(0,10).replaceAll('-','')}.pdf`);
   };
   rebuildCommonSearch(q('report-city').value, q('report-common').value);
   load();

@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Painel gerencial do Grupo de Estudos Musicais (GEM)."""
 import json
 import io
@@ -608,22 +609,41 @@ def api_students_report(request):
         return _denied()
     if request.method != 'GET':
         return JsonResponse({'error': 'Metodo nao permitido.'}, status=405)
-    return JsonResponse({'items': _report_rows(request)})
+    try:
+        return JsonResponse({'items': _report_rows(request)})
+    except (requests.RequestException, ValueError):
+        return JsonResponse(
+            {'error': 'Não foi possível consultar os dados do relatório de alunos do GEM.'},
+            status=502,
+        )
 
 
 def export_students_excel(request):
     if not can_open_module(request):
         return _denied()
-    rows = _report_rows(request)
+    try:
+        rows = _report_rows(request)
+    except (requests.RequestException, ValueError):
+        return JsonResponse(
+            {'error': 'Não foi possível consultar os dados do relatório de alunos do GEM.'},
+            status=502,
+        )
     profile = request.session.get('user_profile') or {}
     actor = profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email') or 'Usuario'
     now = datetime.now()
     cities = request.GET.getlist('municipio')
     commons = request.GET.getlist('comum')
     scope = f"Municipios: {', '.join(cities) if cities else 'Todos'} | Comuns: {', '.join(commons) if commons else 'Todas'}"
-    headers = ['Aluno', 'Registro MSA', 'Municipio', 'Comum congregacao', 'Cargo/Ministerio', 'Instrumento', 'Nivel', 'Programa minimo', 'Ultimo lancamento']
+    headers = ['Aluno', 'Registro MSA', 'Municipio', 'Comum congregacao', 'Cargo/Ministerio', 'Instrumento', 'Nivel', 'Programa minimo', 'Ultimo lancamento', 'Situacao']
     workbook = Workbook(); sheet = workbook.active; sheet.title = 'ALUNOS GEM'
     navy, pale = '1E4B7A', 'EAF2F8'; last = get_column_letter(len(headers)); thin = Side(style='thin', color='CCD5DD')
+    status_colors = {
+        'ATIVO': ('E7F7F1', '087A58'),
+        'ALERTA': ('FFF3DF', 'A96100'),
+        'INATIVO': ('FDE8E8', 'A80000'),
+        'EXCLUIR': ('D10000', 'FFFFFF'),
+        'SEM HISTORICO': ('EDF2F5', '657B8C'),
+    }
     for row_number, text_value, size in ((1, 'CONGREGAÇÃO CRISTÃ NO BRASIL', 15), (2, 'Regional Itapevi - São Paulo', 10), (3, 'GRUPO DE ESTUDOS MUSICAIS', 12)):
         sheet.merge_cells(f'A{row_number}:{last}{row_number}'); cell = sheet.cell(row_number, 1, text_value)
         cell.font = Font(size=size, bold=row_number != 2, color='FFFFFF' if row_number < 3 else navy)
@@ -637,14 +657,21 @@ def export_students_excel(request):
         last_activity = str(row.get('last_activity_at') or '')
         try: last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00')).strftime('%d/%m/%Y')
         except ValueError: pass
-        values = [row.get('nome_aluno'), row.get('registro_msa'), row.get('municipio'), row.get('comum_congregacao'), row.get('cargo_ministerio'), row.get('instrumento'), row.get('nivel'), f"{_percent(row.get('programa_minimo_percentual'))}%", last_activity or 'Sem lançamento']
+        status = 'EXCLUIR' if row.get('requires_review') else str(row.get('operational_status') or 'SEM HISTÓRICO')
+        status_key = status.replace('SEM HISTÓRICO', 'SEM HISTORICO')
+        values = [row.get('nome_aluno'), row.get('registro_msa'), row.get('municipio'), row.get('comum_congregacao'), row.get('cargo_ministerio'), row.get('instrumento'), row.get('nivel'), f"{_percent(row.get('programa_minimo_percentual'))}%", last_activity or 'Sem lançamento', status]
         for column, value in enumerate(values, 1):
             cell = sheet.cell(row_number, column, value or ''); cell.border = Border(bottom=thin); cell.alignment = Alignment(vertical='center', wrap_text=column in (1, 4))
             if row_number % 2 == 0: cell.fill = PatternFill('solid', fgColor='F4F6F8')
-    for index, width in enumerate([34, 17, 20, 38, 22, 25, 24, 16, 22], 1): sheet.column_dimensions[get_column_letter(index)].width = width
+            if column == len(headers):
+                fill, font = status_colors.get(status_key, status_colors['SEM HISTORICO'])
+                cell.fill = PatternFill('solid', fgColor=fill)
+                cell.font = Font(bold=True, color=font)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+    for index, width in enumerate([34, 17, 20, 38, 22, 25, 24, 16, 22, 16], 1): sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.freeze_panes = 'A7'; sheet.auto_filter.ref = f'A6:{last}{max(6, sheet.max_row)}'; sheet.sheet_view.showGridLines = False
     sheet.page_setup.orientation = 'landscape'; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    stream = io.BytesIO(); workbook.save(stream)
+    stream = io.BytesIO(); workbook_identity(workbook, actor);workbook.save(stream)
     response = HttpResponse(stream.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'attachment; filename=Relatorio_Alunos_GEM_{now:%d-%m-%Y_%H-%M}.xlsx'
     return response

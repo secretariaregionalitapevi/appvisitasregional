@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Painel gerencial de aulas e frequência alimentado pela sincronização incremental com o SAM."""
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -413,7 +414,7 @@ def export_student_attendance_excel(request, student_id):
     for index, width in enumerate([15, 17, 38, 72, 30], 1):
         evolution_sheet.column_dimensions[get_column_letter(index)].width = width
     output = io.BytesIO()
-    workbook.save(output)
+    workbook_identity(workbook, actor);workbook.save(output)
     output.seek(0)
     stamp = now.strftime("%d_%m_%Y")
     filename = f"Boletim_GEM_{_file_part(student.get('nome'))}_{stamp}.xlsx"
@@ -672,7 +673,7 @@ def export_excel(request):
     risks.auto_filter.ref = f"A6:G{max(6, risks.max_row)}"
 
     stream = io.BytesIO()
-    workbook.save(stream)
+    workbook_identity(workbook, actor);workbook.save(stream)
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     file_scope = _file_part(filters.get("municipio") or "Todos_os_Municipios")
     response["Content-Disposition"] = f'attachment; filename="Relatorio_Frequencia_GEM_{file_scope}_{now:%d-%m-%Y_%H-%M}.xlsx"'

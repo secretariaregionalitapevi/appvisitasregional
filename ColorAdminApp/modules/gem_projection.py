@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Inteligência de formação e projeção da futura orquestra do GEM."""
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -285,4 +286,4 @@ def export_excel(request):
     summary.column_dimensions["A"].width = 36
     for col in "BCDEFGH": summary.column_dimensions[col].width = 15
     summary.freeze_panes = "A7"; summary.auto_filter.ref = "A6:H9"; summary.sheet_view.showGridLines = False; summary.page_setup.orientation = "landscape"; summary.page_setup.fitToWidth = 1; summary.sheet_properties.pageSetUpPr.fitToPage = True; summary.print_title_rows = "1:6"
-    output = io.BytesIO(); wb.save(output); output.seek(0); response = HttpResponse(output.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); response["Content-Disposition"] = f'attachment; filename="Projecao_Orquestra_GEM_{datetime.now():%d-%m-%Y_%H-%M}.xlsx"'; return response
+    output = io.BytesIO(); workbook_identity(wb, _actor(request));wb.save(output); output.seek(0); response = HttpResponse(output.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); response["Content-Disposition"] = f'attachment; filename="Projecao_Orquestra_GEM_{datetime.now():%d-%m-%Y_%H-%M}.xlsx"'; return response

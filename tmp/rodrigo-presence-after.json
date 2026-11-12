@@ -1,0 +1,14 @@
+{
+  "nome": "Rodrigo Vidal dos Santos",
+  "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+  "roles": [
+    "ENCARREGADO_LOCAL"
+  ],
+  "version": 1,
+  "event_id": "dd3fa3af-81c8-44bd-8313-e7eb306534cd",
+  "situacao": "PRESENTE",
+  "municipio": "ITAPEVI",
+  "person_key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+  "updated_at": "2026-11-12T16:39:58.635696+00:00",
+  "observacoes": "Presenca no Ensaio Regional de 20/09/2026 confirmada expressamente pelo usuario."
+}

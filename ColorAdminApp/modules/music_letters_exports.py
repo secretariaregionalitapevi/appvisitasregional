@@ -1,3 +1,4 @@
+from .report_identity import printed_by, workbook_identity
 """Relação por modalidade do modelo recebido, com o cabeçalho institucional do projeto."""
 import io
 from collections import defaultdict
@@ -81,14 +82,14 @@ def make_pdf(rows, responsible, filters):
                 self.drawCentredString(center, page_height - 59, 'MÚSICA · CARTAS DE EXAMES')
                 self.setFont('Helvetica', 9)
                 self.drawCentredString(center, page_height - 72, 'Relação de candidatos para exame')
-                meta = Paragraph(f'<b>Página:</b> {self._pageNumber} de {total}<br/><b>Emissão:</b> {issued}<br/><b>Impresso por:</b> {escape(responsible)}',
+                meta = Paragraph(f'<b>Página:</b> {self._pageNumber} de {total}<br/><b>Emissão:</b> {issued}<br/><b>Responsável:</b> Secretaria Regional da Música',
                                  ParagraphStyle('meta', fontSize=7, leading=9, alignment=2))
                 _, height = meta.wrap(185, 60)
                 meta.drawOn(self, page_width - 213, page_height - 19 - height)
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#64748b'))
                 self.drawString(28, 18, f'Cartas de exames · {len(rows)} cartas')
-                self.drawRightString(page_width - 28, 18, f'Página {self._pageNumber} de {total}')
+                printed_by(self, responsible, page_width - 28, 18, f'Página {self._pageNumber} de {total}')
                 canvas.Canvas.showPage(self)
             canvas.Canvas.save(self)
     content = [Table([[para('Recorte: ' + scope + f' · {len(rows)} cartas')]], colWidths=[width],
@@ -153,5 +154,5 @@ def make_excel(rows, responsible, filters):
     sheet.page_setup.fitToHeight = 0
     sheet.print_title_rows = '1:6'
     output = io.BytesIO()
-    workbook.save(output)
+    workbook_identity(workbook, responsible);workbook.save(output)
     return output.getvalue()

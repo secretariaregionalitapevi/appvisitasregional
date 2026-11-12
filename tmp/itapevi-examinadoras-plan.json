@@ -1,0 +1,775 @@
+{
+  "source": "d:\\BACKUP GERAL\\CCB - SECRETARIA MUSICAL\\REGIONAL ITAPEVI\\RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+  "sha256": "677408149c6af7f795c4291345d610d4586f69b76578ac22f7afd2a6dd1b4e39",
+  "counts": {
+    "MAGDA DERTINATI SABINO": 26,
+    "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO": 25
+  },
+  "assignments": [
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 8,
+      "congregation_code": "BR-21-1039",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 9,
+      "congregation_code": "BR-22-2093",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 10,
+      "congregation_code": "BR-21-0840",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 11,
+      "congregation_code": "BR-21-0819",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 12,
+      "congregation_code": "BR-22-0681",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 13,
+      "congregation_code": "BR-22-0680",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 14,
+      "congregation_code": "BR-22-2054",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 15,
+      "congregation_code": "BR-22-3033",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 16,
+      "congregation_code": "BR-22-3062",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 17,
+      "congregation_code": "BR-22-0679",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 18,
+      "congregation_code": "BR-22-1559",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 19,
+      "congregation_code": "BR-22-1810",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 20,
+      "congregation_code": "BR-22-2512",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 21,
+      "congregation_code": "BR-22-0674",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 22,
+      "congregation_code": "BR-22-2441",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 23,
+      "congregation_code": "BR-22-3270",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 24,
+      "congregation_code": "BR-22-3179",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 25,
+      "congregation_code": "BR-22-2076",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 26,
+      "congregation_code": "BR-22-1705",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 27,
+      "congregation_code": "BR-22-2285",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 28,
+      "congregation_code": "BR-22-2596",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 29,
+      "congregation_code": "BR-22-0675",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 30,
+      "congregation_code": "BR-22-0683",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 31,
+      "congregation_code": "BR-22-3050",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 32,
+      "congregation_code": "BR-22-3061",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 33,
+      "congregation_code": "BR-22-2294",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 34,
+      "congregation_code": "BR-22-0684",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 35,
+      "congregation_code": "BR-22-3206",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 36,
+      "congregation_code": "BR-22-2228",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 37,
+      "congregation_code": "BR-22-0672",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 38,
+      "congregation_code": "BR-22-1653",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 39,
+      "congregation_code": "BR-22-3756",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 40,
+      "congregation_code": "BR-22-0671",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 41,
+      "congregation_code": "BR-22-2292",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 42,
+      "congregation_code": "BR-22-2934",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 43,
+      "congregation_code": "BR-22-3129",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 44,
+      "congregation_code": "BR-22-3583",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 45,
+      "congregation_code": "BR-21-1481",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 46,
+      "congregation_code": "BR-22-1660",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 47,
+      "congregation_code": "BR-22-3250",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 48,
+      "congregation_code": "BR-22-3510",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 49,
+      "congregation_code": "BR-21-1312",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 50,
+      "congregation_code": "BR-22-2486",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 51,
+      "congregation_code": "BR-22-3651",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 52,
+      "congregation_code": "BR-21-1542",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 53,
+      "congregation_code": "BR-22-2999",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 54,
+      "congregation_code": "BR-22-0673",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 55,
+      "congregation_code": "BR-22-3274",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 56,
+      "congregation_code": "BR-22-1980",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:65917999-8ff3-4899-92f8-52893b49fc41",
+      "nome": "MAGDA DERTINATI SABINO",
+      "residence_codes": [
+        "BR-21-1039"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 57,
+      "congregation_code": "BR-22-1706",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MAGDA DERTINATI SABINO"
+    },
+    {
+      "role": "examinadora",
+      "role_label": "Examinadora de Organista",
+      "person_id": "sam:f1564065-6edf-4346-ab56-bab7d435fa9c",
+      "nome": "MIRIAN FRANCISLINE MARIANO DE SOUSA MONTEIRO",
+      "residence_codes": [
+        "BR-22-2934"
+      ],
+      "source_document": "RELAÇÃO DE MINISTÉRIO ITAPEVI_2025.xlsx",
+      "source_row": 58,
+      "congregation_code": "BR-22-3645",
+      "source_sheet": "Dados",
+      "source_column": "F",
+      "source_name": "MIRIAM FRANCISLINE MARIANO DE SOUSA MONTEIRO"
+    }
+  ]
+}

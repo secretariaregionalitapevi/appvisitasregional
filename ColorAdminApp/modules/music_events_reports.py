@@ -311,6 +311,8 @@ def build_excel(data, actor, now):
         ws.print_title_rows='1:9';ws.print_options.horizontalCentered=True;ws.print_area=f'A1:{end}{ws.max_row}'
         ws.page_setup.orientation='landscape';ws.page_setup.paperSize=ws.PAPERSIZE_A4;ws.page_setup.fitToWidth=1;ws.page_setup.fitToHeight=0;ws.sheet_properties.pageSetUpPr.fitToPage=True
         ws.oddFooter.center.text='Página &P de &N';ws.oddFooter.right.text='Regional Itapevi'
+    from .report_identity import workbook_identity
+    workbook_identity(book, actor)
     stream=io.BytesIO();book.save(stream);return stream.getvalue()
 
 
@@ -323,7 +325,9 @@ class NumberedCanvas(Canvas):
             self.setFont('Helvetica',7);self.setFillColor(colors.HexColor('#6b7280'))
             self.drawRightString(landscape(A4)[0]-28,landscape(A4)[1]-24,f'Página {self._pageNumber} de {len(self.pages)}')
             self.drawString(28,18,'Música · Ensaios Regionais e RTs · Regional Itapevi')
-            self.drawRightString(landscape(A4)[0]-28,18,f'Página {self._pageNumber} de {len(self.pages)}')
+            from .report_identity import printed_by
+            printed_by(self, getattr(self, 'report_actor', 'Usuário'), landscape(A4)[0]-28, 18,
+                       f'Página {self._pageNumber} de {len(self.pages)}')
             Canvas.showPage(self)
         Canvas.save(self)
 
@@ -357,7 +361,8 @@ def build_pdf(data,actor,now):
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-74,title)
         f=data['filters'];identity=data.get('report_identity',{})
         recorte=', '.join(f.get('municipios',[])) or ('Regional Itapevi' if f.get('origem','regional')=='regional' else 'Visitantes' if f.get('origem')=='visitantes' else 'Regional e visitantes')
-        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}','Recorte: '+recorte,'Comuns: '+(', '.join(f.get('comuns',[])) or 'Todas'),'Impresso por: '+actor]
+        canvas.report_actor = actor
+        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}','Recorte: '+recorte,'Comuns: '+(', '.join(f.get('comuns',[])) or 'Todas'),'Responsável: Secretaria Regional da Música']
         if identity.get('scope'):lines.append('Escopo: '+identity['scope'])
         if identity.get('common'):lines.append(identity['common'])
         meta=Paragraph('<br/>'.join('<b>'+escape(x.partition(':')[0])+':</b> '+escape(x.partition(':')[2].strip()) if ':' in x else escape(x) for x in lines),ParagraphStyle('meta',parent=style,alignment=2,fontSize=7,leading=9))

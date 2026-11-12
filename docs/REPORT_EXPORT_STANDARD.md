@@ -20,7 +20,7 @@ Usar cabeçalho em três colunas:
    - `Regional Itapevi - São Paulo` — 9 pt;
    - nome do módulo — 11–12 pt, negrito, azul institucional;
    - nome do relatório — 9 pt.
-3. Coluna direita com página, emissão, recorte/localidade, usuário responsável e data/hora.
+3. Coluna direita com página, emissão, recorte/localidade e **Responsável:** Secretaria Regional da Música. Apenas o rótulo Responsável deve estar em negrito; o valor deve usar texto regular.
 
 Para A4 paisagem, usar como base:
 
@@ -29,7 +29,7 @@ Para A4 paisagem, usar como base:
 - azul institucional `#1e4b7a`;
 - azul claro de apoio `#eaf2f8` para faixas de recorte e resumos.
 
-O rodapé deve informar o módulo/recorte e repetir a paginação ou identificação institucional.
+O rodapé deve informar o módulo/recorte e repetir a paginação ou identificação institucional. Exibir **Impresso por:** seguido do nome do usuário logado, com apenas o rótulo em negrito. O usuário que imprime não deve aparecer como responsável no cabeçalho. Esta regra vale para todos os relatórios, inclusive PDF gerado no navegador e rodapés de impressão do Excel.
 
 ## Aproveitamento da página
 
@@ -52,7 +52,7 @@ O rodapé deve informar o módulo/recorte e repetir a paginação ou identifica�
 
 - Mesclar a primeira linha por toda a largura do relatório para `CONGREGAÇÃO CRISTÃ NO BRASIL`.
 - Usar a segunda linha para `Regional Itapevi - São Paulo` e identificação do módulo.
-- Usar a terceira/quarta linha para título, recorte, emissão e responsável.
+- Usar a terceira/quarta linha para título, recorte, emissão e **Responsável:** Secretaria Regional da Música. Identificar o usuário logado apenas no rodapé de impressão com **Impresso por:**.
 - Aplicar azul institucional `#1e4b7a` tanto no cabeçalho principal quanto nos títulos das colunas.
 - Não usar verde nos cabeçalhos de tabelas exportadas; todos os relatórios devem preservar a mesma estética azul.
 - Congelar o cabeçalho da tabela, ativar filtro, ocultar gridlines e ajustar todas as larguras.
@@ -80,9 +80,13 @@ Antes de entregar uma alteração:
 
 Por solicitacao do usuario, os PDFs de presenca musical usam o titulo Relatório de Presença e a identificacao Impresso por. A faixa de contexto apresenta evento, data, municipios, cargo, situacao e quantidades, com rotulos em negrito. Nomes de download: [RELATÓRIO] TIPO_DO_EVENTO_dd_mm_AAAA, preservando os acentos via filename* UTF-8.
 
-Cabecalhos PDF: usar **Impresso por:** para o usuario que gera o arquivo, com rotulos dos metadados em negrito e valores regulares. Preservar campos de responsaveis por pessoas e atividades.
+Cabeçalhos PDF: usar **Responsável:** Secretaria Regional da Música. No rodapé, usar **Impresso por:** para o usuário que gera o arquivo, com rótulos em negrito e valores regulares. Preservar campos de responsáveis por pessoas e atividades.
 
 Excecao solicitada para nomes de PDFs de ensaios regionais: [RELATÓRIO] EnR_LOCAL_MMMaa.pdf, usando o local de realizacao e mes/ano do evento (exemplo EnR_ITAPEVI_MAI26).
+
+O Acompanhamento da Música segue a mesma regra geral de responsabilidade institucional no cabeçalho e usuário logado no rodapé, preservando emissão, recorte e paginação.
+
+No PDF de Acompanhamento, o rodapé ocupa uma única linha: à esquerda, `Regional Itapevi - ANO - Município - SP`; à direita, `Impresso por: Nome - Página N`. Nas colunas de eventos, exibir o nome do encontro e, abaixo, a data uma única vez.
 
 ### Matriz de instrumentos do D.A.R.P.E.
 

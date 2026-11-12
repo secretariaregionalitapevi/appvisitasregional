@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Módulo gerencial de Musicalização com autorização obrigatória no servidor."""
 import io
 import json
@@ -515,7 +516,7 @@ def export_children_excel(request):
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.print_title_rows = "1:6"
     stream = io.BytesIO()
-    workbook.save(stream)
+    workbook_identity(workbook, actor);workbook.save(stream)
     result = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     selected_polos = request.GET.getlist("polo")
     filename_scope = selected_polos[0] if len(selected_polos) == 1 else "Multiplos_Polos" if selected_polos else ""

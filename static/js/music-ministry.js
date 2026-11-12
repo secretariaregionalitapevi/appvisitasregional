@@ -50,17 +50,17 @@
 
     $('#ministry-list-title').textContent=selectedEvent?(data.filters.situacao==='PRESENTE'?'Presentes no encontro':'Participação no encontro'):'Acompanhamento anual por pessoa';
     $('#ministry-list-hint').textContent=selectedInfo?`${selectedInfo.titulo} · ${day(selectedInfo.date)}`:'Cada coluna representa um encontro. Abra o nome para consultar o histórico.';
-    $('#ministry-head').innerHTML=selectedEvent?'<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th><th>Situação</th><th>Local de participação</th></tr>':`<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th>${columns.map(event=>`<th><strong>${day(event.date)}</strong><small>${esc(event.titulo)}</small><button class="btn btn-sm btn-white border" type="button" data-header-export="${esc(event.id)}">PDF de presentes</button></th>`).join('')}<th>Presenças no recorte</th></tr>`;
+    $('#ministry-head').innerHTML=selectedEvent?'<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th><th>Situação</th><th>Local de participação</th></tr>':`<tr><th>Pessoa</th><th>Comum</th><th>Ministério / cargo</th>${columns.map(event=>`<th><strong>${day(event.date)}</strong><small>${esc(event.titulo)}</small><button class="btn btn-sm btn-white border" type="button" data-header-export="${esc(event.id)}">PDF de participação</button></th>`).join('')}<th>Presenças no recorte</th></tr>`;
     let city=null;
     $('#ministry-body').innerHTML=data.rows.map((row,index)=>{
       const group=city!==row.municipio?`<tr class="ministry-city-group"><td colspan="${count}"><i class="fa fa-location-dot me-2" aria-hidden="true"></i>${esc(row.municipio)}</td></tr>`:'';
       city=row.municipio;
       const byId=new Map(row.cells.map(cell=>[cell.event_id,cell]));
-      const status=cell=>cell?`<span class="ministry-status ${cell.situacao}">${esc(data.states[cell.situacao])}</span>`:'<span class="ministry-neutral">Não se aplica</span>';
+      const status=cell=>cell?`<span class="ministry-status ${cell.situacao}">${esc(data.states[cell.situacao])}</span>`:'<span class="ministry-status SEM_REGISTRO">Não participou</span>';
       const cells=selectedEvent?`<td>${status(byId.get(selectedEvent))}</td><td>${esc(byId.get(selectedEvent)?.local||'—')}</td>`:columns.map(event=>`<td>${status(byId.get(event.id))}${byId.get(event.id)?.situacao==='PRESENTE'?`<small>${esc(byId.get(event.id).local)}</small>`:''}</td>`).join('')+`<td>${ratio(row.cells)}</td>`;
       return group+`<tr><td><button type="button" class="ministry-person" data-person="${index}" aria-haspopup="dialog">${esc(row.nome)}</button></td><td>${esc(row.comum)}</td><td>${row.roles.map(role=>`<span class="ministry-role-badge">${esc(data.roles[role]||role)}</span>`).join(' ')}</td>${cells}</tr>`;
     }).join('')||`<tr><td colspan="${count}" class="events-empty">Nenhuma pessoa para os filtros selecionados.</td></tr>`;
-    $('#ministry-events').innerHTML=data.events.map(event=>`<article><div class="ministry-event-top"><span class="ministry-event-date">${day(event.data_evento)}</span><span class="ministry-status ${event.arquivo_sha256?'PRESENTE':'SEM_DADOS'}">${event.arquivo_sha256?'Lista carregada':'Sem lista'}</span></div><h3>${esc(event.titulo)}</h3><p>${esc(event.local)} · ${esc(event.modalidade)}</p><div class="ministry-event-actions"><button class="btn btn-sm btn-primary" type="button" data-event-present="${esc(event.id)}">Ver presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="pdf" data-export-event="${esc(event.id)}">PDF de presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="excel" data-export-event="${esc(event.id)}">Excel de presentes</button>${data.can_manage&&!event.arquivo_sha256?`<button class="btn btn-sm btn-outline-primary" type="button" data-event-import="${esc(event.id)}">Carregar lista</button>`:''}</div></article>`).join('')||'<p class="text-muted mb-0">Nenhum encontro individual cadastrado neste recorte. Selecione um ensaio ou RT no campo “Evento em análise”.</p>';
+    $('#ministry-events').innerHTML=data.events.map(event=>`<article><div class="ministry-event-top"><span class="ministry-event-date">${day(event.data_evento)}</span><span class="ministry-status ${event.arquivo_sha256?'PRESENTE':'SEM_DADOS'}">${event.arquivo_sha256?'Lista carregada':'Sem lista'}</span></div><h3>${esc(event.titulo)}</h3><p>${esc(event.local)} · ${esc(event.modalidade)}</p><div class="ministry-event-actions"><button class="btn btn-sm btn-primary" type="button" data-event-present="${esc(event.id)}">Ver presentes</button><button class="btn btn-sm btn-white border" type="button" data-event-format="pdf" data-export-event="${esc(event.id)}">PDF de participação</button><button class="btn btn-sm btn-white border" type="button" data-event-format="excel" data-export-event="${esc(event.id)}">Excel de participação</button>${data.can_manage&&!event.arquivo_sha256?`<button class="btn btn-sm btn-outline-primary" type="button" data-event-import="${esc(event.id)}">Carregar lista</button>`:''}</div></article>`).join('')||'<p class="text-muted mb-0">Nenhum encontro individual cadastrado neste recorte. Selecione um ensaio ou RT no campo “Evento em análise”.</p>';
     $('#ministry-scope').textContent=`${selectedInfo?selectedInfo.titulo+' | '+day(selectedInfo.date):'Todos os eventos do ano'} · Ano ${data.year} · ${multi.labels($('#ministry-city'),'Toda a Regional')} · ${$('#ministry-role').selectedOptions[0].textContent}`;
     if(!data.available)feedback('A consulta dos ensaios e RTs está disponível. Para cadastrar os novos encontros, é necessário aplicar a migração 036 no banco.','warning');
     else if(data.unmatched)feedback(`${data.unmatched} registros de cargos nos ensaios/RTs não têm uma identidade individual inequívoca no cadastro. Eles não foram atribuídos por aproximação.`,'warning');
@@ -71,9 +71,13 @@
     const current=++version;
     controller?.abort();const currentController=new AbortController();controller=currentController;data=null;
     let timedOut=false;
+    let notice=null;
+    const refresh=$('#ministry-refresh'),refreshIcon=refresh.querySelector('i');
     const timeout=setTimeout(()=>{timedOut=true;currentController.abort();},45000);
     try{
       if($('#ministry-person-dialog')?.open)$('#ministry-person-dialog').close();
+      notice=window.AppFeedback.show({type:'loading',flow:'update',title:'Carregando acompanhamento',message:'Consultando os encontros e as presenças. Aguarde a conclusão.'});
+      refresh.disabled=true;refreshIcon?.classList.add('fa-spin');
       $('#ministry-app').setAttribute('aria-busy','true');
       $('#ministry-pdf').disabled=$('#ministry-excel').disabled=true;
       $('#ministry-body').innerHTML='<tr><td colspan="8" class="events-empty">Carregando acompanhamento…</td></tr>';
@@ -92,7 +96,7 @@
       $('#ministry-event').value=chosenEvent;
       render();$('#ministry-pdf').disabled=$('#ministry-excel').disabled=false;
     }catch(error){if(current===version&&(timedOut||error.name!=='AbortError')){data=null;feedback(timedOut?'A consulta demorou além do esperado. Clique em Atualizar para tentar novamente.':error.message);$('#ministry-body').innerHTML='<tr><td colspan="8" class="events-empty">Não foi possível carregar o acompanhamento. Use Atualizar para tentar novamente.</td></tr>';}}
-    finally{clearTimeout(timeout);if(current===version)$('#ministry-app').setAttribute('aria-busy','false');}
+    finally{clearTimeout(timeout);notice?.close();if(current===version){$('#ministry-app').setAttribute('aria-busy','false');refresh.disabled=false;refreshIcon?.classList.remove('fa-spin');}}
   }
   async function download(format,overrides={},trigger=null){
     const button=trigger||$(`#ministry-${format}`);if(button.disabled||!data)return;
@@ -126,7 +130,7 @@
     if(button){const [rowIndex,cellIndex]=button.dataset.review.split(':').map(Number);const row=data.rows[rowIndex];const cell=row.cells[cellIndex];review={...cell,person_key:cell.person_key||row.key};$('#review-context').textContent=`${row.nome} · ${cell.titulo} · ${day(cell.date)}`;$('#review-state').value=cell.situacao;$('#review-note').value=cell.observacoes||'';$('#review-error').textContent='';$('#ministry-review-dialog').showModal();}
   };
   $('#ministry-body').onclick=onPersonAction;$('#ministry-person-history').onclick=onPersonAction;
-  $('#ministry-head').onclick=event=>{const button=event.target.closest('[data-header-export]');if(button)void download('pdf',{evento:button.dataset.headerExport,situacao:'PRESENTE',cargo:'',tipo:'',busca:''},button);};
+  $('#ministry-head').onclick=event=>{const button=event.target.closest('[data-header-export]');if(button)void download('pdf',{evento:button.dataset.headerExport,situacao:'',cargo:'',tipo:'',busca:''},button);};
   document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$('#'+button.dataset.close).close());
   $('#ministry-review-form').onsubmit=async event=>{
     event.preventDefault();$('#review-save').disabled=true;
@@ -148,7 +152,7 @@
   if($('#ministry-new'))$('#ministry-new').onclick=()=>openEvent();
   $('#ministry-events').onclick=event=>{
     const importer=event.target.closest('[data-event-import]');if(importer)openEvent(data.events.find(e=>e.id===importer.dataset.eventImport));
-    const exporter=event.target.closest('[data-event-format]');if(exporter)void download(exporter.dataset.eventFormat,{evento:exporter.dataset.exportEvent,situacao:'PRESENTE',cargo:'',tipo:'',busca:''},exporter);
+    const exporter=event.target.closest('[data-event-format]');if(exporter)void download(exporter.dataset.eventFormat,{evento:exporter.dataset.exportEvent,situacao:'',cargo:'',tipo:'',busca:''},exporter);
     const present=event.target.closest('[data-event-present]');if(present){$('#ministry-event').value=present.dataset.eventPresent;$('#ministry-state').value='PRESENTE';$('#ministry-role').value='';$('#ministry-kind').value=$('#ministry-search').value='';void load();}
   };
   $('#meeting-file').onchange=()=>{previewVersion++;preview=null;$('#meeting-preview-result').innerHTML='';$('#meeting-complete').checked=false;};

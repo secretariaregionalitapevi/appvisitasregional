@@ -1,0 +1,185 @@
+{
+  "entries": [
+    {
+      "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+      "person_key": "importado:754c9592-e765-5846-8881-72cb84168861",
+      "nome": "Jeferson Da Silva Ferreira",
+      "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "situacao": "PRESENTE",
+      "observacoes": "",
+      "source": {
+        "row": 108,
+        "comum": "BR-22-3129 - Parque Suburbano III",
+        "cidade": "ITAPEVI",
+        "pagina": "36",
+        "entrada": "19:49:00",
+        "administracao": "ITAPEVI - SP"
+      },
+      "version": 1,
+      "updated_at": "2026-11-03T21:09:57.453983+00:00"
+    },
+    {
+      "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+      "person_key": "sam:8539e275-8af6-444f-b119-95f8b4110635",
+      "nome": "HENRIQUE DA SILVA LUCAS DÓRIA",
+      "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "situacao": "NAO_APLICA",
+      "observacoes": "Correção solicitada pelo responsável: em 06/10/2026 Henrique já era músico e não integrava o público de encarregados locais da reunião do Brás. A ausência anterior foi inferida de cadastro desatualizado. Não se presume a data exata da mudança de cargo.",
+      "source": {},
+      "version": 3,
+      "updated_at": "2026-11-04T18:31:46.656142+00:00"
+    }
+  ],
+  "reviews": [],
+  "people": [
+    {
+      "key": "sam:8539e275-8af6-444f-b119-95f8b4110635",
+      "aliases": [
+        "sam:8539e275-8af6-444f-b119-95f8b4110635"
+      ],
+      "nome": "HENRIQUE DA SILVA LUCAS DÓRIA",
+      "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "source": "sam",
+      "families": [
+        "CORDAS"
+      ],
+      "temporal": true,
+      "confirmed_names": [],
+      "cells": [
+        {
+          "event_id": "legado:ea4fa72a-1316-4cbe-b384-358f08c1d8e3",
+          "date": "2026-01-18",
+          "titulo": "Ensaio Regional · 18/01/2026",
+          "tipo": "ENSAIO_REGIONAL",
+          "local": "ITAPEVI",
+          "modalidade": "PRESENCIAL",
+          "situacao": "PRESENTE",
+          "observacoes": "",
+          "editable": true,
+          "legacy": true,
+          "version": 0,
+          "nominal_present": true,
+          "person_key": "sam:8539e275-8af6-444f-b119-95f8b4110635",
+          "roles": [
+            "ENCARREGADO_LOCAL"
+          ],
+          "historical_role_known": true,
+          "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+          "municipio": "ITAPEVI"
+        },
+        {
+          "event_id": "legado:2b7e86cd-9a82-4889-a799-f1c35e0e8e1b",
+          "date": "2026-05-17",
+          "titulo": "Ensaio Regional · 17/05/2026",
+          "tipo": "ENSAIO_REGIONAL",
+          "local": "ITAPEVI",
+          "modalidade": "PRESENCIAL",
+          "situacao": "PRESENTE",
+          "observacoes": "",
+          "editable": true,
+          "legacy": true,
+          "version": 0,
+          "nominal_present": true,
+          "person_key": "sam:8539e275-8af6-444f-b119-95f8b4110635",
+          "roles": [
+            "ENCARREGADO_LOCAL"
+          ],
+          "historical_role_known": true,
+          "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+          "municipio": "ITAPEVI"
+        },
+        {
+          "event_id": "legado:dcd5192e-c7a8-442d-8e1d-608cad553c6d",
+          "date": "2026-07-19",
+          "titulo": "Ensaio Regional · 19/07/2026",
+          "tipo": "ENSAIO_REGIONAL",
+          "local": "JANDIRA",
+          "modalidade": "PRESENCIAL",
+          "situacao": "PRESENTE",
+          "observacoes": "",
+          "editable": true,
+          "legacy": true,
+          "version": 0,
+          "nominal_present": true,
+          "person_key": "sam:8539e275-8af6-444f-b119-95f8b4110635",
+          "roles": [
+            "ENCARREGADO_LOCAL"
+          ],
+          "historical_role_known": true,
+          "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+          "municipio": "ITAPEVI"
+        }
+      ],
+      "present": 3,
+      "verified": 3,
+      "pending": 0,
+      "states": {
+        "PRESENTE": 3
+      }
+    },
+    {
+      "key": "importado:754c9592-e765-5846-8881-72cb84168861",
+      "aliases": [
+        "importado:754c9592-e765-5846-8881-72cb84168861"
+      ],
+      "nome": "Jeferson Da Silva Ferreira",
+      "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "source": "arquivo",
+      "families": [],
+      "confirmed_names": [],
+      "temporal": true,
+      "cells": [
+        {
+          "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+          "person_key": "importado:754c9592-e765-5846-8881-72cb84168861",
+          "nome": "Jeferson Da Silva Ferreira",
+          "comum": "BR-22-3129 - PARQUE SUBURBANO III",
+          "municipio": "ITAPEVI",
+          "roles": [
+            "ENCARREGADO_LOCAL"
+          ],
+          "situacao": "PRESENTE",
+          "observacoes": "",
+          "source": {
+            "row": 108,
+            "comum": "BR-22-3129 - Parque Suburbano III",
+            "cidade": "ITAPEVI",
+            "pagina": "36",
+            "entrada": "19:49:00",
+            "administracao": "ITAPEVI - SP"
+          },
+          "version": 1,
+          "updated_at": "2026-11-03T21:09:57.453983+00:00",
+          "date": "2026-10-06",
+          "titulo": "Reunião do Ministério da Música - Brás",
+          "tipo": "REUNIAO_MINISTERIO",
+          "local": "Brás",
+          "modalidade": "PRESENCIAL",
+          "editable": true
+        }
+      ],
+      "present": 1,
+      "verified": 1,
+      "pending": 0,
+      "states": {
+        "PRESENTE": 1
+      }
+    }
+  ]
+}

@@ -970,7 +970,7 @@
         defaultStyle: { fontSize: 7.2, color: '#263238' }
       };
 
-      pdfMake.createPdf(docDefinition).download(`Auditoria_Modulos_${currentModule}_${fileStamp}.pdf`);
+      pdfMake.createPdf(window.AppReportIdentity.prepare(docDefinition)).download(`Auditoria_Modulos_${currentModule}_${fileStamp}.pdf`);
       loadingFeedback?.close();
       showFeedback('success', 'Relatório PDF gerado', 'O download do relatório foi iniciado.', `${displayedRecords.length} registro(s) exportado(s).`);
     } catch (e) {

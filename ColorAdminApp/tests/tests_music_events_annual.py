@@ -99,7 +99,12 @@ class AnnualMonitoringTests(SimpleTestCase):
         self.assertIn('PRESENTE', text)
         self.assertNotIn('LOCAL A CONFERIR', text)
         self.assertNotIn('COTIA', text)
-        self.assertEqual(text, text.upper())
+        body = '\n'.join(line for line in text.splitlines()
+                         if not any(label in line for label in ('Impresso por:', 'Responsável:', 'Secretaria Regional da Música')))
+        self.assertEqual(body, body.upper())
+        self.assertIn('Responsável:', text)
+        self.assertIn('Secretaria Regional da Música', text)
+        self.assertIn('Impresso por:', text)
 
     def test_original_closing_and_origin_scope_are_distinct(self):
         from ColorAdminApp.modules.music_events_annual_reports import session_report, build_model_pdf

@@ -1,0 +1,138 @@
+{
+  "key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+  "aliases": [
+    "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+    "sam:3ae914f3-5941-45a4-acc9-b7cb00e1cc39"
+  ],
+  "nome": "Oséia de Souza",
+  "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+  "municipio": "ITAPEVI",
+  "roles": [
+    "ENCARREGADO_LOCAL"
+  ],
+  "source": "sam",
+  "families": [
+    "MADEIRAS"
+  ],
+  "temporal": true,
+  "confirmed_names": [
+    "OSÉIAS DE SOUZA"
+  ],
+  "cells": [
+    {
+      "event_id": "legado:ea4fa72a-1316-4cbe-b384-358f08c1d8e3",
+      "date": "2026-01-18",
+      "titulo": "Ensaio Regional · 18/01/2026",
+      "tipo": "ENSAIO_REGIONAL",
+      "local": "ITAPEVI",
+      "modalidade": "PRESENCIAL",
+      "situacao": "PRESENTE",
+      "observacoes": "",
+      "editable": true,
+      "legacy": true,
+      "version": 0,
+      "nominal_present": true,
+      "person_key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "historical_role_known": true,
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI"
+    },
+    {
+      "event_id": "legado:2b7e86cd-9a82-4889-a799-f1c35e0e8e1b",
+      "date": "2026-05-17",
+      "titulo": "Ensaio Regional · 17/05/2026",
+      "tipo": "ENSAIO_REGIONAL",
+      "local": "ITAPEVI",
+      "modalidade": "PRESENCIAL",
+      "situacao": "PRESENTE",
+      "observacoes": "",
+      "editable": true,
+      "legacy": true,
+      "version": 0,
+      "nominal_present": true,
+      "person_key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "historical_role_known": true,
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI"
+    },
+    {
+      "event_id": "legado:dcd5192e-c7a8-442d-8e1d-608cad553c6d",
+      "date": "2026-07-19",
+      "titulo": "Ensaio Regional · 19/07/2026",
+      "tipo": "ENSAIO_REGIONAL",
+      "local": "CAUCAIA DO ALTO",
+      "modalidade": "PRESENCIAL",
+      "situacao": "PRESENTE",
+      "observacoes": "",
+      "editable": true,
+      "legacy": true,
+      "version": 0,
+      "nominal_present": true,
+      "person_key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "historical_role_known": true,
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI"
+    },
+    {
+      "event_id": "legado:dd3fa3af-81c8-44bd-8313-e7eb306534cd",
+      "date": "2026-09-20",
+      "titulo": "Ensaio regional · 20/09/2026",
+      "tipo": "ENSAIO_REGIONAL",
+      "local": "ITAPEVI",
+      "modalidade": "PRESENCIAL",
+      "situacao": "PRESENTE",
+      "observacoes": "",
+      "editable": true,
+      "legacy": true,
+      "version": 0,
+      "nominal_present": true,
+      "person_key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "historical_role_known": true,
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI"
+    },
+    {
+      "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+      "person_key": "sam:4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "nome": "Oséia de Souza",
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "situacao": "SEM_REGISTRO",
+      "observacoes": "Não consta na lista nominal de presentes de 06/10/2026. Regra de ausência confirmada pelo usuário para encarregados locais cadastrados.",
+      "source": {
+        "reconciled_from": "sam:3ae914f3-5941-45a4-acc9-b7cb00e1cc39",
+        "identity_confirmed_by": "usuario"
+      },
+      "version": 1,
+      "updated_at": "2026-11-12T17:25:32.908546+00:00",
+      "date": "2026-10-06",
+      "titulo": "Reunião do Ministério da Música - Brás",
+      "tipo": "REUNIAO_MINISTERIO",
+      "local": "Brás",
+      "modalidade": "PRESENCIAL",
+      "editable": true
+    }
+  ],
+  "present": 4,
+  "verified": 5,
+  "pending": 0,
+  "states": {
+    "PRESENTE": 4,
+    "SEM_REGISTRO": 1
+  }
+}

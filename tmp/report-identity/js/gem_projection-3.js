@@ -1,0 +1,1 @@
+document.querySelector('#clear-stage').addEventListener('click',()=>document.querySelector('.stage-card.active')?.click());

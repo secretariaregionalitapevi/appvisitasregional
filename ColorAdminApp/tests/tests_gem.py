@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -7,10 +8,11 @@ from django.core.cache import cache
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
+from openpyxl import load_workbook
 
 from ColorAdminApp.gem import (
     INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
-    advancement_permission, api_student_detail, api_student_record, api_students, api_summary, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
+    advancement_permission, api_student_detail, api_student_record, api_students, api_students_report, api_summary, export_students_excel, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
 )
 
 
@@ -56,6 +58,65 @@ class GemTests(SimpleTestCase):
         self.assertIn("window.gemCommonsByMunicipality=data.commons_by_municipality||{}", template)
         self.assertIn("municipality.addEventListener('change', updateCommonOptions, true)", template)
         self.assertIn("window.addEventListener('gem-common-options-ready', updateCommonOptions)", template)
+        self.assertIn("flow:'export'", template)
+        self.assertIn("window.swal=", template)
+        self.assertIn("EXCLUIR:['#d10000','#ffffff']", template)
+
+    def test_student_report_endpoints_return_json_when_upstream_data_fails(self):
+        for endpoint, path in (
+            (api_students_report, "/gem/api/alunos/relatorio/"),
+            (export_students_excel, "/gem/alunos/exportar-excel/"),
+        ):
+            with self.subTest(path=path), patch("ColorAdminApp.gem.can_open_module", return_value=True), patch(
+                "ColorAdminApp.gem._report_rows", side_effect=ValueError("Invalid upstream response"),
+            ):
+                response = endpoint(request_with_profile(path, self.regional))
+
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(
+                json.loads(response.content)["error"],
+                "Não foi possível consultar os dados do relatório de alunos do GEM.",
+            )
+
+    def test_student_excel_export_generates_institutional_workbook(self):
+        row = {
+            "nome_aluno": "Ana Teste",
+            "registro_msa": "123",
+            "municipio": "ITAPEVI",
+            "comum_congregacao": "CENTRAL",
+            "nivel": "RJM",
+            "programa_minimo_percentual": 50,
+            "last_activity_at": "2026-11-01",
+            "operational_status": "ATIVO",
+        }
+        with patch("ColorAdminApp.gem.can_open_module", return_value=True), patch(
+            "ColorAdminApp.gem._report_rows", return_value=[
+                row,
+                dict(row, nome_aluno="Alerta", operational_status="ALERTA"),
+                dict(row, nome_aluno="Inativo", operational_status="INATIVO"),
+                dict(row, nome_aluno="Excluir", requires_review=True),
+                dict(row, nome_aluno="Sem histórico", last_activity_at=None, operational_status="SEM HISTÓRICO"),
+            ],
+        ):
+            response = export_students_excel(request_with_profile(
+                "/gem/alunos/exportar-excel/", self.regional,
+            ))
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        sheet = workbook["ALUNOS GEM"]
+        self.assertEqual(sheet["A1"].value, "CONGREGAÇÃO CRISTÃ NO BRASIL")
+        self.assertEqual(sheet["A2"].value, "Regional Itapevi - São Paulo")
+        self.assertEqual(sheet["A7"].value, "Ana Teste")
+        self.assertEqual(sheet["C7"].value, "ITAPEVI")
+        self.assertEqual([sheet.cell(row, 10).value for row in range(7, 12)], [
+            "ATIVO", "ALERTA", "INATIVO", "EXCLUIR", "SEM HISTÓRICO",
+        ])
+        self.assertEqual([sheet.cell(row, 10).fill.fgColor.rgb[-6:] for row in range(7, 12)], [
+            "E7F7F1", "FFF3DF", "FDE8E8", "D10000", "EDF2F5",
+        ])
+        self.assertEqual(sheet["J10"].font.color.rgb[-6:], "FFFFFF")
+        workbook.close()
 
     @patch("ColorAdminApp.gem.requests.delete")
     @patch("ColorAdminApp.gem.requests.get")

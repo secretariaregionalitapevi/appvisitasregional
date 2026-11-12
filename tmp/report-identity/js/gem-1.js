@@ -1,0 +1,1 @@
+window.swal=(title,message,type)=>{if(type==='error')window.gemExportHadError=true;return AppFeedback.show({type:type==='error'?'error':type==='success'?'success':'warning',title,message})};

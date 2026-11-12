@@ -1,0 +1,140 @@
+{
+  "events": [
+    {
+      "id": "dd3fa3af-81c8-44bd-8313-e7eb306534cd",
+      "titulo": "Ensaio regional · 20/09/2026",
+      "data_evento": "2026-09-20",
+      "tipo": "ENSAIO_REGIONAL",
+      "familia": "GERAL",
+      "base_id": null,
+      "criterio_publico": "ATIVOS_TODOS_NIVEIS",
+      "status": "ABERTO",
+      "created_at": "2026-10-19T18:52:38.749435+00:00",
+      "updated_at": "2026-10-19T18:52:38.749435+00:00",
+      "created_by_user_id": "2acc360f-f4db-485d-ae29-496fe9a7c2f4",
+      "created_by_name": "Ricardo Grangeiro",
+      "updated_by_user_id": "2acc360f-f4db-485d-ae29-496fe9a7c2f4",
+      "updated_by_name": "Ricardo Grangeiro",
+      "observacoes": "Contagem AppCont importada. Conciliação com cadastro SAM pendente."
+    }
+  ],
+  "reviews": [],
+  "person": {
+    "key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+    "aliases": [
+      "sam:86f4c4b7-c54e-4fbb-9827-306994b29fe7",
+      "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f"
+    ],
+    "nome": "Rodrigo Vidal dos Santos",
+    "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+    "municipio": "ITAPEVI",
+    "roles": [
+      "ENCARREGADO_LOCAL"
+    ],
+    "source": "irmandade",
+    "families": [
+      "METAIS"
+    ],
+    "temporal": true,
+    "confirmed_names": [],
+    "cells": [
+      {
+        "event_id": "legado:ea4fa72a-1316-4cbe-b384-358f08c1d8e3",
+        "date": "2026-01-18",
+        "titulo": "Ensaio Regional · 18/01/2026",
+        "tipo": "ENSAIO_REGIONAL",
+        "local": "ITAPEVI",
+        "modalidade": "PRESENCIAL",
+        "situacao": "PRESENTE",
+        "observacoes": "",
+        "editable": true,
+        "legacy": true,
+        "version": 0,
+        "nominal_present": true,
+        "person_key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+        "roles": [
+          "ENCARREGADO_LOCAL"
+        ],
+        "historical_role_known": true,
+        "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+        "municipio": "ITAPEVI"
+      },
+      {
+        "event_id": "legado:2b7e86cd-9a82-4889-a799-f1c35e0e8e1b",
+        "date": "2026-05-17",
+        "titulo": "Ensaio Regional · 17/05/2026",
+        "tipo": "ENSAIO_REGIONAL",
+        "local": "ITAPEVI",
+        "modalidade": "PRESENCIAL",
+        "situacao": "PRESENTE",
+        "observacoes": "",
+        "editable": true,
+        "legacy": true,
+        "version": 0,
+        "nominal_present": true,
+        "person_key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+        "roles": [
+          "ENCARREGADO_LOCAL"
+        ],
+        "historical_role_known": true,
+        "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+        "municipio": "ITAPEVI"
+      },
+      {
+        "event_id": "legado:dcd5192e-c7a8-442d-8e1d-608cad553c6d",
+        "date": "2026-07-19",
+        "titulo": "Ensaio Regional · 19/07/2026",
+        "tipo": "ENSAIO_REGIONAL",
+        "local": "JANDIRA",
+        "modalidade": "PRESENCIAL",
+        "situacao": "PRESENTE",
+        "observacoes": "",
+        "editable": true,
+        "legacy": true,
+        "version": 0,
+        "nominal_present": true,
+        "person_key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+        "roles": [
+          "ENCARREGADO_LOCAL"
+        ],
+        "historical_role_known": true,
+        "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+        "municipio": "ITAPEVI"
+      },
+      {
+        "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+        "person_key": "irmandade:c84f2519-5ae6-4bf5-9d6e-51660d1f728f",
+        "nome": "Rodrigo Vidal dos Santos",
+        "comum": "BR-22-0673 - VILA DOUTOR CARDOSO",
+        "municipio": "ITAPEVI",
+        "roles": [
+          "ENCARREGADO_LOCAL"
+        ],
+        "situacao": "PRESENTE",
+        "observacoes": "",
+        "source": {
+          "row": 92,
+          "comum": "BR-22-0673 - Vila Doutor Cardoso",
+          "cidade": "ITAPEVI",
+          "pagina": "28",
+          "entrada": "19:26:00",
+          "administracao": "ITAPEVI - SP"
+        },
+        "version": 1,
+        "updated_at": "2026-11-03T21:09:57.453983+00:00",
+        "date": "2026-10-06",
+        "titulo": "Reunião do Ministério da Música - Brás",
+        "tipo": "REUNIAO_MINISTERIO",
+        "local": "Brás",
+        "modalidade": "PRESENCIAL",
+        "editable": true
+      }
+    ],
+    "present": 4,
+    "verified": 4,
+    "pending": 0,
+    "states": {
+      "PRESENTE": 4
+    }
+  }
+}

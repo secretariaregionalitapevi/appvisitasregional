@@ -1,3 +1,4 @@
+from .report_identity import printed_by, workbook_identity
 """Relatórios de atendimentos com a composição institucional canônica."""
 from datetime import datetime
 from io import BytesIO
@@ -107,7 +108,7 @@ def build_excel(rows, scope, actor, now):
     sheet.print_area = f'A1:I{sheet.max_row}'
     sheet.oddFooter.center.text = 'D.A.R.P.E · Página &P de &N'
     stream = BytesIO()
-    book.save(stream)
+    workbook_identity(book, actor);book.save(stream)
     return stream.getvalue()
 
 
@@ -155,13 +156,13 @@ def build_pdf(rows, scope, actor, now):
                     self.drawCentredString(center, y, text)
                 details = Paragraph(f'<b>Página {self._pageNumber} de {total}</b><br/>'
                                     f'<b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/>'
-                                    f'<b>Recorte:</b> {escape(scope)}<br/><b>Impresso por:</b> {escape(actor)}', metadata)
+                                    f'<b>Recorte:</b> {escape(scope)}<br/><b>Responsável:</b> Secretaria Regional da Música', metadata)
                 _, height = details.wrap(210, 90)
                 details.drawOn(self, page_width - 238, page_height - 16 - height)
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#6b7280'))
                 self.drawString(28, 19, f'D.A.R.P.E - {len(rows)} atendimentos realizados')
-                self.drawRightString(page_width - 28, 19, f'Página {self._pageNumber} de {total}')
+                printed_by(self, actor, page_width - 28, 19, f'Página {self._pageNumber} de {total}')
                 self.restoreState()
                 super().showPage()
             super().save()
@@ -256,7 +257,7 @@ def build_papeleta_pdf(record, actor, now):
                     f'<b>Página:</b> {self._pageNumber} de {total}<br/>'
                     f'<b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/>'
                     f'<b>Data:</b> {datetime.strptime(row_data, "%Y-%m-%d"):%d/%m/%Y}<br/>'
-                    f'<b>Impresso por:</b> {escape(actor)}',
+                    f'<b>Responsável:</b> Secretaria Regional da Música',
                     metadata_style,
                 )
                 _, metadata_height = details.wrap(165, 80)
@@ -265,8 +266,7 @@ def build_papeleta_pdf(record, actor, now):
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#6b7280'))
                 self.drawString(28, 19, 'D.A.R.P.E · Papeleta de atendimento')
-                self.drawRightString(page_width - 28, 19,
-                                     f'Página {self._pageNumber} de {total}')
+                printed_by(self, actor, page_width - 28, 19, f'Página {self._pageNumber} de {total}')
                 self.restoreState()
                 super().showPage()
             super().save()

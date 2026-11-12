@@ -11,7 +11,7 @@ from pypdf import PdfReader
 from ColorAdminApp.modules import music_ministry as api
 from ColorAdminApp.modules.music_ministry_domain import (roster, history, event_payload, parse_meeting,
                                                         match_person, include_directory, person_matcher, attendance_summary)
-from ColorAdminApp.modules.music_ministry_reports import build_pdf, build_excel
+from ColorAdminApp.modules.music_ministry_reports import build_pdf, build_excel, event_rows
 
 
 def fixture():
@@ -116,6 +116,47 @@ class MinistryDomainTests(SimpleTestCase):
         jose = next(r for r in result['rows'] if r['nome'] == 'José Silva')
         self.assertEqual(jose['cells'][0]['situacao'], 'SEM_REGISTRO')
         self.assertEqual((jose['present'], jose['verified']), (0, 1))
+
+    def test_local_leader_absence_is_shown_outside_municipal_rotation(self):
+        event = dict(id='july', titulo='Ensaio', tipo='ENSAIO_REGIONAL', data_evento='2026-07-19')
+        records = [dict(evento_id='july', nome='Outro participante', comum_codigo='BR-22-2', situacao='PRESENTE')]
+        args = (self.people, [], [], [event], records, self.catalog, {'level': 'regional'},
+                {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL'})
+        row = history(*args)['rows'][0]
+        self.assertEqual(row['cells'][0]['situacao'], 'SEM_REGISTRO')
+        review = dict(event_id='july', person_key=row['key'], nome=row['nome'], comum=row['comum'],
+                      municipio=row['municipio'], roles=row['roles'], situacao='PRESENTE',
+                      observacoes='Presença confirmada pelo usuário.', version=1)
+        corrected = history(*args, [review])['rows'][0]
+        self.assertEqual(corrected['cells'][0]['situacao'], 'PRESENTE')
+        self.assertEqual(corrected['present'], 1)
+
+    def test_confirmed_role_period_keeps_not_applicable_out_of_absence_totals(self):
+        from ColorAdminApp.modules.music_ministry_reports import matrix_table, matrix_events
+        person = next(p for p in self.people if p['nome'] == 'José Silva')
+        events = [dict(id='july', titulo='Ensaio', tipo='ENSAIO_REGIONAL', data_evento='2026-07-19'),
+                  dict(id='sept', titulo='Ensaio', tipo='ENSAIO_REGIONAL', data_evento='2026-09-20')]
+        records = [dict(evento_id='july', sam_pessoa_id='1', nome=person['nome'],
+                        comum_codigo='BR-22-1', situacao='PRESENTE')]
+        review = dict(event_id='sept', person_key=person['key'], nome=person['nome'],
+                      comum=person['comum'], municipio=person['municipio'], roles=person['roles'],
+                      situacao='NAO_APLICA', observacoes='Não exercia mais o cargo.', version=1)
+        data = history(self.people, [], [], events, records, self.catalog, {'level': 'regional'},
+                       {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL'}, [review])
+        row = data['rows'][0]
+        self.assertEqual([c['situacao'] for c in row['cells']], ['PRESENTE', 'NAO_APLICA'])
+        self.assertEqual((row['present'], row['verified']), (1, 1))
+        self.assertEqual(row['states'].get('SEM_REGISTRO', 0), 0)
+        self.assertEqual(matrix_table(data, matrix_events(data))[1][0][-1], 'Não se aplica')
+
+        own_event = dict(id='oct', **raw_event())
+        entry = dict(event_id='oct', person_key=person['key'], nome=person['nome'],
+                     comum=person['comum'], municipio=person['municipio'], roles=person['roles'],
+                     situacao='NAO_APLICA', observacoes='Fora do período do cargo.', source={})
+        own = history(self.people, [own_event], [entry], [], [], self.catalog,
+                      {'level': 'regional'}, {'ano': 2026, 'cargo': 'ENCARREGADO_LOCAL'})
+        self.assertEqual(own['rows'][0]['cells'][0]['situacao'], 'NAO_APLICA')
+        self.assertEqual(own['rows'][0]['verified'], 0)
 
     def test_legacy_attendance_is_individual_and_missing_stays_pending(self):
         events = [{'id': 'jan', 'titulo': 'Ensaio', 'tipo': 'ENSAIO_REGIONAL', 'data_evento': '2026-01-18'},
@@ -242,8 +283,33 @@ class MinistryApiTests(SimpleTestCase):
     def request(self, url='/', data=None):
         request = self.factory.get(url, data or {})
         request.session = {'authenticated': True, 'user_id': 'operator',
-                           'user_profile': {'full_name': 'Operador', 'role_id': 1}}
+                           'user_profile': {'full_name': 'Operador', 'nome': 'Operador',
+                                            'name': 'Operador', 'role_id': 1}}
         return request
+
+    @patch.object(api, '_sources', return_value=source_data())
+    def test_common_conductor_statuses_are_merged_and_scoped(self, sources):
+        sources.return_value = {**source_data(),
+            'legacy_frequency': [
+                {'evento_id': 'regional', 'comum_codigo': 'BR-22-1', 'comum': 'Central',
+                 'municipio': 'ITAPEVI', 'encarregado_situacao': 'ENFERMO'},
+                {'evento_id': 'regional', 'comum_codigo': 'BR-22-2', 'comum': 'Vila',
+                 'municipio': 'COTIA', 'encarregado_situacao': 'NAO_INFORMADO'}],
+            'legacy_conductor_reviews': [
+                {'evento_id': 'regional', 'comum_chave': 'BR-22-1', 'comum_nome': 'Central',
+                 'municipio': 'ITAPEVI', 'situacao': 'NAO_JUSTIFICOU'}]}
+        result = api.dashboard_data(self.request())
+        statuses = result['legacy_conductor_statuses']
+        self.assertEqual({row['comum_codigo']: row['situacao'] for row in statuses},
+                         {'BR-22-1': 'NAO_JUSTIFICOU', 'BR-22-2': 'NAO_INFORMADO'})
+        self.assertEqual(next(row for row in statuses if row['comum_codigo'] == 'BR-22-1')['comum'],
+                         'BR-22-1 - Central')
+
+        request = self.request()
+        request.session['user_profile'] = {'role_id': 3, 'municipio': 'COTIA'}
+        scoped = api.dashboard_data(request)
+        self.assertEqual({row['comum_codigo'] for row in scoped['legacy_conductor_statuses']},
+                         {'BR-22-2'})
 
     @patch.object(api.music_events, '_allowed', return_value=False)
     def test_read_and_export_require_authorization(self, _):
@@ -274,13 +340,47 @@ class MinistryApiTests(SimpleTestCase):
         self.assertNotIn('José Silva', text)
         self.assertIn('03/11/2026 12:30', text)
         excel = load_workbook(BytesIO(build_excel(data, 'Teste', datetime(2026,11,3,12,30))))
-        self.assertEqual(excel['Resumo']['A1'].value, 'CONGREGAÇÃO CRISTÃ NO BRASIL')
-        self.assertEqual(excel['Resumo']['B8'].value, 'Maria Souza')
-        self.assertEqual(excel['Resumo'].freeze_panes, 'A8')
+        self.assertEqual(excel.sheetnames, ['Acompanhamento'])
+        self.assertEqual(excel['Acompanhamento']['A1'].value, 'CONGREGAÇÃO CRISTÃ NO BRASIL')
+        self.assertEqual(excel['Acompanhamento']['B8'].value, 'Maria Souza')
+        self.assertEqual(excel['Acompanhamento'].freeze_panes, 'E8')
         for sheet in excel:
             self.assertFalse(sheet.sheet_view.showGridLines)
             self.assertEqual(sheet.page_setup.fitToWidth, 1)
             self.assertEqual(sheet['A7'].fill.fgColor.rgb, '001E4B7A')
+
+    @patch.object(api, '_sources', return_value=source_data())
+    def test_annual_exports_use_one_row_per_person_and_match_event_statuses(self, sources):
+        from ColorAdminApp.modules.music_ministry_reports import matrix_table, matrix_events
+        sources.return_value = {**source_data(), 'events': [
+            dict(id='meeting', titulo='Reunião', tipo='REUNIAO_MINISTERIO', data_evento='2026-10-06',
+                 local='Brás', modalidade='PRESENCIAL'),
+            dict(id='second', titulo='Ensaio', tipo='ENSAIO_REGIONAL', data_evento='2026-11-01',
+                 local='Itapevi', modalidade='PRESENCIAL')], 'entries': [
+            dict(event_id=key, person_key='sam:1', nome='José Silva', comum=fixture()[0][0]['comum'],
+                 municipio='ITAPEVI', roles=['ENCARREGADO_LOCAL'], situacao=state, observacoes='', source={})
+            for key, state in [('meeting', 'PRESENTE'), ('second', 'SEM_REGISTRO')]]}
+        data = api.dashboard_data(self.request(data={'municipio': ['ITAPEVI']}))
+        events = matrix_events(data)
+        labels, rows = matrix_table(data, events)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][4:], ['Presente', 'Não participou'])
+        self.assertIn('06/10/2026', labels[4])
+        workbook = load_workbook(BytesIO(build_excel(data, 'Teste', datetime(2026, 11, 12, 13, 0))))
+        sheet = workbook.active
+        self.assertEqual(sheet.max_row, 8)
+        self.assertEqual([sheet.cell(8, col).value for col in (5, 6)], rows[0][4:])
+        self.assertEqual(sheet['F8'].font.color.rgb, '00B4233D')
+        pdf = PdfReader(BytesIO(build_pdf(data, 'Teste', datetime(2026, 11, 12, 13, 0))))
+        text = '\n'.join(page.extract_text() for page in pdf.pages)
+        self.assertEqual(text.count('José Silva'), 1)
+        self.assertNotIn('Histórico por pessoa e evento', text)
+        self.assertIn('06/10/2026', text)
+        missing = {**data, 'rows': [{**data['rows'][0], 'cells': data['rows'][0]['cells'][:1]}]}
+        self.assertEqual(matrix_table(missing, events)[1][0][-1], 'Não participou')
+        self.assertIn('Secretaria Regional da Música', text)
+        self.assertIn('Impresso por:', text)
+        self.assertEqual(sheet.oddFooter.right.text, '&BImpresso por:&B Teste')
 
     @patch.object(api, '_sources', return_value=source_data())
     def test_page_renders_export_toolbar(self, _):
@@ -349,12 +449,73 @@ class MinistryApiTests(SimpleTestCase):
         text = '\n'.join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
         self.assertIn('Lista de presentes', text)
         self.assertIn('06/10/2026', text)
-        self.assertIn('José Silva', text)
-        self.assertNotIn('Maria Souza', text)
+        self.assertIn('JOSÉ SILVA', text)
+        self.assertNotIn('MARIA SOUZA', text)
         workbook = load_workbook(BytesIO(excel.content))
         self.assertEqual(workbook.sheetnames, ['Presenças'])
-        self.assertEqual(workbook.active['B8'].value, 'José Silva')
+        self.assertEqual(workbook.active['B8'].value, 'JOSÉ SILVA')
         self.assertEqual(workbook.active.max_row, 8)
+
+    def test_regional_event_report_includes_common_statuses_and_centers_situation(self):
+        event_id = 'legado:ensaio'
+        data = {
+            'year': 2026,
+            'selected_cities': ['ITAPEVI', 'COTIA'],
+            'filters': {'evento': event_id, 'cargo': '', 'tipo': '', 'situacao': '',
+                        'municipios': [], 'comuns': [], 'busca': ''},
+            'event_options': [{'id': event_id, 'date': '2026-07-19',
+                               'titulo': 'Ensaio Regional', 'tipo': 'ENSAIO_REGIONAL'}],
+            'rows': [
+                {'nome': 'José Silva', 'municipio': 'ITAPEVI', 'comum': 'BR-22-1 - Central',
+                 'roles': ['ENCARREGADO_LOCAL'], 'cells': [
+                     {'event_id': event_id, 'situacao': 'SEM_REGISTRO',
+                      'roles': ['ENCARREGADO_LOCAL'], 'comum': 'BR-22-1 - Central'}]},
+                {'nome': 'Maria Souza', 'municipio': 'COTIA', 'comum': 'BR-22-2 - Vila',
+                 'roles': ['EXAMINADORA'], 'cells': [
+                     {'event_id': event_id, 'situacao': 'SEM_REGISTRO',
+                      'roles': ['EXAMINADORA'], 'comum': 'BR-22-2 - Vila'}]},
+                {'nome': 'Ana Lima', 'municipio': 'ITAPEVI', 'comum': 'BR-22-3 - Centro',
+                 'roles': ['EXAMINADORA'], 'cells': [
+                     {'event_id': event_id, 'situacao': 'JUSTIFICOU',
+                      'roles': ['EXAMINADORA'], 'comum': 'BR-22-3 - Centro'}]},
+                {'nome': 'Paulo Reis', 'municipio': 'ITAPEVI', 'comum': 'BR-22-7 - Parque',
+                 'roles': ['ENCARREGADO_LOCAL'], 'cells': [
+                     {'event_id': event_id, 'situacao': 'PRESENTE',
+                      'roles': ['ENCARREGADO_LOCAL'], 'comum': 'BR-22-7 - Parque'}]},
+            ],
+            'legacy_conductor_statuses': [
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-1', 'comum': 'BR-22-1 - Central',
+                 'municipio': 'ITAPEVI', 'situacao': 'ENFERMO'},
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-2', 'comum': 'BR-22-2 - Vila',
+                 'municipio': 'COTIA', 'situacao': 'SEM_ENCARREGADO'},
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-4', 'comum': 'BR-22-4 - Centro',
+                 'municipio': 'ITAPEVI', 'situacao': 'NAO_JUSTIFICOU'},
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-5', 'comum': 'BR-22-5 - Vila',
+                 'municipio': 'COTIA', 'situacao': 'NAO_INFORMADO'},
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-6', 'comum': 'BR-22-6 - Parque',
+                 'municipio': 'ITAPEVI', 'situacao': 'JUSTIFICOU'},
+                {'event_id': 'ensaio', 'comum_codigo': 'BR-22-7', 'comum': 'BR-22-7 - Parque',
+                 'municipio': 'ITAPEVI', 'situacao': 'PRESENTE'},
+            ],
+        }
+        rows = event_rows(data)
+        labels = {row[4] for row in rows}
+        self.assertTrue({'Presente', 'Justificou', 'Não participou', 'Não justificou',
+                         'Sem encarregado', 'Enfermo', 'Não informado'} <= labels)
+        self.assertIn('JOSÉ SILVA', {row[1] for row in rows})
+        self.assertTrue(all(row[1] == row[1].upper() for row in rows))
+
+        workbook = load_workbook(BytesIO(build_excel(data, 'Teste', datetime(2026, 11, 12, 13, 0))))
+        self.assertEqual(workbook.sheetnames, ['Participação'])
+        self.assertIn('JOSÉ SILVA', [workbook.active.cell(row, 2).value
+                                    for row in range(8, workbook.active.max_row + 1)])
+        self.assertEqual(workbook.active['E8'].alignment.horizontal, 'center')
+        pdf = PdfReader(BytesIO(build_pdf(data, 'Teste', datetime(2026, 11, 12, 13, 0))))
+        text = '\n'.join(page.extract_text() for page in pdf.pages)
+        for label in ('Presente', 'Justificou', 'Não participou', 'Não justificou',
+                      'Sem encarregado', 'Enfermo', 'Não informado'):
+            self.assertIn(label, text)
+        self.assertIn('JOSÉ SILVA', text)
 
     @patch.object(api, '_sources', return_value=source_data())
     def test_invalid_state_filter_is_rejected(self, _):

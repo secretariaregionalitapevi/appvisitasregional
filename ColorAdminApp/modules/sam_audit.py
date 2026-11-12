@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Central de investigacao dos eventos preservados do SAM original."""
 import io
 import re
@@ -313,7 +314,7 @@ def export_excel(request):
     sheet.freeze_panes = "A8"; sheet.auto_filter.ref = f"A7:{last}{max(7, sheet.max_row)}"; sheet.sheet_view.showGridLines = False
     sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True; sheet.print_title_rows = "1:7"
-    stream = io.BytesIO(); workbook.save(stream)
+    stream = io.BytesIO(); workbook_identity(workbook, actor);workbook.save(stream)
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = f'attachment; filename="Historico_SAM_{now:%d-%m-%Y_%H-%M}.xlsx"'
     return response

@@ -14,7 +14,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from . import music_events
 from .access_control import can_access, common_catalog, service_headers, user_scope, scope_details
-from .music_ministry_domain import TITLE, ROLES, KINDS, STATES, roster, history, parse_meeting, match_person, event_payload, include_directory
+from .music_ministry_domain import TITLE, ROLES, KINDS, STATES, roster, history, parse_meeting, match_person, event_payload, include_directory, code, regional_city
 from .sam_temporal import temporal_roster
 
 
@@ -35,8 +35,17 @@ def _actor(request):
     return str(identity), str(name)
 
 
+def _read_optional(table, **filters):
+    try:
+        return music_events._read(table, **filters)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return []
+        raise
+
+
 def _sources(year, refresh=False):
-    key = f'music-ministry:sources:v4:{year}'
+    key = f'music-ministry:sources:v6:{year}'
     cached = None if refresh else cache.get(key)
     if cached is not None:
         return cached
@@ -82,12 +91,23 @@ def _sources(year, refresh=False):
                 ids = 'in.(' + ','.join(e['id'] for e in events[start:start + 40]) + ')'
                 pending.append((legacy_reviews, executor.submit(read, 'musica_ministerio_legado_conferencias',
                                                                event_id=ids, order='event_id.asc,person_key.asc')))
+        legacy_frequency, legacy_conductor_reviews = [], []
+        for table, target, select in [
+            ('musica_evento_frequencia', legacy_frequency,
+             'evento_id,comum_codigo,comum,municipio,encarregado_situacao'),
+            ('musica_evento_encarregados', legacy_conductor_reviews,
+             'evento_id,comum_chave,comum_nome,municipio,situacao')]:
+            for start in range(0, len(events), 40):
+                ids = 'in.(' + ','.join(e['id'] for e in events[start:start + 40]) + ')'
+                pending.append((target, executor.submit(_read_optional, table, select=select,
+                    evento_id=ids, order='evento_id.asc')))
         for target, future in pending:
             target.extend(future.result())
         from .music_events_calendar import validated_sites
         result = {'catalog': catalog.result(), 'registry': registry.result(), 'members': members.result(),
                   'events': own_events, 'entries': entries, 'legacy_events': events,
                   'legacy_records': records, 'available': available, 'directory': directory, 'legacy_reviews': legacy_reviews,
+                  'legacy_frequency': legacy_frequency, 'legacy_conductor_reviews': legacy_conductor_reviews,
                   'legacy_sites': validated_sites(events, legacy_sites), 'identity_links': identity_links,
                   'transitions': transitions_future.result()}
     cache.set(key, result, 60)
@@ -111,7 +131,28 @@ def dashboard_data(request):
     scope = user_scope(request)
     result = history(people, sources['events'], sources['entries'], sources['legacy_events'],
                      sources['legacy_records'], sources['catalog'], scope, filters, sources['legacy_reviews'], sources.get('legacy_sites', []))
+    conductor_statuses = {}
+    catalog_by_code = {code(item['comum']): item for item in sources['catalog']}
+    for row in sources.get('legacy_frequency', []):
+        common_code = code(row.get('comum_codigo') or row.get('comum'))
+        canonical = catalog_by_code.get(common_code, {})
+        common = canonical.get('comum') or row.get('comum') or common_code
+        municipality = regional_city(canonical.get('cidade') or row.get('municipio') or '')
+        if can_access(scope, {'comum': common, 'cidade': municipality}):
+            key = (row['evento_id'], common_code)
+            conductor_statuses[key] = {'event_id': row['evento_id'], 'comum_codigo': common_code,
+                'comum': common, 'municipio': municipality, 'situacao': row.get('encarregado_situacao') or 'NAO_INFORMADO'}
+    for row in sources.get('legacy_conductor_reviews', []):
+        common_code = code(row.get('comum_chave') or row.get('comum_nome'))
+        canonical = catalog_by_code.get(common_code, {})
+        common = canonical.get('comum') or row.get('comum_nome') or common_code
+        municipality = regional_city(canonical.get('cidade') or row.get('municipio') or '')
+        if can_access(scope, {'comum': common, 'cidade': municipality}):
+            key = (row['evento_id'], common_code)
+            conductor_statuses[key] = {'event_id': row['evento_id'], 'comum_codigo': common_code,
+                'comum': common, 'municipio': municipality, 'situacao': row['situacao']}
     result.update(available=sources['available'], can_manage=scope['level'] in {'regional', 'global'},
+                  legacy_conductor_statuses=list(conductor_statuses.values()),
                   filters=filters, events=[e for e in sources['events'] if any(
                       cell['event_id'] == e['id'] for row in result['rows'] for cell in row['cells'])])
     return result
@@ -194,7 +235,7 @@ def api_manage(request, action):
                                  'municipio': cell['municipio'], 'roles': cell['roles'],
                                  'situacao': raw['situacao'], 'observacoes': str(raw.get('observacoes') or '').strip()},
                     'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
-                cache.delete(f'music-ministry:sources:v4:{year}')
+                cache.delete(f'music-ministry:sources:v5:{year}')
                 return JsonResponse({'item': result})
             records = music_events._read('musica_ministerio_participacoes', event_id=f'eq.{raw["event_id"]}',
                                         person_key=f'eq.{raw["person_key"]}')
@@ -204,7 +245,7 @@ def api_manage(request, action):
                 'p_situacao': raw['situacao'], 'p_observacoes': str(raw.get('observacoes') or '').strip(),
                 'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
             event = music_events._read('musica_ministerio_eventos', id=f'eq.{raw["event_id"]}')[0]
-            cache.delete(f'music-ministry:sources:v4:{str(event["data_evento"])[:4]}')
+            cache.delete(f'music-ministry:sources:v5:{str(event["data_evento"])[:4]}')
             return JsonResponse({'item': result})
         if action != 'salvar':
             return JsonResponse({'error': 'Operação inválida.'}, status=404)
@@ -264,7 +305,7 @@ def api_manage(request, action):
             raise ValueError('Nenhuma pessoa foi encontrada para o público selecionado.')
         result = _rpc('musica_ministerio_salvar', {'p_evento': payload, 'p_hash': preview['sha256'] if preview else None,
             'p_arquivo': preview['filename'] if preview else None, 'p_usuario_id': identity, 'p_usuario_nome': actor})
-        cache.delete(f'music-ministry:sources:v4:{year}')
+        cache.delete(f'music-ministry:sources:v5:{year}')
         return JsonResponse(result)
     except (ValueError, TypeError, KeyError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)

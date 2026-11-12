@@ -1,0 +1,90 @@
+{
+  "registry": [
+    {
+      "id": "3ae914f3-5941-45a4-acc9-b7cb00e1cc39",
+      "nome_aluno": "OSÉIAS DE SOUZA",
+      "status": "Concluido",
+      "lancado_por": "Importacao CSV OFICIALIZADOS MAR26",
+      "mensagens": 0,
+      "comum_congregacao": "BR-22-2934 - PARQUE SUBURBANO II",
+      "cargo_ministerio": "ENCARREGADO LOCAL",
+      "nivel": "OFICIALIZADO(A)",
+      "instrumento": "SAXOFONE SOPRANO RET",
+      "registro_msa": "",
+      "observacoes": "Registro de musico oficializado importado por arquivo CSV e separado da base de candidatos do G.E.M.",
+      "municipio": "ITAPEVI",
+      "foto_url": "",
+      "programa_minimo_percentual": 0.0,
+      "created_at": "2026-04-22T17:28:18.951386+00:00",
+      "updated_at": "2026-04-22T17:28:18.951386+00:00",
+      "possui_instrumento": null,
+      "instrumento_proprio": null,
+      "tonalidade": null,
+      "data_inicio_gem": null,
+      "data_nascimento": null,
+      "estado_civil": null,
+      "telefone": null,
+      "nome_responsavel": null,
+      "grau_parentesco": null,
+      "consentimento_lgpd": false
+    },
+    {
+      "id": "4a3a23b8-a665-4ac9-99db-f9af2667b3f8",
+      "nome_aluno": "OSEIA DE SOUZA",
+      "status": "Ativo",
+      "lancado_por": null,
+      "mensagens": 0,
+      "comum_congregacao": "BR-22-2934 - PARQUE SUBURBANO II",
+      "cargo_ministerio": "ENCARREGADO LOCAL",
+      "nivel": "OFICIALIZADO(A)",
+      "instrumento": "SAXOFONE SOPRANO RET",
+      "registro_msa": "502532",
+      "observacoes": null,
+      "municipio": "ITAPEVI",
+      "foto_url": null,
+      "programa_minimo_percentual": 0.0,
+      "created_at": "2026-11-04T17:29:45.823703+00:00",
+      "updated_at": "2026-11-04T17:29:45.823703+00:00",
+      "possui_instrumento": null,
+      "instrumento_proprio": null,
+      "tonalidade": null,
+      "data_inicio_gem": null,
+      "data_nascimento": null,
+      "estado_civil": null,
+      "telefone": null,
+      "nome_responsavel": null,
+      "grau_parentesco": null,
+      "consentimento_lgpd": false
+    }
+  ],
+  "entries": [
+    {
+      "event_id": "7537d3e7-baac-4bd0-b0ae-acb36fd79c37",
+      "person_key": "sam:3ae914f3-5941-45a4-acc9-b7cb00e1cc39",
+      "nome": "OSÉIAS DE SOUZA",
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "situacao": "SEM_REGISTRO",
+      "observacoes": "Não consta na lista nominal de presentes de 06/10/2026. Regra de ausência confirmada pelo usuário para encarregados locais cadastrados.",
+      "source": {},
+      "version": 2,
+      "updated_at": "2026-11-03T21:13:04.293399+00:00"
+    }
+  ],
+  "directory": [
+    {
+      "person_key": "sam:3ae914f3-5941-45a4-acc9-b7cb00e1cc39",
+      "nome": "OSÉIAS DE SOUZA",
+      "comum": "BR-22-2934 - PARQUE SUBURBANO II",
+      "municipio": "ITAPEVI",
+      "roles": [
+        "ENCARREGADO_LOCAL"
+      ],
+      "created_at": "2026-11-03T21:09:57.453983+00:00"
+    }
+  ],
+  "reviews": []
+}

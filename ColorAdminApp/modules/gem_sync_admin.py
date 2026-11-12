@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Painel SAM. Classificações são somente informativas e nunca excluem alunos."""
 import io
 import re
@@ -427,7 +428,7 @@ def export_report(request):
     summary.page_setup.fitToHeight = 1
     summary.sheet_properties.pageSetUpPr.fitToPage = True
     stream = io.BytesIO()
-    workbook.save(stream)
+    workbook_identity(workbook, actor);workbook.save(stream)
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     file_scope = _file_part(city or "Todos os Municípios")
     response["Content-Disposition"] = f'attachment; filename="Relatorio_Alunos_SAM_{file_scope}_{now:%d-%m-%Y_%H-%M}.xlsx"'
@@ -499,7 +500,7 @@ def export_log_report(request):
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     stream = io.BytesIO()
-    workbook.save(stream)
+    workbook_identity(workbook, actor);workbook.save(stream)
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = f'attachment; filename="Relatorio_Logs_SAM_{now:%d-%m-%Y_%H-%M}.xlsx"'
     return response

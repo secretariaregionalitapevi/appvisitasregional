@@ -104,6 +104,12 @@ def administrative_closing(data, date, place):
     conductor_count = sum(row['situacao'] == 'PRESENTE' for row in data.get('conductors', {}).get('rows', []))
     navy, pale = colors.HexColor('#1E4B7A'), colors.HexColor('#EAF2F8')
     heading = Paragraph('FECHAMENTO DO ENSAIO REGIONAL', ParagraphStyle('closing-title', parent=BOLD, fontSize=15, leading=19, textColor=navy))
+    responsible = Paragraph('<b>Responsável:</b> Secretaria Regional da Música',
+                            ParagraphStyle('closing-responsible', parent=STYLE, fontSize=7, leading=10, alignment=2))
+    heading = Table([[heading, responsible]], colWidths=[USEFUL - 220, 220], style=[
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0)])
     context = para(f'{place} | {date} | ' + ('PÚBLICO DO LOCAL - TODAS AS ORIGENS' if closing else 'RECORTE DAS COMUNS DE ORIGEM'), CENTER)
     cards = Table([[para(label, BOLD) for label in ['Músicos', 'Organistas', 'Total musical', 'TOTAL GERAL DO LOCAL' if closing else 'PÚBLICO DAS COMUNS']],
                    [para(value, ParagraphStyle('closing-value', parent=BOLD, fontSize=19, leading=25, textColor=navy))
@@ -218,9 +224,12 @@ class CityLabel(Flowable):
 
 
 def metadata_paragraph(text, style):
+    from .report_identity import RESPONSIBLE
     lines = []
     for line in text.upper().split('\n'):
         label, separator, value = line.partition(':')
+        if label.strip() == 'IMPRESSO POR':
+            label, value = 'Responsável', RESPONSIBLE
         lines.append('<b>' + escape(label) + ':</b> ' + escape(value.strip()) if separator else escape(line))
     return Paragraph('<br/>'.join(lines), style)
 
@@ -254,7 +263,8 @@ def footer(actor, now, context, page_numbers=True):
         canvas.setFillColor(colors.HexColor('#526371'))
         canvas.drawString(28, 16, f'REGIONAL ITAPEVI - SÃO PAULO | {context[:65]}'.upper())
         suffix = f' | PÁGINA {doc.page}' if page_numbers else ''
-        canvas.drawRightString(WIDTH - 100 if not page_numbers else WIDTH - 28, 16, f'{now:%d/%m/%Y %H:%M} | {actor[:45].upper()}{suffix}')
+        from .report_identity import printed_by
+        printed_by(canvas, actor, WIDTH - 28, 16, f'Página {doc.page}' if page_numbers else '')
         canvas.restoreState()
     return draw
 
@@ -557,10 +567,11 @@ def build_annual_pdf(data, actor, now, selected_date=None):
         overlay = io.BytesIO()
         canvas = Canvas(overlay, pagesize=landscape(A4))
         canvas.setFillColor(colors.white)
-        canvas.rect(WIDTH - 92, 9, 70, 12, fill=1, stroke=0)
+        canvas.rect(WIDTH / 2, 9, WIDTH / 2 - 20, 13, fill=1, stroke=0)
         canvas.setFillColor(colors.HexColor('#526371'))
         canvas.setFont('Helvetica', 6)
-        canvas.drawRightString(WIDTH - 28, 16, f'PÁGINA {index} DE {len(writer.pages)}')
+        from .report_identity import printed_by
+        printed_by(canvas, actor, WIDTH - 28, 16, f'Página {index} de {len(writer.pages)}')
         canvas.save()
         page.merge_page(PdfReader(io.BytesIO(overlay.getvalue())).pages[0])
     stream = io.BytesIO()

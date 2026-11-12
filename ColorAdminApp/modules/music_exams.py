@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Gestão individual de exames e testes da Música."""
 import csv, hashlib, io, json, re, unicodedata, uuid
 from difflib import SequenceMatcher
@@ -377,4 +378,4 @@ def export_excel(request):
         for column,value in enumerate([index,item.get("nome_aluno"),item.get("registro_msa"),item.get("municipio"),item.get("comum"),item.get("instrumento"),item.get("tipo_exame"),exam_date,item.get("resultado"),"Sim" if item.get("prova_url") else "Não"],1):detail.cell(6+index,column,value)
     for index,width in enumerate([6,30,14,18,34,20,28,13,20,12],1):detail.column_dimensions[chr(64+index)].width=width
     detail.freeze_panes="A7";detail.auto_filter.ref=f"A6:J{6+len(items)}";detail.sheet_view.showGridLines=False;detail.page_setup.orientation="landscape";detail.page_setup.fitToWidth=1
-    stream=io.BytesIO();wb.save(stream);stamp=datetime.now().strftime("%d-%m-%Y_%H-%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response
+    stream=io.BytesIO();workbook_identity(wb, actor(request));wb.save(stream);stamp=datetime.now().strftime("%d-%m-%Y_%H-%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response

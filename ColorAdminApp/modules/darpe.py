@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 """Cadastro e eventos do D.A.R.P.E com autorização e escopo territorial no servidor."""
 import io
 import json
@@ -412,7 +413,7 @@ def export_cadastros_excel(request):
                 cell.fill=PatternFill("solid",fgColor="F4F6F8")
     for index,width in enumerate([34,42,22,20,24,38,14],1): ws.column_dimensions[get_column_letter(index)].width=width
     ws.freeze_panes="A7"; ws.auto_filter.ref=f"A6:{last}{max(6,ws.max_row)}"; ws.sheet_view.showGridLines=False; ws.page_setup.orientation="landscape"; ws.page_setup.fitToWidth=1; ws.page_setup.fitToHeight=0; ws.sheet_properties.pageSetUpPr.fitToPage=True; ws.print_title_rows="1:6"
-    stream=io.BytesIO(); wb.save(stream); result=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    stream=io.BytesIO(); workbook_identity(wb, actor);wb.save(stream); result=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     result["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(f'Cadastro_DARPE_{now:%d-%m-%Y_%H-%M}.xlsx')}"
     return result
 

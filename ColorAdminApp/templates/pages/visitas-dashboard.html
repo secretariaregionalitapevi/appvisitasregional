@@ -791,7 +791,7 @@
                 doc.setTextColor(30,75,122); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('CONTROLE REGIONAL DE VISITAS', pageWidth / 2, 29, {align:'center'});
                 doc.setTextColor(70,70,70); doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('Relatório Consolidado de Visitas', pageWidth / 2, 34, {align:'center'});
                 doc.setTextColor(0,0,0); doc.setFontSize(8); doc.text(`Página ${pageNumber}`, pageWidth - 14, 8, {align:'right'});
-                doc.text(`Emissão: ${moment().format('DD/MM/YYYY')}`, pageWidth - 14, 15, {align:'right'}); doc.text(`Período: ${period}`, pageWidth - 14, 20, {align:'right'}); doc.text(`Impresso por: ${userName}`, pageWidth - 14, 25, {align:'right'});
+                doc.text(`Emissão: ${moment().format('DD/MM/YYYY')}`, pageWidth - 14, 15, {align:'right'}); doc.text(`Período: ${period}`, pageWidth - 14, 20, {align:'right'}); window.AppReportIdentity.jsPdfHeader(doc,pageWidth-14,25);
                 doc.setTextColor(100,100,100); doc.setFontSize(7); doc.text(`${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`, pageWidth - 14, 29, {align:'right'});
             };
 
@@ -806,7 +806,7 @@
                 didDrawPage: data => drawHeader(data.pageNumber)
             });
 
-            doc.save(`Relatorio_Visitas_${moment().format('YYYYMMDD')}.pdf`);
+            window.AppReportIdentity.jsPdfFooter(doc,userName);doc.save(`Relatorio_Visitas_${moment().format('YYYYMMDD')}.pdf`);
         } catch (err) {
             console.error('Erro ao gerar PDF:', err);
             Swal.fire('Erro', 'Ocorreu um erro ao gerar o PDF.', 'error');

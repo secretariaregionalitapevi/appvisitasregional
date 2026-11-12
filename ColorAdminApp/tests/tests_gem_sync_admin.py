@@ -31,7 +31,7 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIsNotNone(result["eta_seconds"])
 
     def test_dashboard_displays_global_queue_speed_and_eta(self):
-        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        template = Path(__file__).resolve().parents[1] / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
 
         self.assertIn("Execução atual:", content)
@@ -41,7 +41,7 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIn("Cobertura processável", content)
 
     def test_empty_offline_state_hides_control_card_and_keeps_banner_compact(self):
-        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        template = Path(__file__).resolve().parents[1] / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
 
         self.assertIn(".mirror.offline-empty .admin-control{display:none!important}", content)
@@ -49,7 +49,7 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIn("mirror.classList.toggle('offline-empty',!hasData)", content)
 
     def test_municipality_report_has_real_coverage_and_readable_metrics(self):
-        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        template = Path(__file__).resolve().parents[1] / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
 
         self.assertIn("<th>Cobertura</th>", content)
@@ -61,7 +61,7 @@ class GemSyncAdminLayoutTests(SimpleTestCase):
         self.assertIn('class="column-badge review">A revisar</span>', content)
 
     def test_current_student_shows_current_batch_position(self):
-        template = Path(__file__).parent / "templates" / "pages" / "gem_sync_admin.html"
+        template = Path(__file__).resolve().parents[1] / "templates" / "pages" / "gem_sync_admin.html"
         content = template.read_text(encoding="utf-8")
 
         self.assertIn('`Processando: ${c.current_student} · lote ${fmt(e.batch_processed)} de ${fmt(e.batch_total)}`', content)

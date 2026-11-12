@@ -262,8 +262,6 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
             continue
         if item['event_id'] not in own_events:
             continue
-        if item['situacao'] == 'NAO_APLICA' and filters.get('situacao') != 'NAO_APLICA':
-            continue
         person = known[item['person_key']]
         event = own_events[item['event_id']]
         cells[person['key']][event['id']] = {**item, 'date': str(event['data_evento']), 'titulo': event['titulo'],
@@ -304,16 +302,15 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
     review_map = {(r['event_id'], r['person_key']): r for r in legacy_reviews}
     for person in visible:
         for event in legacy_map.values():
-            # Presença positiva vale em qualquer local; ausências respeitam o ciclo municipal.
+            # Presença positiva vale em qualquer local; ausência é exibida por encontro.
             present = event['id'] in matched[person['key']]
             review = next((review_map[(event['id'], alias)] for alias in person['aliases'] if (event['id'], alias) in review_map), None)
-            if review and review['situacao'] == 'NAO_APLICA' and filters.get('situacao') != 'NAO_APLICA':
-                continue
             at_event = event_state(person, event['data_evento'], review or nominal.get((person['key'], event['id'])))
             if person.get('temporal') and at_event['known'] and not at_event['roles']:
                 continue
             destinations = regular_destinations(event['data_evento']) if event['tipo'] == 'ENSAIO_REGIONAL' else None
-            if not present and not review and destinations and norm(at_event['municipio']) not in destinations:
+            if (not present and not review and destinations and norm(at_event['municipio']) not in destinations
+                    and 'ENCARREGADO_LOCAL' not in at_event['roles']):
                 continue
             local_absent = (event['id'] in loaded and at_event['known'] and at_event.get('location_known', True) and 'ENCARREGADO_LOCAL' in at_event['roles']
                             and person.get('source') in {'sam', 'irmandade'})

@@ -1,3 +1,4 @@
+from .report_identity import printed_by, workbook_identity
 """Relação para Regionais/Examinadoras com coluna de entrega, conforme modelo fornecido."""
 import io
 from collections import defaultdict
@@ -91,11 +92,11 @@ def make_pdf(rows, responsible, deadlines, template=False):
                 self.__dict__.update(state)
                 for text,size,font,y in [('CONGREGAÇÃO CRISTÃ NO BRASIL',15,'Helvetica-Bold',29),('Regional Itapevi - São Paulo',9,'Helvetica',43),('MÚSICA - CARTAS DE EXAMES',11,'Helvetica-Bold',59),('Relação de candidatos e controle de entrega',9,'Helvetica',73)]:
                     self.setFont(font,size); self.setFillColor(colors.HexColor(BLUE)); self.drawCentredString(pw/2,ph-y,text)
-                meta = Paragraph(f'<b>Página:</b> {self._pageNumber} de {len(self.states)}<br/><b>Emissão:</b> {stamp}<br/><b>Recorte:</b> {len(rows)} candidatos<br/><b>Impresso por:</b> {escape(responsible)}', ParagraphStyle('meta',fontSize=7,leading=9,alignment=2))
+                meta = Paragraph(f'<b>Página:</b> {self._pageNumber} de {len(self.states)}<br/><b>Emissão:</b> {stamp}<br/><b>Recorte:</b> {len(rows)} candidatos<br/><b>Responsável:</b> Secretaria Regional da Música', ParagraphStyle('meta',fontSize=7,leading=9,alignment=2))
                 _,h=meta.wrap(180,70);meta.drawOn(self,pw-208,ph-18-h)
                 self.setFillColor(colors.HexColor('#64748b'));self.setFont('Helvetica',7)
                 self.drawString(28,18,'Cartas de exames - Relação para Regionais e Examinadoras')
-                self.drawRightString(pw-28,18,f'Página {self._pageNumber} de {len(self.states)}')
+                printed_by(self, responsible, pw - 28, 18, f'Página {self._pageNumber} de {len(self.states)}')
                 canvas.Canvas.showPage(self)
             canvas.Canvas.save(self)
     totals = delivery_summary(rows)
@@ -144,4 +145,4 @@ def make_excel(rows, responsible, deadlines, template=False):
     for row in info:
         row[0].alignment=Alignment(wrap_text=True,vertical='center');info.row_dimensions[row[0].row].height=30
     info['A1'].font=Font(bold=True,color='FFFFFF');info['A1'].fill=PatternFill('solid',fgColor='1E4B7A')
-    output=io.BytesIO();workbook.save(output);return output.getvalue()
+    output=io.BytesIO();workbook_identity(workbook, responsible);workbook.save(output);return output.getvalue()

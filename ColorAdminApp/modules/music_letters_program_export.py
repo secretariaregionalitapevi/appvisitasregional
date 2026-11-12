@@ -1,3 +1,4 @@
+from .report_identity import printed_by, workbook_identity
 """Relatório documental com a identidade institucional dos relatórios de cartas."""
 import io
 from openpyxl import Workbook
@@ -69,7 +70,7 @@ def make_program_excel(rows, responsible, filters):
     sheet.print_area = f'A1:J{max(7, len(rows) + 7)}'
     sheet.oddFooter.center.text = 'Música · Programa Mínimo · Página &P de &N'
     output = io.BytesIO()
-    workbook.save(output)
+    workbook_identity(workbook, responsible);workbook.save(output)
     return output.getvalue()
 
 
@@ -112,7 +113,7 @@ def make_program_pdf(rows, responsible, filters):
                           para('Programa Mínimo · Resumo técnico dos músicos', fontSize=9, leading=12, alignment=1)]
                 metadata = Paragraph(f'<b>Página:</b> {self._pageNumber} de {total}<br/>'
                     f'<b>Emissão:</b> {stamp}<br/><b>Recorte:</b> {escape(scope)}<br/>'
-                    f'<b>Impresso por:</b> {escape(responsible)}',
+                    f'<b>Responsável:</b> Secretaria Regional da Música',
                     ParagraphStyle('program-meta', parent=body, fontSize=7, leading=9, alignment=2))
                 header = Table([['', center, metadata]], colWidths=[190, width - 380, 190])
                 header.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -123,7 +124,7 @@ def make_program_pdf(rows, responsible, filters):
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#64748b'))
                 self.drawString(28, 18, 'Música · Programa Mínimo · Consulta atual ao GEM')
-                self.drawRightString(page_width - 28, 18, f'Página {self._pageNumber} de {total}')
+                printed_by(self, responsible, page_width - 28, 18, f'Página {self._pageNumber} de {total}')
                 canvas.Canvas.showPage(self)
             canvas.Canvas.save(self)
 

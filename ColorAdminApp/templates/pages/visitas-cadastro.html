@@ -651,7 +651,7 @@
                 ['CADASTRO DE IRMANDADE'],
                 ['Relatório Detalhado de Membros'],
                 ['Período', periodText],
-                ['Impresso por', userName],
+                ['Responsável', 'Secretaria Regional da Música'],
                 ['Impresso em', `${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`],
                 [],
                 ['Membro', 'Localidade', 'Cargos / Ministério', 'Status']
@@ -663,6 +663,7 @@
                 rows[8] = EXPORT_COLUMNS.map(([, label]) => label);
                 records.forEach(item => rows.push(EXPORT_COLUMNS.map(([key]) => item[key] ?? '')));
 
+            rows.push([],['Impresso por:',userName]);
             const ws = XLSX.utils.aoa_to_sheet(rows);
             
             const range = XLSX.utils.decode_range(ws['!ref']);
@@ -719,7 +720,7 @@
             doc.setTextColor(0, 0, 0);
             doc.text(`Emissão: ${moment().format('DD/MM/YYYY')}`, pageWidth - 14, 15, { align: 'right' });
             doc.text(`Período: ${periodText}`, pageWidth - 14, 20, { align: 'right' });
-            doc.text(`Impresso por: ${userName}`, pageWidth - 14, 25, { align: 'right' });
+            window.AppReportIdentity.jsPdfHeader(doc,pageWidth-14,25);
             
             doc.setFontSize(7);
             doc.setTextColor(100, 100, 100);
@@ -754,7 +755,7 @@
                 }
             });
 
-            doc.save("Cadastro_Irmandade.pdf");
+            window.AppReportIdentity.jsPdfFooter(doc,userName);doc.save("Cadastro_Irmandade.pdf");
         };
 
         const MATRIX_COLUMNS = [

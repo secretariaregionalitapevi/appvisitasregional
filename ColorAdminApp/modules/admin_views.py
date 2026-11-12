@@ -1,3 +1,4 @@
+from .report_identity import workbook_identity
 import json
 import io
 import logging
@@ -298,7 +299,7 @@ def export_audit_excel(request):
     for index, width in enumerate([20, 28, 26, 23, 32, 16, 18, 42, 18, 48], 1): sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.freeze_panes = "A7"; sheet.auto_filter.ref = f"A6:{last_column}{max(6, sheet.max_row)}"; sheet.sheet_view.showGridLines = False
     sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True; sheet.print_title_rows = "1:6"
-    stream = io.BytesIO(); workbook.save(stream)
+    stream = io.BytesIO(); workbook_identity(workbook, report_user);workbook.save(stream)
     log_audit(request, "EXPORT", "AUDITORIA", {"format": "xlsx", "row_count": len(filtered), "event_id": event_id or None, "filters": {"module": module_filter or None, "action": action_filter or None, "date_from": date_from or None, "date_to": date_to or None, "search": search or None}, "outcome": "success"})
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = f'attachment; filename="Relatorio_Auditoria_{now:%d-%m-%Y_%H-%M}.xlsx"'
@@ -813,6 +814,16 @@ def _congregation_settings_missing(exc):
     )
 
 
+def _normalize_ministry_dates(row):
+    """Move legacy dates to the ordination field without replacing existing dates."""
+    row = dict(row)
+    if _catalog_norm(row.get("ministerio")) in {"ANCIAO", "DIACONO"}:
+        if not row.get("data_ordenacao") and row.get("data_apresentacao"):
+            row["data_ordenacao"] = row["data_apresentacao"]
+            row["data_apresentacao"] = None
+    return row
+
+
 @administrative_only
 @require_http_methods(["GET"])
 def operational_data(request, section):
@@ -834,7 +845,7 @@ def operational_data(request, section):
             return JsonResponse({"error": "Secao administrativa invalida."}, status=404)
         rows = _get_table(config["table"], {"select": "*", "order": config["order"], "limit": "2000"})
         if section == "ministerio":
-            rows = _sort_ministry_rows(rows, common_catalog())
+            rows = _sort_ministry_rows([_normalize_ministry_dates(row) for row in rows], common_catalog())
         payload = {"rows": rows}
         if section == "santa-ceia":
             payload["counts"] = _get_table("santa_ceia_contagem", {"select": "*", "order": "created_at.desc", "limit": "2000"})
@@ -891,6 +902,12 @@ def operational_record(request, section, record_id=None):
                 raise ValueError("Informe um numero inteiro no campo ano_anterior.")
         for boolean_field in {"cadastro_completo", "possui_foto"} & changes.keys():
             changes[boolean_field] = str(changes[boolean_field]).lower() in {"1", "true", "on", "sim"}
+        if section == "ministerio":
+            candidate = {**(before[0] if before else {}), **changes}
+            normalized = _normalize_ministry_dates(candidate)
+            for field in ("data_apresentacao", "data_ordenacao"):
+                if normalized.get(field) != candidate.get(field):
+                    changes[field] = normalized.get(field)
         actor_id = request.session.get("user_id")
         if section == "ministerio":
             changes["updated_by"] = actor_id
@@ -1161,7 +1178,7 @@ def export_congregations_excel(request):
     sheet.freeze_panes = "A7"; sheet.auto_filter.ref = f"A6:F{max(6, sheet.max_row)}"; sheet.sheet_view.showGridLines = False
     sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.print_title_rows = "1:6"; sheet.oddFooter.center.text = "Administra\u00e7\u00e3o - Congrega\u00e7\u00f5es - Regional Itapevi"; sheet.oddFooter.right.text = "Pagina &P de &N"
-    stream = io.BytesIO(); workbook.save(stream)
+    stream = io.BytesIO(); workbook_identity(workbook, actor);workbook.save(stream)
     log_audit(request, "EXPORT", "ADMINISTRACAO_CONGREGACOES", {"format": "xlsx", "row_count": len(rows), "municipality": municipality or None, "outcome": "success"})
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = f'attachment; filename="Congregacoes_{now:%d-%m-%Y_%H-%M}.xlsx"'
@@ -1216,7 +1233,7 @@ def export_ministerio_excel(request):
     sheet.freeze_panes = "A7"; sheet.auto_filter.ref = f"A6:H{max(6, sheet.max_row)}"; sheet.sheet_view.showGridLines = False
     sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0; sheet.sheet_properties.pageSetUpPr.fitToPage = True; sheet.print_title_rows = "1:6"
     sheet.oddFooter.center.text = "Administração - Ministério - Regional Itapevi"; sheet.oddFooter.right.text = "Página &P de &N"
-    stream = io.BytesIO(); workbook.save(stream)
+    stream = io.BytesIO(); workbook_identity(workbook, actor);workbook.save(stream)
     log_audit(request, "EXPORT", "MINISTERIO_REGIONAL", {"format": "xlsx", "row_count": len(rows), "municipality": municipality or None, "outcome": "success"})
     response = HttpResponse(stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = f'attachment; filename="Ministerio_{now:%d-%m-%Y_%H-%M}.xlsx"'

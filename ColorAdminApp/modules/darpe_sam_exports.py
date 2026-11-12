@@ -1,3 +1,4 @@
+from .report_identity import printed_by, workbook_identity
 """Relatórios da conferência DARPE/SAM no padrão institucional do projeto."""
 from collections import Counter
 from math import ceil
@@ -115,7 +116,7 @@ def build_excel(rows, scope, actor, now):
     sheet.print_area = f'A1:I{sheet.max_row}'
     sheet.oddFooter.center.text = 'D.A.R.P.E · Página &P de &N'
     stream = BytesIO()
-    book.save(stream)
+    workbook_identity(book, actor);book.save(stream)
     return stream.getvalue()
 
 
@@ -163,13 +164,13 @@ def build_pdf(rows, scope, actor, now):
                     self.drawCentredString(center, y, text)
                 details = Paragraph(f'<b>Página {self._pageNumber} de {total}</b><br/>'
                                     f'Emissão: {now:%d/%m/%Y %H:%M}<br/>'
-                                    f'<b>Recorte:</b> {escape(scope)}<br/><b>Impresso por:</b> {escape(actor)}', metadata)
+                                    f'<b>Recorte:</b> {escape(scope)}<br/><b>Responsável:</b> Secretaria Regional da Música', metadata)
                 _, height = details.wrap(210, 90)
                 details.drawOn(self, page_width - 238, page_height - 16 - height)
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#6b7280'))
                 self.drawString(28, 19, f'D.A.R.P.E · {len(rows)} cadastros · Conferência SAM')
-                self.drawRightString(page_width - 28, 19, f'Página {self._pageNumber} de {total}')
+                printed_by(self, actor, page_width - 28, 19, f'Página {self._pageNumber} de {total}')
                 self.restoreState()
                 super().showPage()
             super().save()
