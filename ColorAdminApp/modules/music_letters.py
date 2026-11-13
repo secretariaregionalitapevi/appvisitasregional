@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from . import music_exams
 from .access_control import can_access, common_catalog, service_headers, user_scope, scope_details
 from .gem import can_open_module
+from ColorAdminApp.utils.supabase_http import supabase_get
 from .music_letters_domain import MODALITIES, RESULTS, ROLES, GROUPS, matches, summarize, exam_payload, ministry_workbook, norm, letter_filename, canonical_ministries
 
 TABLE = 'cartas_emissoes'
@@ -25,7 +26,7 @@ def can_review(request):
 def read(table, params=None):
     rows = []
     while True:
-        response = requests.get(settings.SUPABASE_URL + '/rest/v1/' + table, headers=service_headers(),
+        response = supabase_get(settings.SUPABASE_URL + '/rest/v1/' + table, headers=service_headers(),
             params={'select': '*', 'order': 'id.asc' if table == TABLE else 'common_code.asc',
                     **(params or {}), 'limit': 500, 'offset': len(rows)}, timeout=25)
         response.raise_for_status()

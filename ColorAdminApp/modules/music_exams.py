@@ -8,10 +8,11 @@ from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.cache import never_cache
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from .access_control import can_access, service_headers, user_scope, scope_details
-from .gem import _fetch_students, can_open_module
+from .gem import _fetch_students, _update_students_cache, can_open_module
 
 TABLE="musica_exames_individuais"; BUCKET="gem_exam_documents"
 AGENDA_CSV=getattr(settings,"MUSIC_AGENDA_CSV_URL","https://script.google.com/macros/s/AKfycbw8cDlKeV3JuncWmVXY5EmZQ66p2Y_LMpoj93ILRxmDSF582oe8nehEatqtlCMRKs8t/exec")
@@ -22,6 +23,13 @@ GROUPS=["ITAPEVI","JANDIRA","COTIA / CAUCAIA / VGP","SANTANA / PIRAPORA"]
 def norm(value):
     text=unicodedata.normalize("NFKD",str(value or ""))
     return " ".join("".join(c for c in text if not unicodedata.combining(c)).upper().split())
+
+def result_label(row):
+    value = row.get('resultado') or 'AGENDADO'
+    if norm(value) in {'APROVADO','APROVADA'}:
+        organist = 'ORGANISTA' in norm(row.get('categoria')) or norm(row.get('instrumento')) in {'ORGAO','ORGANISTA'}
+        return 'APROVADA' if organist else 'APROVADO'
+    return value
 def regional_group(city):
     value=norm(city)
     if "JANDIRA" in value:return GROUPS[1]
@@ -35,6 +43,28 @@ def rest_url():return f"{settings.SUPABASE_URL}/rest/v1/{TABLE}"
 def denied():return JsonResponse({"error":"Seu perfil não possui acesso à pasta Música."},status=403)
 def query_filters(request):
     return {key:request.GET.get(key,"").strip() for key in ("municipio","comum","ano","evento","mes","inicio","fim","lancamento_inicio","lancamento_fim")}
+
+def history_rows(request, rows):
+    q = norm(request.GET.get('q'))
+    return [r for r in rows if
+            (not q or q in norm(' '.join(str(r.get(k) or '') for k in ('nome_aluno', 'comum', 'instrumento'))))
+            and (not request.GET.get('cidade_individual') or r.get('municipio') == request.GET['cidade_individual'])
+            and (not request.GET.get('tipo_individual') or r.get('tipo_exame') == request.GET['tipo_individual'])
+            and (not request.GET.get('resultado_individual') or r.get('resultado') == request.GET['resultado_individual'])]
+
+def export_context(request):
+    labels = {'municipio':'Município', 'comum':'Comum', 'ano':'Ano', 'mes':'Mês', 'inicio':'De', 'fim':'Até',
+              'lancamento_inicio':'Lançamentos de', 'lancamento_fim':'Lançamentos até', 'q':'Pesquisa',
+              'cidade_individual':'Município', 'tipo_individual':'Exame', 'resultado_individual':'Resultado', 'evento':'Evento'}
+    values = []
+    for key, label in labels.items():
+        value = request.GET.get(key)
+        if not value:
+            continue
+        if re.fullmatch(r'(?:date:)?\d{4}-\d{2}-\d{2}', value):
+            value = datetime.strptime(value.removeprefix('date:'), '%Y-%m-%d').strftime('%d/%m/%Y')
+        values.append(f'{label}: {value}')
+    return ' · '.join(values) or 'Todos os registros autorizados'
 def matches_filters(row,filters,legacy=False):
     if filters["municipio"] and regional_group(row.get("municipio"))!=filters["municipio"]:return False
     if filters["comum"] and (legacy or norm(row.get("comum"))!=norm(filters["comum"])):return False
@@ -54,6 +84,13 @@ def agenda_date_iso(value):
     return datetime.strptime(value, "%d/%m/%Y").date().isoformat() if "/" in value else value
 
 
+def clean_exam_notes(notes):
+    """Observations contain human notes; legacy metadata stays outside this field."""
+    notes = AGENDA_NOTE.sub('', notes or '')
+    technical = ('IMPORTADO DE:', 'DATA CONFIRMADA PELO SOLICITANTE:', 'NOME ANTERIOR NO CADASTRO:', 'NOME NO DOCUMENTO:')
+    return '\n'.join(line for line in notes.splitlines() if not norm(line).startswith(technical)).strip()
+
+
 def restore_agenda(row):
     row = dict(row)
     notes = row.get("observacoes") or ""
@@ -63,9 +100,7 @@ def restore_agenda(row):
         iso_date = agenda_date_iso(date)
         if not row.get("agenda_evento_id"):
             row.update(agenda_evento_id=event_id, agenda_evento_titulo=title, agenda_evento_data=iso_date, agenda_evento_hora=hour, agenda_evento_url="https://ccbagenda.vercel.app/")
-        clean = AGENDA_NOTE.sub("", notes).strip()
-        display_date = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d/%m/%Y")
-        row["observacoes"] = "\n".join(filter(None, [clean, f"Agenda: {title} | {display_date} {hour} | ID: {event_id}"]))
+    row['observacoes'] = clean_exam_notes(notes)
     return row
 
 
@@ -92,7 +127,7 @@ def dashboard_summary(legacy, exams):
     rows = [row for row in legacy if str(row.get("id")) not in individual_ids]
     seen = set()
     for exam in exams:
-        if exam.get("origem") not in {"PAINEL", "APP_EXAMES"} or norm(exam.get("resultado")) != "APROVADO":
+        if exam.get("origem") not in {"PAINEL", "APP_EXAMES", "IMPORTACAO"} or norm(exam.get("resultado")) != "APROVADO":
             continue
         key = exam.get("chave_idempotencia") or exam.get("id")
         if key and key in seen:
@@ -119,9 +154,66 @@ def dashboard_summary(legacy, exams):
 def idempotency_key(payload):
     fields=("aluno_id","nome_aluno","data_exame","tipo_exame","instrumento")
     return hashlib.sha256("|".join(norm(payload.get(x)) for x in fields).encode()).hexdigest()
-def visible_students(request):
+def visible_students(request, common_codes=None, student_id=None):
     scope=user_scope(request)
-    return [s for s in _fetch_students() if can_access(scope,{"municipio":s.get("municipio"),"comum":s.get("comum_congregacao")})]
+    if student_id:
+        response = requests.get(f'{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno',
+            headers=service_headers(),params={'select':'*','id':'eq.'+str(student_id),'limit':1},timeout=(5,15))
+        response.raise_for_status()
+        students = response.json()
+    elif common_codes is None:
+        students = _fetch_students()
+    else:
+        codes = sorted({code for code in common_codes if re.fullmatch(r'BR-\d{2}-\d+', code)})
+        if not codes:
+            return []
+        students = []
+        # Read only the document's commons, never the entire regional SAM mirror.
+        for start in range(0, len(codes), 30):
+            conditions = ','.join('comum_congregacao.ilike.' + code + '*' for code in codes[start:start+30])
+            offset = 0
+            while True:
+                response = requests.get(f'{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno',
+                    headers=service_headers(), params={'select':'id,nome_aluno,registro_msa,municipio,comum_congregacao,instrumento,cargo_ministerio,nivel',
+                    'or':'(' + conditions + ')', 'order':'id', 'limit':1000,'offset':offset}, timeout=(5,20))
+                response.raise_for_status()
+                page = response.json()
+                students.extend(page)
+                if len(page) < 1000:
+                    break
+                offset += 1000
+    return [s for s in students if can_access(scope,{"municipio":s.get("municipio"),"comum":s.get("comum_congregacao")})]
+
+
+def api_student_search(request):
+    if not can_open_module(request):
+        return denied()
+    if request.method != 'GET':
+        return JsonResponse({'error':'Método não permitido.'},status=405)
+    query = re.sub(r'[^\w\sÀ-ÿ-]', '', request.GET.get('q',''), flags=re.UNICODE).strip()[:80]
+    if len(query) < 2:
+        return JsonResponse({'items':[]})
+    scope = user_scope(request)
+    params = {'select':'id,nome_aluno,registro_msa,municipio,comum_congregacao,instrumento,cargo_ministerio',
+              'nome_aluno':'ilike.*'+query+'*','order':'nome_aluno,id','limit':30}
+    if scope['level'] == 'municipal':
+        if not scope['municipio']:
+            return JsonResponse({'items':[]})
+        params['municipio'] = 'eq.'+scope['municipio']
+    elif scope['level'] == 'local':
+        if not scope['comum']:
+            return JsonResponse({'items':[]})
+        params['comum_congregacao'] = 'eq.'+scope['comum']
+    try:
+        response = requests.get(f'{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno',
+                                headers=service_headers(),params=params,timeout=(5,15))
+        response.raise_for_status()
+        rows = [r for r in response.json() if can_access(scope,{'municipio':r.get('municipio'),'comum':r.get('comum_congregacao')})]
+        return JsonResponse({'items':[{'id':r['id'],'nome':r.get('nome_aluno'),'registro_msa':r.get('registro_msa'),
+            'municipio':r.get('municipio'),'comum':r.get('comum_congregacao'),'instrumento':r.get('instrumento'),
+            'categoria':r.get('cargo_ministerio')} for r in rows[:30]]})
+    except requests.RequestException:
+        return JsonResponse({'error':'Não foi possível pesquisar os alunos.'},status=502)
 
 def match_student(students,name):
     wanted=norm(name).replace("�","")
@@ -172,10 +264,11 @@ def api_agenda(request):
     if not can_open_module(request):return denied()
     try:
         student_id = request.GET.get("aluno_id")
-        student = next((row for row in visible_students(request) if str(row.get("id")) == student_id), None) if student_id else None
+        student = next((row for row in visible_students(request, student_id=student_id) if str(row.get("id")) == student_id), None) if student_id else None
         events = [event for event in agenda_events() if student and event_matches_municipality(event, student.get("municipio"))]
         return JsonResponse({"items": events})
     except requests.RequestException:return JsonResponse({"error":"A agenda não respondeu. Tente novamente."},status=502)
+@never_cache
 def page(request):
     if not can_open_module(request):return render(request,"pages/403.html",{"message":"Seu perfil não possui acesso à pasta Música."},status=403)
     return render(request,"pages/music_exams.html",{"report_user":actor(request),"scope":scope_details(user_scope(request))})
@@ -188,7 +281,7 @@ def api_dashboard(request):
         all_legacy = fetch_legacy(request, apply_filters=False)
         legacy = [row for row in all_legacy if str(row.get("id")) not in individual_ids and matches_filters(row,query_filters(request),True)]
         groups,totals=dashboard_summary(legacy,items)
-        students=[{"id":s.get("id"),"nome":s.get("nome_aluno"),"registro_msa":s.get("registro_msa"),"municipio":s.get("municipio"),"comum":s.get("comum_congregacao"),"instrumento":s.get("instrumento"),"categoria":s.get("cargo_ministerio")} for s in visible_students(request)]
+        students=list({str(s.get('aluno_id')):{"id":s.get("aluno_id"),"nome":s.get("nome_aluno"),"registro_msa":s.get("registro_msa"),"municipio":s.get("municipio"),"comum":s.get("comum"),"instrumento":s.get("instrumento"),"categoria":s.get("categoria")} for s in items}.values())
         launches=[{**row,"grupo":regional_group(row.get("municipio")),"total":sum(int(row.get(f) or 0) for f in LEGACY_FIELDS)} for row in legacy]
         dates=sorted({str(r.get('data_exame') or '')[:10] for r in [*all_items,*all_legacy] if r.get('data_exame')},reverse=True)
         return JsonResponse({"items":items,"groups":groups,"totals":totals,"students":students,"legacy_launches":launches,"filters":query_filters(request),
@@ -242,14 +335,37 @@ def sync_shared_exam(exam, deleting=False):
 def update_student_stage(student, exam):
     from .gem import _milestones
     stage = approved_stage(exam)
-    if not stage or _milestones(student.get("nivel"))[stage[0]]["status"] != "future":
+    if not stage:
+        return
+    url = f"{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno"
+    current_response = requests.get(url, headers=service_headers(),
+        params={"select": "id,nivel", "id": f"eq.{student['id']}", "limit": 1}, timeout=(5, 15))
+    current_response.raise_for_status()
+    current_rows = current_response.json()
+    if not current_rows:
+        raise requests.RequestException("O cadastro do aluno não foi encontrado para atualização do nível.")
+    current_level = current_rows[0].get("nivel")
+    if _milestones(current_level)[stage[0]]["status"] != "future":
+        _update_students_cache(dict(student, nivel=current_level))
         return
     level = stage[2]
-    if "RJM" in norm(student.get("nivel")) and stage[0] > 2:
+    if "RJM" in norm(current_level) and stage[0] == 4:
         level = "RJM / " + level
-    response = requests.patch(f"{settings.SUPABASE_URL}/rest/v1/musica_acompanhamento_aluno", headers=service_headers("return=minimal"), params={"id": f"eq.{student['id']}"}, json={"nivel": level}, timeout=15)
+    response = requests.patch(url, headers=service_headers("return=representation"),
+        params={"id": f"eq.{student['id']}", "nivel": "is.null" if current_level is None else f"eq.{current_level}"},
+        json={"nivel": level}, timeout=15)
     response.raise_for_status()
-    cache.delete("gem:students:v7")
+    updated = response.json()
+    if updated:
+        _update_students_cache(updated[0])
+        return
+    latest_response = requests.get(url, headers=service_headers(),
+        params={"select": "id,nivel", "id": f"eq.{student['id']}", "limit": 1}, timeout=(5, 15))
+    latest_response.raise_for_status()
+    latest_rows = latest_response.json()
+    if not latest_rows or _milestones(latest_rows[0].get("nivel"))[stage[0]]["status"] == "future":
+        raise requests.RequestException("O nível do aluno mudou durante a atualização; repita o salvamento.")
+    _update_students_cache(dict(student, nivel=latest_rows[0].get("nivel")))
 
 
 def api_record(request,record_id=None):
@@ -276,7 +392,7 @@ def api_record(request,record_id=None):
                     raise
                 return JsonResponse({"ok": True})
         data=request.POST.dict() if (request.content_type or "").startswith("multipart/") else json.loads(request.body or "{}")
-        student=next((s for s in visible_students(request) if str(s.get("id"))==str(data.get("aluno_id"))),None)
+        student=next((s for s in visible_students(request, student_id=data.get('aluno_id')) if str(s.get("id"))==str(data.get("aluno_id"))),None)
         if not student:return JsonResponse({"error":"Selecione um aluno válido dentro do seu escopo."},status=400)
         organist = "ORGANISTA" in norm(student.get("cargo_ministerio")) or norm(student.get("instrumento")) in {"ORGAO", "ORGANISTA"}
         if not organist and norm(data.get("tipo_exame")) in {"RJM", "TESTE EMERGENCIAL", "TESTE ESPECIAL", "EMERGENCIA"}:
@@ -333,14 +449,19 @@ def parse_reference_workbook(file,request):
         payload["chave_idempotencia"]=idempotency_key(payload);parsed.append(payload)
     return parsed,unmatched
 def api_import(request):
-    if not can_open_module(request):return denied()
-    if request.method!="POST" or not request.FILES.get("arquivo"):return JsonResponse({"error":"Envie uma planilha Excel."},status=400)
-    try:
-        parsed,unmatched=parse_reference_workbook(request.FILES["arquivo"],request);existing={row.get("chave_idempotencia") for row in fetch_rows(request,False)};batch=[row for row in parsed if row["chave_idempotencia"] not in existing];duplicates=len(parsed)-len(batch)
-        if batch:
-            response=requests.post(rest_url()+"?on_conflict=chave_idempotencia",headers=service_headers("resolution=ignore-duplicates,return=minimal"),json=batch,timeout=40);response.raise_for_status()
-        return JsonResponse({"ok":True,"importados":len(batch),"duplicados":duplicates,"nao_encontrados":unmatched})
-    except Exception as error:return JsonResponse({"error":f"Não foi possível importar: {error}"},status=400)
+    from .exam_import_api import import_exams
+    return import_exams(request)
+
+
+def api_delete_group(request):
+    from .exam_group_delete import api_delete_group as delete_group
+    return delete_group(request)
+
+
+def api_attachment(request,record_id):
+    from .exam_documents import api_attachment as attach
+    return attach(request,record_id)
+
 def api_participants(request):
     if not can_open_module(request):return denied()
     try:return JsonResponse({"items":[row for row in fetch_rows(request) if norm(row.get("resultado"))=="AGENDADO"]})
@@ -355,13 +476,16 @@ def document(request,record_id):
 def export_excel(request):
     if not can_open_module(request):return denied()
     all_items=fetch_rows(request,apply_filters=False)
-    items=[row for row in all_items if matches_filters(row,query_filters(request))]
+    items=history_rows(request, [row for row in all_items if matches_filters(row,query_filters(request))])
     individual_ids={str(row['id']) for row in all_items}
     groups,totals=dashboard_summary([row for row in fetch_legacy(request) if str(row.get('id')) not in individual_ids],items)
     wb=Workbook();ws=wb.active;ws.title="Resumo Regional"
     def title(sheet,last_col,report):
         sheet.merge_cells(start_row=1,start_column=1,end_row=1,end_column=last_col);sheet["A1"]="CONGREGAÇÃO CRISTÃ NO BRASIL";sheet["A1"].font=Font(bold=True,color="FFFFFF",size=15);sheet["A1"].fill=PatternFill("solid",fgColor="1E4B7A");sheet["A1"].alignment=Alignment(horizontal="center")
         for row,text in ((2,"Regional Itapevi - São Paulo · MÚSICA"),(3,report),(4,f"Emissão: {datetime.now():%d/%m/%Y %H:%M} · Responsável: {actor(request)}")):sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=last_col);sheet.cell(row,1,text)
+        sheet.merge_cells(start_row=5,start_column=1,end_row=5,end_column=last_col)
+        sheet.cell(5,1,export_context(request)).alignment = Alignment(wrap_text=True)
+        sheet.row_dimensions[5].height = 30
     title(ws,9,"Relatório consolidado de Exames e Testes")
     headers=["REGIÃO","Músicos · Culto Oficial","Músicos · Oficialização","Músicos · Troca Instrumento","Organistas · RJM","Organistas · Culto Oficial","Organistas · Oficialização","Organistas · Teste Especial","TOTAL GERAL"]
     for column,value in enumerate(headers,1):cell=ws.cell(6,column,value);cell.font=Font(bold=True,color="FFFFFF");cell.fill=PatternFill("solid",fgColor="1E4B7A");cell.alignment=Alignment(horizontal="center",wrap_text=True)
@@ -375,7 +499,24 @@ def export_excel(request):
     for column,value in enumerate(detail_headers,1):cell=detail.cell(6,column,value);cell.font=Font(bold=True,color="FFFFFF");cell.fill=PatternFill("solid",fgColor="1E4B7A");cell.alignment=Alignment(horizontal="center")
     for index,item in enumerate(items,1):
         exam_date=datetime.strptime(item["data_exame"],"%Y-%m-%d").strftime("%d/%m/%Y") if item.get("data_exame") else "—"
-        for column,value in enumerate([index,item.get("nome_aluno"),item.get("registro_msa"),item.get("municipio"),item.get("comum"),item.get("instrumento"),item.get("tipo_exame"),exam_date,item.get("resultado"),"Sim" if item.get("prova_url") else "Não"],1):detail.cell(6+index,column,value)
+        for column,value in enumerate([index,item.get("nome_aluno"),item.get("registro_msa"),item.get("municipio"),item.get("comum"),item.get("instrumento"),item.get("tipo_exame"),exam_date,result_label(item),"Sim" if item.get("prova_url") else "Não"],1):detail.cell(6+index,column,value)
     for index,width in enumerate([6,30,14,18,34,20,28,13,20,12],1):detail.column_dimensions[chr(64+index)].width=width
     detail.freeze_panes="A7";detail.auto_filter.ref=f"A6:J{6+len(items)}";detail.sheet_view.showGridLines=False;detail.page_setup.orientation="landscape";detail.page_setup.fitToWidth=1
-    stream=io.BytesIO();workbook_identity(wb, actor(request));wb.save(stream);stamp=datetime.now().strftime("%d-%m-%Y_%H-%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response
+    for sheet in wb:
+        sheet.print_title_rows = '1:6'
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        sheet.page_setup.fitToHeight = 0
+        sheet.print_area = sheet.dimensions
+    if request.GET.get('historico'):
+        wb.remove(ws)
+    stream=io.BytesIO();workbook_identity(wb, actor(request));wb.save(stream);stamp=datetime.now().strftime("%d_%m_%Y_%H_%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response
+
+
+def export_pdf(request):
+    if not can_open_module(request):
+        return denied()
+    from .exam_exports import history_pdf
+    try:
+        return history_pdf(request, history_rows(request, fetch_rows(request)))
+    except requests.RequestException:
+        return JsonResponse({'error': 'Não foi possível consultar o histórico.'}, status=502)

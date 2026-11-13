@@ -11,7 +11,7 @@ from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from openpyxl import load_workbook
 
 from ColorAdminApp.gem import (
-    INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _milestones, _operational_activity, _program_progress, academic_status,
+    INSTRUMENT_OPTIONS, LEVEL_OPTIONS, MINISTRY_OPTIONS, TONALITY_OPTIONS, _build_timeline, _fetch_last_activity_dates, _milestones, _operational_activity, _program_progress, _update_students_cache, academic_status,
     advancement_permission, api_student_detail, api_student_record, api_students, api_students_report, api_summary, export_students_excel, is_graduated, operational_status_from_days, ordered_instrument_options, _report_rows,
 )
 
@@ -40,7 +40,7 @@ class GemTests(SimpleTestCase):
     def test_reached_stages_allow_historical_documents_without_reassessment(self, assessment):
         for level, milestones in [
             ("CULTO OFICIAL", ["ingresso_rjm", "ingresso_culto"]),
-            ("RJM / CULTO OFICIAL", ["ingresso_rjm", "ingresso_culto"]),
+            ("RJM / OFICIALIZADO(A)", ["ingresso_rjm", "ingresso_culto"]),
             ("OFICIALIZADO(A)", ["ingresso_rjm", "ingresso_culto", "oficializacao"]),
             ("RJM", ["ingresso_rjm"]),
         ]:
@@ -52,15 +52,21 @@ class GemTests(SimpleTestCase):
     def test_student_panel_restores_filter_options_before_loading_rows(self):
         template = Path(__file__).parents[1].joinpath("templates", "pages", "gem.html").read_text(encoding="utf-8")
 
-        self.assertIn("if(all){try{await loadSummary()}", template)
+        self.assertIn("if(all){try{await loadSummary(force)}", template)
         self.assertIn("try{await loadStudents()}", template)
         self.assertNotIn("Promise.allSettled([loadSummary(),loadStudents()])", template)
+        self.assertIn("query&&query.length<3", template)
+        self.assertIn("setTimeout(loadStudents,600)", template)
+        self.assertIn("async function loadStudents(){let query=", template)
         self.assertIn("window.gemCommonsByMunicipality=data.commons_by_municipality||{}", template)
         self.assertIn("municipality.addEventListener('change', updateCommonOptions, true)", template)
         self.assertIn("window.addEventListener('gem-common-options-ready', updateCommonOptions)", template)
         self.assertIn("flow:'export'", template)
         self.assertIn("window.swal=", template)
         self.assertIn("EXCLUIR:['#d10000','#ffffff']", template)
+        action_bar = template.split('class="gem-report-actions">', 1)[1].split('</div>', 1)[0]
+        self.assertIn('href="/gem/projecao/"', action_bar)
+        self.assertNotIn('<div class="px-3 pt-3 text-end">', template)
 
     def test_student_report_endpoints_return_json_when_upstream_data_fails(self):
         for endpoint, path in (
@@ -193,7 +199,7 @@ class GemTests(SimpleTestCase):
     def test_registration_catalog_has_all_official_levels(self):
         self.assertEqual(LEVEL_OPTIONS, [
             'CANDIDATO(A)', 'CULTO OFICIAL', 'ENSAIO', 'MEIA HORA', 'OFICIALIZADO(A)', 'RJM',
-            'RJM / CULTO OFICIAL', 'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
+            'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
         ])
 
     def test_organ_is_instrument_and_organist_is_ministry(self):
@@ -248,6 +254,32 @@ class GemTests(SimpleTestCase):
         self.assertEqual(activity["operational_status"], "INATIVO")
         self.assertTrue(activity["requires_review"])
 
+    @patch("ColorAdminApp.gem.requests.get")
+    def test_activity_dates_are_cached_across_student_searches(self, mock_get):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [{"aluno_id": "1", "last_activity_at": "2026-10-01"}]
+        mock_get.return_value = response
+
+        self.assertEqual(_fetch_last_activity_dates(["1", "2"]), {"1": "2026-10-01"})
+        self.assertEqual(_fetch_last_activity_dates(["1", "2"]), {"1": "2026-10-01"})
+        mock_get.assert_called_once()
+
+    def test_student_cache_updates_new_imported_identities_without_extra_fields(self):
+        cache.set("gem:students:v7", [self.rows[0]], 300)
+        _update_students_cache(dict(self.rows[0], nivel="CULTO OFICIAL"))
+        _update_students_cache({
+            "id": "novo",
+            "nome_aluno": "ISADORA CUBAS CARREIRO CALONGAS",
+            "nivel": "CULTO OFICIAL",
+            "consentimento_lgpd": False,
+        })
+
+        cached = cache.get("gem:students:v7")
+        self.assertEqual([row["id"] for row in cached], ["1", "novo"])
+        self.assertEqual(cached[0]["nivel"], "CULTO OFICIAL")
+        self.assertNotIn("consentimento_lgpd", cached[1])
+
     @patch("ColorAdminApp.gem._fetch_last_activity_dates")
     @patch("ColorAdminApp.gem._fetch_students")
     def test_summary_separates_formation_from_graduates(self, fetch_students, activity_dates):
@@ -262,9 +294,13 @@ class GemTests(SimpleTestCase):
         })
         activity_dates.assert_not_called()
 
-    @patch("ColorAdminApp.gem.requests.get")
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
     @patch("ColorAdminApp.gem._fetch_students")
-    def test_location_filter_round_trip_preserves_sam_accents(self, fetch_students, mock_get):
+    def test_location_filter_round_trip_preserves_sam_accents(
+        self, fetch_students, _activity_dates, _enrich, _can_open_module,
+    ):
         common = "BR-22-1706 - VIT\u00c1POLIS I"
         city = "S\u00c3O PAULO"
         student = dict(self.rows[0], comum_congregacao=common, municipio=city)
@@ -275,14 +311,6 @@ class GemTests(SimpleTestCase):
         self.assertEqual(summary["commons"], [{"label": common, "value": 1}])
         self.assertEqual(summary["municipalities"], [{"label": city, "value": 1}])
 
-        def database_get(*args, **kwargs):
-            params = kwargs["params"]
-            matches = (params.get("comum_congregacao") == "eq." + common
-                       and params.get("municipio") == "eq." + city)
-            return Mock(headers={"Content-Range": "0-0/1" if matches else "*/0"},
-                        json=Mock(return_value=[student] if matches else []))
-
-        mock_get.side_effect = database_get
         response = api_students(request_with_profile("/gem/api/alunos/", self.regional, {
             "situacao": "todos", "comum": summary["commons"][0]["label"],
             "municipio": summary["municipalities"][0]["label"],
@@ -291,16 +319,115 @@ class GemTests(SimpleTestCase):
         self.assertEqual([row["id"] for row in payload["items"]], [student["id"]])
         self.assertEqual(payload["pagination"]["total"], 1)
 
-    @patch("ColorAdminApp.gem.requests.get")
-    def test_default_student_list_excludes_graduates(self, mock_get):
-        source_response = Mock(headers={"Content-Range": "0-1/2"})
-        source_response.raise_for_status.return_value = None
-        source_response.json.return_value = [self.rows[0], self.rows[2]]
-        mock_get.return_value = source_response
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
+    @patch("ColorAdminApp.gem._fetch_students")
+    def test_default_student_list_excludes_graduates(
+        self, fetch_students, _activity_dates, _enrich, _can_open_module,
+    ):
+        fetch_students.return_value = self.rows
         response = api_students(request_with_profile("/gem/api/alunos/", self.regional))
         payload = json.loads(response.content)
         self.assertEqual([row["nome_aluno"] for row in payload["items"]], ["Ana", "Caio"])
-        self.assertEqual(mock_get.call_args_list[0].kwargs["params"]["nivel"], "not.ilike.*OFICIALIZAD*")
+        self.assertEqual(payload["pagination"]["total"], 2)
+        fetch_students.assert_called_once_with()
+
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
+    @patch("ColorAdminApp.gem.supabase_get")
+    def test_student_search_filters_cached_rows_without_supabase_requests(
+        self, mock_supabase_get, _activity_dates, _enrich, _can_open_module,
+    ):
+        student = dict(
+            self.rows[0],
+            id="organista",
+            nome_aluno="ISADORA CUBAS CARREIRO CALONGAS",
+            nivel="CULTO OFICIAL",
+            instrumento="ÓRGÃO",
+            cargo_ministerio="ORGANISTA",
+        )
+        cache.set("gem:students:v7", [student], 300)
+        response = api_students(request_with_profile("/gem/api/alunos/", self.regional, {
+            "situacao": "todos", "q": "isadora cubas",
+            "nivel": "CULTO OFICIAL", "instrumento": "ORGAO",
+        }))
+
+        payload = json.loads(response.content)
+        self.assertEqual([row["nome_aluno"] for row in payload["items"]], ["ISADORA CUBAS CARREIRO CALONGAS"])
+        self.assertEqual(payload["pagination"]["total"], 1)
+        mock_supabase_get.assert_not_called()
+
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
+    @patch("ColorAdminApp.gem.supabase_get")
+    def test_student_search_recovers_identity_missing_from_stale_cache(
+        self, supabase_search, _activity_dates, _enrich, _can_open_module,
+    ):
+        student = dict(
+            self.rows[0],
+            id="organista",
+            nome_aluno="ISADORA CUBAS CARREIRO CALONGAS",
+            registro_msa="489527",
+            nivel="CULTO OFICIAL",
+            instrumento="ÓRGÃO",
+            cargo_ministerio="ORGANISTA",
+        )
+        cache.set("gem:students:v7", self.rows, 300)
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [student]
+        supabase_search.return_value = response
+        request = request_with_profile("/gem/api/alunos/", self.regional, {
+            "situacao": "todos", "q": "isadora cubas",
+        })
+
+        result = api_students(request)
+        payload = json.loads(result.content)
+
+        self.assertEqual([row["id"] for row in payload["items"]], ["organista"])
+        self.assertEqual(payload["pagination"]["total"], 1)
+        self.assertEqual(supabase_search.call_args.kwargs["params"]["limit"], 1000)
+        self.assertIn("or", supabase_search.call_args.kwargs["params"])
+        self.assertEqual([row["id"] for row in cache.get("gem:students:v7")], ["1", "2", "3", "organista"])
+
+        api_students(request)
+        supabase_search.assert_called_once()
+
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
+    @patch("ColorAdminApp.gem.supabase_get")
+    @patch("ColorAdminApp.access_control.common_catalog", return_value=[])
+    def test_supplemental_search_preserves_local_common_scope(
+        self, _catalog, supabase_search, _activity_dates, _enrich, _can_open_module,
+    ):
+        student = dict(
+            self.rows[0],
+            id="outside-scope",
+            nome_aluno="ISADORA CUBAS CARREIRO CALONGAS",
+            nivel="CULTO OFICIAL",
+            instrumento="ÓRGÃO",
+        )
+        cache.set("gem:students:v7", [], 300)
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = [student]
+        supabase_search.return_value = response
+        local_profile = {
+            "role_id": 4, "access_level": "local",
+            "comum": "BR-22-9999 - OUTRA COMUM",
+        }
+
+        result = api_students(request_with_profile("/gem/api/alunos/", local_profile, {
+            "situacao": "todos", "q": "isadora cubas",
+        }))
+
+        payload = json.loads(result.content)
+        self.assertEqual(payload["items"], [])
+        self.assertEqual(payload["pagination"]["total"], 0)
 
     @patch('ColorAdminApp.gem.requests.post')
     def test_student_create_sends_approved_fields_with_scope_and_lgpd(self, mock_post):
@@ -330,18 +457,19 @@ class GemTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         mock_post.assert_not_called()
 
+    @patch("ColorAdminApp.gem.can_open_module", return_value=True)
+    @patch("ColorAdminApp.gem_darpe.enrich", return_value=True)
+    @patch("ColorAdminApp.gem._fetch_last_activity_dates", return_value={})
+    @patch("ColorAdminApp.gem._fetch_students")
     @patch("ColorAdminApp.access_control.common_catalog", return_value=[])
-    @patch("ColorAdminApp.gem.requests.get")
-    def test_local_scope_never_exposes_another_common(self, mock_get, _catalog):
-        source_response = Mock(headers={"Content-Range": "0-1/2"})
-        source_response.raise_for_status.return_value = None
-        source_response.json.return_value = self.rows[:2]
-        mock_get.return_value = source_response
+    def test_local_scope_never_exposes_another_common(
+        self, _catalog, fetch_students, _activity_dates, _enrich, _can_open_module,
+    ):
+        fetch_students.return_value = self.rows
         profile = {"role_id": 4, "sector": "Musicalização", "access_level": "local", "comum": "CENTRAL", "municipio": "ITAPEVI"}
         response = api_students(request_with_profile("/gem/api/alunos/", profile, {"situacao": "todos"}))
         payload = json.loads(response.content)
         self.assertEqual([row["nome_aluno"] for row in payload["items"]], ["Ana", "Bia"])
-        self.assertEqual(mock_get.call_args_list[0].kwargs["params"]["comum_congregacao"], "eq.CENTRAL")
 
     @patch("ColorAdminApp.gem.requests.patch")
     @patch("ColorAdminApp.gem.requests.get")

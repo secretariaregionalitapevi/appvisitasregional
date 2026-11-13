@@ -229,6 +229,11 @@ class Command(BaseCommand):
                         ("name", "nome_aluno"), ("instrument", "instrumento"), ("level", "nivel"), ("ministry", "cargo_ministerio")
                     ):
                         source_value = student[source_field]
+                        baseline = state.get(f"source_{source_field}")
+                        if (source_field in {"name", "level"} and baseline
+                                and norm(target.get(target_field)) != norm(baseline)
+                                and norm(source_value) == norm(baseline)):
+                            continue
                         if source_field == "instrument" and norm(source_value) == "A DEFINIR" and target.get(target_field):
                             continue
                         if source_value and source_value != (target.get(target_field) or ""):

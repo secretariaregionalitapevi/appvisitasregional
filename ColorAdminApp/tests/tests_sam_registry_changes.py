@@ -88,6 +88,40 @@ class RegistryChangesTests(SimpleTestCase):
             'cargo_ministerio': 'ENCARREGADO LOCAL', 'comum_congregacao': common['comum'],
             'municipio': 'ITAPEVI'})
 
+    def test_unchanged_sam_source_does_not_revert_local_name_or_level(self):
+        document = {'rows': [{'cells': ['489527', 'ISADORA CUBAS CARREIRO',
+                    'SÃO JOÃO | BR-SP-ITAPEVI-ITAPEVI',
+                    'ORGANISTA', 'ÓRGÃO', 'RJM / ENSAIO']}]}
+        student = parse_catalog(document)[0]
+        common = {'comum': 'BR-22-3510 - SÃO JOÃO', 'cidade': 'ITAPEVI'}
+        target = {
+            'id': 'isadora', 'registro_msa': '489527',
+            'nome_aluno': 'ISADORA CUBAS CARREIRO CALONGAS',
+            'cargo_ministerio': 'ORGANISTA', 'instrumento': 'ÓRGÃO',
+            'nivel': 'CULTO OFICIAL',
+            'comum_congregacao': common['comum'], 'municipio': 'ITAPEVI',
+        }
+        state = {
+            'id': 'state', 'source_key': '489527', 'aluno_id': 'isadora',
+            'source_fingerprint': student['fingerprint'],
+            'source_name': student['name'], 'source_level': student['level'],
+            'sync_status': 'synced', 'last_history_sync_at': '2026-11-07T00:00:00Z',
+        }
+        command = Command(stdout=StringIO())
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'catalog.json'
+            path.write_text(json.dumps(document), encoding='utf-8')
+            with patch.object(command, '_all', side_effect=[[target], [state]]), \
+                 patch.object(command, '_post', return_value=[{'id': 'run'}]), \
+                 patch.object(command, '_patch') as update, \
+                 patch.object(command, '_upsert_states') as states, \
+                 patch('ColorAdminApp.management.commands.sync_sam_catalog.common_catalog', return_value=[common]):
+                command.handle(input=path, commit=True, report=None)
+        self.assertFalse(any(call.args[0] == 'musica_acompanhamento_aluno'
+                             for call in update.call_args_list))
+        self.assertEqual(states.call_args.args[0][0]['source_name'], student['name'])
+        self.assertEqual(states.call_args.args[0][0]['source_level'], student['level'])
+
     def test_replacement_does_not_revive_previous_leader_from_members(self):
         common = {'comum': 'BR-22-3129 - PARQUE SUBURBANO III', 'cidade': 'ITAPEVI'}
         central = {'comum': 'BR-22-1 - CENTRAL', 'cidade': 'ITAPEVI'}

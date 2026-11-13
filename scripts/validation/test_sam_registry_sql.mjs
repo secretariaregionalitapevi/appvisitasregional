@@ -47,5 +47,37 @@ await assert.rejects(() => db.exec('delete from sam_cadastro_transicoes'));
 await db.exec("update musica_acompanhamento_aluno set nivel='RJM',data_inicio_gem='2023-02-01'");
 assert.equal((await db.query("select * from sam_cadastro_transicoes where campo='nivel'")).rows.length, 1);
 assert.equal((await db.query("select * from sam_cadastro_transicoes where campo='data_inicio_gem'")).rows.length, 1);
+const cadastroSql = await fs.readFile('scripts/migrations/054_gem_cadastro_temporal.sql', 'utf8');
+await db.exec('reset role');
+await db.exec(cadastroSql);
+await db.exec(cadastroSql);
+await db.exec(`alter table musica_acompanhamento_aluno disable trigger musica_acompanhamento_updated_at;
+update musica_acompanhamento_aluno set updated_at='2000-01-01T00:00:00Z';
+alter table musica_acompanhamento_aluno enable trigger musica_acompanhamento_updated_at;
+set role service_role;
+update musica_acompanhamento_aluno set nome_aluno='Henrique Atualizado';`);
+const timestamp = (await db.query('select updated_at from musica_acompanhamento_aluno')).rows[0].updated_at;
+assert.ok(Date.parse(timestamp) > Date.parse('2000-01-01T00:00:00Z'));
+const nameTransition = (await db.query(
+    "select anterior,posterior from sam_cadastro_transicoes where campo='nome_aluno'")).rows[0];
+assert.equal(nameTransition.anterior, 'Henrique');
+assert.equal(nameTransition.posterior, 'Henrique Atualizado');
+const studentId = (await db.query('select id from musica_acompanhamento_aluno')).rows[0].id;
+await db.exec(`set role service_role;
+update musica_acompanhamento_aluno set nivel='RJM / CULTO OFICIAL';
+insert into sam_level_history(aluno_id,previous_level,new_level,effective_at,date_basis,evidence)
+values ('${studentId}','RJM / ENSAIO','RJM / CULTO OFICIAL','2026-11-07T12:00:00Z','manual',
+        '{"exam_id":"c2825408-132e-48c5-894c-7382c02ae765"}');`);
+const normalizeSql = await fs.readFile('scripts/migrations/055_gem_culto_oficial_levels.sql', 'utf8');
+await db.exec('reset role');
+await db.exec(normalizeSql);
+await db.exec(normalizeSql);
+assert.equal((await db.query('select nivel from musica_acompanhamento_aluno')).rows[0].nivel, 'CULTO OFICIAL');
+assert.equal((await db.query('select new_level from sam_level_history')).rows[0].new_level, 'CULTO OFICIAL');
+const badTransitions = await db.query(
+    "select id from sam_cadastro_transicoes where campo='nivel' and (anterior='\"RJM / CULTO OFICIAL\"'::jsonb or posterior='\"RJM / CULTO OFICIAL\"'::jsonb)");
+assert.equal(badTransitions.rows.length, 0);
+await assert.rejects(() => db.exec(
+    "update musica_acompanhamento_aluno set nivel='RJM / CULTO OFICIAL'"));
 await db.close();
-console.log('SAM audit: before/after, no-op, permissions, rollback and idempotency passed.');
+console.log('SAM audit: timestamps, name history, level normalization, permissions and idempotency passed.');

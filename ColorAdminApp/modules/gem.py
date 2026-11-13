@@ -21,6 +21,7 @@ from .access_control import can_access, filter_rows, scope_details, service_head
 from .module_access import MODULE_GEM, can_access_module
 from .sam_history_sync import SOURCE_CONFIG, program_minimum_progress
 from .sam_program import assess_program
+from ColorAdminApp.utils.supabase_http import supabase_get
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -75,7 +76,7 @@ def _fetch_program_records(student_id):
 GRADUATION_TOKEN = "OFICIALIZAD"
 LEVEL_OPTIONS = [
     'CANDIDATO(A)', 'CULTO OFICIAL', 'ENSAIO', 'MEIA HORA', 'OFICIALIZADO(A)', 'RJM',
-    'RJM / CULTO OFICIAL', 'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
+    'RJM / ENSAIO', 'RJM / MEIA HORA', 'RJM / OFICIALIZADO(A)',
 ]
 INSTRUMENT_OPTIONS = [
     '\u00d3RG\u00c3O', 'ACORDEON', 'VIOLINO', 'VIOLA', 'VIOLONCELO', 'FLAUTA', 'OBO\u00c9',
@@ -154,9 +155,9 @@ def _fetch_students():
 
     page_size = 1000
     url = f"{settings.SUPABASE_URL}/rest/v1/{TABLE}"
-    first_response = requests.get(
+    first_response = supabase_get(
         url, headers=service_headers("count=exact"),
-        params={"select": SUMMARY_FIELDS, "offset": 0, "limit": page_size}, timeout=20,
+        params={"select": SUMMARY_FIELDS, "offset": 0, "limit": page_size}, timeout=(3.05, 10),
     )
     first_response.raise_for_status()
     first_page = first_response.json()
@@ -166,11 +167,11 @@ def _fetch_students():
         total = len(first_page)
 
     def fetch_page(offset):
-        response = requests.get(
+        response = supabase_get(
             url,
             headers=service_headers(),
             params={"select": SUMMARY_FIELDS, "offset": offset, "limit": page_size},
-            timeout=20,
+            timeout=(3.05, 10),
         )
         response.raise_for_status()
         return offset, response.json()
@@ -186,13 +187,59 @@ def _fetch_students():
     return rows
 
 
+def _update_students_cache_many(students):
+    rows = cache.get("gem:students:v7")
+    if rows is None:
+        return
+    fields = SUMMARY_FIELDS.split(",")
+    changes = {
+        str(student["id"]): {field: student[field] for field in fields if field in student}
+        for student in students if student.get("id")
+    }
+    changes = {student_id: updated for student_id, updated in changes.items() if updated}
+    if not changes:
+        return
+    existing = {str(row.get("id")) for row in rows}
+    for index, row in enumerate(rows):
+        student_id = str(row.get("id"))
+        if student_id in changes:
+            rows[index] = {**row, **changes[student_id]}
+    rows.extend(updated for student_id, updated in changes.items() if student_id not in existing)
+    cache.set("gem:students:v7", rows, 300)
+
+
+def _update_students_cache(student):
+    _update_students_cache_many([student])
+
+
+def _student_list_row(source):
+    row = dict(source)
+    row["comum"] = row.get("comum_congregacao")
+    row["cidade"] = row.get("municipio")
+    row["situacao_academica"] = academic_status(row)
+    row["programa_minimo_informado"] = row.get("programa_minimo_percentual") is not None
+    row["programa_minimo_percentual"] = _percent(row.get("programa_minimo_percentual"))
+    return row
+
+
 def _fetch_last_activity_dates(student_ids):
     ids = sorted({str(student_id) for student_id in student_ids if student_id})
     if not ids:
         return {}
 
+    cache_keys = {student_id: f"gem:last-activity:v1:{student_id}" for student_id in ids}
+    cached = cache.get_many(cache_keys.values())
+    dates = {
+        student_id: cached[key]
+        for student_id, key in cache_keys.items()
+        if key in cached and cached[key]
+    }
+    missing = [student_id for student_id, key in cache_keys.items() if key not in cached]
+    if not missing:
+        return dates
+
     def fetch_chunk(chunk):
-        response = requests.get(
+        response = supabase_get(
             f"{settings.SUPABASE_URL}/rest/v1/{STATUS_VIEW}",
             headers=service_headers(),
             params={
@@ -200,18 +247,24 @@ def _fetch_last_activity_dates(student_ids):
                 "aluno_id": "in.(" + ",".join(json.dumps(value) for value in chunk) + ")",
                 "limit": len(chunk),
             },
-            timeout=20,
+            timeout=(3.05, 10),
         )
         response.raise_for_status()
         return response.json()
 
-    chunks = [ids[index:index + 100] for index in range(0, len(ids), 100)]
+    chunks = [missing[index:index + 100] for index in range(0, len(missing), 100)]
     with ThreadPoolExecutor(max_workers=min(10, len(chunks))) as executor:
         pages = executor.map(fetch_chunk, chunks)
-    return {
+    fetched = {
         str(row.get("aluno_id")): row.get("last_activity_at")
         for page in pages for row in page if row.get("aluno_id")
     }
+    cache.set_many({
+        cache_keys[student_id]: fetched.get(student_id) or ""
+        for student_id in missing
+    }, timeout=60)
+    dates.update({student_id: value for student_id, value in fetched.items() if value})
+    return dates
 
 
 def _visible_students(request, include_activity=False):
@@ -220,15 +273,10 @@ def _visible_students(request, include_activity=False):
     activity_dates = _fetch_last_activity_dates(row.get("id") for row in sources) if include_activity else {}
     rows = []
     for source in sources:
-        row = dict(source)
+        row = _student_list_row(source)
         if include_activity:
             row["last_activity_at"] = activity_dates.get(str(row.get("id")))
             row.update(operational_activity_from_last_activity(row["last_activity_at"]))
-        row["comum"] = row.get("comum_congregacao")
-        row["cidade"] = row.get("municipio")
-        row["situacao_academica"] = academic_status(row)
-        row["programa_minimo_informado"] = row.get("programa_minimo_percentual") is not None
-        row["programa_minimo_percentual"] = _percent(row.get("programa_minimo_percentual"))
         rows.append(row)
     return scope, filter_rows(scope, rows)
 
@@ -316,10 +364,15 @@ def _build_timeline(student, datasets):
         })
     for source, rows in datasets.items():
         if source == 'transicoes':
+            field_labels = {
+                'nome_aluno': 'nome', 'registro_msa': 'registro MSA',
+                'nivel': 'nível', 'comum_congregacao': 'comum',
+                'cargo_ministerio': 'cargo', 'data_inicio_gem': 'data de início no GEM',
+            }
             for row in rows:
                 confirmed = row['date_basis'] in {'sam', 'manual'}
                 events.append({'date': _event_date(row['effective_at']), 'type': 'transicao',
-                    'title': 'Mudança de ' + row['campo'].replace('_', ' '),
+                    'title': 'Mudança de ' + field_labels.get(row['campo'], row['campo'].replace('_', ' ')),
                     'description': f"{row.get('anterior') or 'Não informado'} → {row.get('posterior') or 'Não informado'}" +
                         ('' if confirmed else ' · Data de detecção; vigência no SAM não confirmada.'),
                     'icon': 'fa-history', 'source': 'SAM' if confirmed else 'Sincronização',
@@ -406,6 +459,9 @@ def api_summary(request):
     try:
         requested_scope = user_scope(request)
         summary_key = f"gem:summary:v8:{requested_scope['level']}:{_norm(requested_scope['municipio'])}:{_norm(requested_scope['comum'])}"
+        if request.GET.get("refresh") == "1":
+            cache.delete("gem:students:v7")
+            cache.delete(summary_key)
         cached_summary = cache.get(summary_key)
         if cached_summary is not None:
             return JsonResponse(cached_summary)
@@ -501,8 +557,9 @@ def api_students(request):
                 return _denied()
             saved = requests.post(f"{settings.SUPABASE_URL}/rest/v1/{TABLE}", headers=service_headers('return=representation'), json=payload, timeout=20)
             saved.raise_for_status()
-            cache.delete('gem:students:v7')
-            return JsonResponse({'item': saved.json()[0]}, status=201)
+            item = saved.json()[0]
+            _update_students_cache(item)
+            return JsonResponse({'item': item}, status=201)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'JSON invalido.'}, status=400)
         except (requests.RequestException, ValueError, IndexError):
@@ -510,60 +567,60 @@ def api_students(request):
     if request.method != "GET":
         return JsonResponse({"error": "Método não permitido."}, status=405)
     try:
-        scope = user_scope(request)
+        _scope, rows = _visible_students(request)
         category = request.GET.get("situacao", "formacao")
         try:
             page_number = max(1, int(request.GET.get("page", 1)))
             page_size = max(10, min(100, int(request.GET.get("page_size", 25))))
         except ValueError:
             page_number, page_size = 1, 25
-        params = {
-            "select": SELECT_FIELDS, "order": "nome_aluno.asc",
-            "offset": (page_number - 1) * page_size, "limit": page_size,
-        }
-        if category == "formacao":
-            params["nivel"] = "not.ilike.*OFICIALIZAD*"
-        elif category == "graduados":
-            params["nivel"] = "ilike.*OFICIALIZAD*"
-        if scope["level"] == "local":
-            params["comum_congregacao"] = f"eq.{scope['comum']}"
-        elif scope["level"] == "municipal":
-            params["municipio"] = f"eq.{scope['municipio']}"
-        for query_name, column in (("nivel", "nivel"), ("municipio", "municipio"), ('comum', 'comum_congregacao'), ("instrumento", "instrumento")):
-            values = [value.strip() for value in request.GET.getlist(query_name) if value.strip()]
-            if values:
-                params[column] = f"eq.{values[0]}" if len(values) == 1 else 'in.(' + ','.join(json.dumps(value) for value in values) + ')'
+        from .gem_search import database_filter, matches
         query = request.GET.get("q", "").strip()
+        if query and not any(matches(row, query) for row in rows):
+            response = supabase_get(
+                f"{settings.SUPABASE_URL}/rest/v1/{TABLE}",
+                headers=service_headers(),
+                params={"select": SUMMARY_FIELDS, "or": database_filter(query), "limit": 1000},
+                timeout=(3.05, 10),
+            )
+            response.raise_for_status()
+            searched_sources = response.json()
+            _update_students_cache_many(searched_sources)
+            supplemental = filter_rows(_scope, [
+                _student_list_row(source) for source in searched_sources
+                if matches(source, query)
+            ])
+            existing_ids = {str(row.get("id")) for row in rows}
+            rows.extend(row for row in supplemental if str(row.get("id")) not in existing_ids)
+        if category == "formacao":
+            rows = [row for row in rows if not is_graduated(row)]
+        elif category == "graduados":
+            rows = [row for row in rows if is_graduated(row)]
+        for query_name, field in (
+            ("nivel", "nivel"), ("municipio", "municipio"),
+            ("comum", "comum_congregacao"), ("instrumento", "instrumento"),
+        ):
+            values = set(value.strip() for value in request.GET.getlist(query_name) if value.strip())
+            if values:
+                if field in {"nivel", "instrumento"}:
+                    normalized_values = {_norm(value) for value in values}
+                    rows = [row for row in rows if _norm(row.get(field)) in normalized_values]
+                else:
+                    rows = [row for row in rows if row.get(field) in values]
         if query:
-            from .gem_search import database_filter, terms
-            if terms(query):
-                params['and'] = database_filter(query)
-        response = requests.get(
-            f"{settings.SUPABASE_URL}/rest/v1/{TABLE}",
-            headers=service_headers("count=exact"), params=params, timeout=15,
-        )
-        response.raise_for_status()
-        sources = response.json()
+            rows = [row for row in rows if matches(row, query)]
+        rows.sort(key=lambda row: _norm(row.get("nome_aluno")))
+        total = len(rows)
+        start = (page_number - 1) * page_size
+        sources = rows[start:start + page_size]
         activity_dates = _fetch_last_activity_dates(source.get("id") for source in sources)
-        rows = []
-        for source in sources:
-            row = dict(source)
+        for row in sources:
             row["last_activity_at"] = activity_dates.get(str(row.get("id")))
             row.update(operational_activity_from_last_activity(row["last_activity_at"]))
-            row["comum"] = row.get("comum_congregacao")
-            row["cidade"] = row.get("municipio")
-            row["situacao_academica"] = academic_status(row)
-            row["programa_minimo_informado"] = row.get("programa_minimo_percentual") is not None
-            row["programa_minimo_percentual"] = _percent(row.get("programa_minimo_percentual"))
-            rows.append(row)
-        try:
-            total = int(response.headers.get("Content-Range", "0/0").rsplit("/", 1)[-1])
-        except ValueError:
-            total = len(rows)
         from .gem_darpe import enrich
-        darpe_available = enrich(rows)
+        darpe_available = enrich(sources)
         return JsonResponse({
-            "items": rows, 'darpe_disponivel': darpe_available,
+            "items": sources, 'darpe_disponivel': darpe_available,
             "pagination": {
                 "page": page_number,
                 "page_size": page_size,
@@ -730,9 +787,13 @@ def api_student_timeline(request, student_id):
         )
         exam_response.raise_for_status()
         exams = exam_response.json()
+        student['datas_exames'] = {}
         for exam in exams:
             stage = approved_stage(exam)
             if stage:
+                previous = student['datas_exames'].get(stage[1])
+                if not previous or exam['data_exame'] < previous:
+                    student['datas_exames'][stage[1]] = exam['data_exame']
                 datasets["atividades"].append({
                     "id": "exam-" + str(exam["id"]), "tipo_atividade": stage[1],
                     "titulo": exam["tipo_exame"], "data_atividade": exam["data_exame"],
@@ -794,6 +855,14 @@ def api_student_detail(request, student_id):
             cache.delete("gem:students:v7")
             return JsonResponse({"ok": True})
         raw = json.loads(request.body or "{}")
+        from .exam_import import read_date
+        historical_dates = {}
+        for field, kind in [('data_exame_rjm', 'RJM'), ('data_exame_culto', 'CULTO OFICIAL'), ('data_exame_oficializacao', 'OFICIALIZAÇÃO')]:
+            if raw.get(field):
+                parsed = read_date(raw[field])
+                if not parsed:
+                    return JsonResponse({'error': 'Data de exame inválida.'}, status=400)
+                historical_dates[kind] = parsed
         payload = {key: raw.get(key) for key in fields if key in raw}
         candidate = dict(current, **payload, comum=payload.get("comum_congregacao", current.get("comum_congregacao")), cidade=payload.get("municipio", current.get("municipio")))
         if not payload or not can_access(user_scope(request), candidate):
@@ -811,6 +880,30 @@ def api_student_detail(request, student_id):
             params={"id": f"eq.{student_id}"}, json=payload, timeout=15,
         )
         saved.raise_for_status()
+        if historical_dates:
+            from .music_exams import save_exam, sync_shared_exam, update_student_stage, idempotency_key, actor, approved_stage
+            candidate_student = dict(current, **payload)
+            for kind, exam_date in historical_dates.items():
+                exam = dict(aluno_id=str(student_id), nome_aluno=candidate_student.get('nome_aluno'),
+                            registro_msa=candidate_student.get('registro_msa'), municipio=candidate_student.get('municipio'),
+                            comum=candidate_student.get('comum_congregacao'), instrumento=candidate_student.get('instrumento'),
+                            categoria=candidate_student.get('cargo_ministerio'), tipo_exame=kind, data_exame=exam_date,
+                            resultado='APROVADO', origem='PAINEL', lancado_por=actor(request),
+                            observacoes='Data histórica de aprovação informada no cadastro do aluno.')
+                exam['chave_idempotencia'] = idempotency_key(exam)
+                # Preserve existing proof, agenda, result and audit attribution on retries.
+                existing_exam = requests.get(f"{settings.SUPABASE_URL}/rest/v1/musica_exames_individuais", headers=service_headers(),
+                                            params={'select': '*', 'chave_idempotencia': 'eq.' + exam['chave_idempotencia']}, timeout=15)
+                existing_exam.raise_for_status()
+                old = existing_exam.json()
+                if old and old[0].get('resultado') != 'APROVADO':
+                    return JsonResponse({'error': 'Cadastro atualizado. Existe exame nesta data com outro resultado; revise-o em Música > Exames.'}, status=409)
+                exam = old[0] if old else save_exam(exam)
+                sync_shared_exam(exam)
+                update_student_stage(candidate_student, exam)
+                stage = approved_stage(exam)
+                if stage and _milestones(candidate_student.get('nivel'))[stage[0]]['status'] == 'future':
+                    candidate_student['nivel'] = stage[2]
         if payload.get("nivel") and payload["nivel"] != current.get("nivel"):
             if milestone:
                 labels = {"ingresso_ensaio": "Ingresso no Ensaio", "ingresso_rjm": "Ingresso na RJM", "ingresso_culto": "Ingresso no Culto Oficial", "oficializacao": "Oficialização"}

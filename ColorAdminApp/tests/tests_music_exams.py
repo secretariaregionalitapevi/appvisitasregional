@@ -1,5 +1,5 @@
 import io
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import resolve
 from openpyxl import Workbook
@@ -66,15 +66,38 @@ class MusicExamsTests(SimpleTestCase):
         self.assertIn("Original", compatible["observacoes"])
         self.assertIn("ID: event", compatible["observacoes"])
 
+    @patch("ColorAdminApp.music_exams._update_students_cache")
+    @patch("ColorAdminApp.music_exams.requests.get")
     @patch("ColorAdminApp.music_exams.requests.patch")
-    def test_approved_exam_advances_level_preserving_rjm(self, update):
-        music_exams.update_student_stage(dict(self.student, nivel="RJM / CULTO OFICIAL"), {"tipo_exame": "OFICIALIZA\u00c7\u00c3O", "resultado": "APROVADO"})
+    def test_approved_exam_advances_level_preserving_rjm(self, update, get, cache):
+        current=Mock();current.json.return_value=[dict(self.student,nivel="RJM / ENSAIO")]
+        get.return_value=current
+        update.return_value.json.return_value=[dict(self.student,nivel="RJM / OFICIALIZADO(A)")]
+        music_exams.update_student_stage(dict(self.student, nivel="RJM / ENSAIO"), {"tipo_exame": "OFICIALIZA\u00c7\u00c3O", "resultado": "APROVADO"})
         self.assertEqual(update.call_args.kwargs["json"], {"nivel": "RJM / OFICIALIZADO(A)"})
         update.reset_mock()
         for result in ["AUSENTE", "RETORNOU AO CICLO"]:
             music_exams.update_student_stage(dict(self.student, nivel="RJM"), {"tipo_exame": "CULTO OFICIAL", "resultado": result})
         music_exams.update_student_stage(dict(self.student, nivel="OFICIALIZADO(A)"), {"tipo_exame": "RJM", "resultado": "APROVADO"})
         update.assert_not_called()
+
+    @patch("ColorAdminApp.music_exams._update_students_cache")
+    @patch("ColorAdminApp.music_exams.requests.get")
+    @patch("ColorAdminApp.music_exams.requests.patch")
+    def test_single_exam_promotion_uses_database_level_when_preview_is_stale(self, update, get, cache):
+        current=Mock();current.json.return_value=[dict(self.student,nivel="RJM / ENSAIO")]
+        get.return_value=current
+        saved=Mock();saved.json.return_value=[dict(self.student,nivel="CULTO OFICIAL")]
+        update.return_value=saved
+
+        music_exams.update_student_stage(
+            dict(self.student,nivel="RJM / ENSAIO"),
+            {"tipo_exame":"CULTO OFICIAL","resultado":"APROVADO"},
+        )
+
+        self.assertEqual(update.call_args.kwargs["params"]["nivel"],"eq.RJM / ENSAIO")
+        self.assertEqual(update.call_args.kwargs["json"],{"nivel":"CULTO OFICIAL"})
+        cache.assert_called_once_with(dict(self.student,nivel="CULTO OFICIAL"))
 
     @patch("ColorAdminApp.music_exams.update_student_stage")
     @patch("ColorAdminApp.music_exams.save_exam")
@@ -136,9 +159,9 @@ class MusicExamsTests(SimpleTestCase):
         exam = {"id": "one", "origem": "PAINEL", "municipio": "CAUCAIA DO ALTO", "categoria": "MUSICO", "tipo_exame": "OFICIALIZACAO", "resultado": "APROVADO"}
         groups, totals = music_exams.dashboard_summary(baseline, [exam, dict(exam), dict(exam, id="absent", resultado="AUSENTE"), dict(exam, id="import", origem="IMPORTACAO")])
         cotia = next(row for row in groups if row["grupo"] == "COTIA / CAUCAIA / VGP")
-        self.assertEqual(cotia["musicos_oficializacao"], 30)
-        self.assertEqual(totals["total"], 30)
-        self.assertEqual(totals["musicos_total"], 30)
+        self.assertEqual(cotia["musicos_oficializacao"], 31)
+        self.assertEqual(totals["total"], 31)
+        self.assertEqual(totals["musicos_total"], 31)
 
     def test_restores_agenda_date_and_title_from_saved_notes(self):
         row = music_exams.restore_agenda({"data_exame": "2026-09-19", "observacoes": "Agenda: Avaliacao de Musicos (Cotia) | 2026-09-19 09:30 | ID: abc123"})
@@ -246,9 +269,7 @@ class MusicExamsTests(SimpleTestCase):
     def test_agenda_notes_use_brazilian_dates_and_remove_duplicates(self):
         notes = "Minha observacao\nAgenda: Exame | 2026-09-19 09:30 | ID: abc123\nAgenda: Exame | 2026-09-19 09:30 | ID: abc123"
         restored = music_exams.restore_agenda({"observacoes": notes})
-        self.assertEqual(restored["observacoes"].count("Agenda:"), 1)
-        self.assertIn("19/09/2026 09:30", restored["observacoes"])
-        self.assertIn("Minha observacao", restored["observacoes"])
+        self.assertEqual(restored["observacoes"], "Minha observacao")
         self.assertEqual(restored["agenda_evento_data"], "2026-09-19")
         self.assertEqual(music_exams.restore_agenda(restored), restored)
 
