@@ -475,6 +475,10 @@ def document(request,record_id):
     except requests.RequestException:return JsonResponse({"error":"Não foi possível abrir o documento."},status=502)
 def export_excel(request):
     if not can_open_module(request):return denied()
+    from .exam_exports import report_year
+    from django.utils import timezone
+    from openpyxl.worksheet.page import PageMargins
+    now = timezone.localtime()
     all_items=fetch_rows(request,apply_filters=False)
     items=history_rows(request, [row for row in all_items if matches_filters(row,query_filters(request))])
     individual_ids={str(row['id']) for row in all_items}
@@ -482,10 +486,20 @@ def export_excel(request):
     wb=Workbook();ws=wb.active;ws.title="Resumo Regional"
     def title(sheet,last_col,report):
         sheet.merge_cells(start_row=1,start_column=1,end_row=1,end_column=last_col);sheet["A1"]="CONGREGAÇÃO CRISTÃ NO BRASIL";sheet["A1"].font=Font(bold=True,color="FFFFFF",size=15);sheet["A1"].fill=PatternFill("solid",fgColor="1E4B7A");sheet["A1"].alignment=Alignment(horizontal="center")
-        for row,text in ((2,"Regional Itapevi - São Paulo · MÚSICA"),(3,report),(4,f"Emissão: {datetime.now():%d/%m/%Y %H:%M} · Responsável: {actor(request)}")):sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=last_col);sheet.cell(row,1,text)
+        for row,text in ((2,"Regional Itapevi - São Paulo · MÚSICA"),(3,report),(4,f"Emissão: {now:%d/%m/%Y %H:%M} · Responsável: Secretaria Regional da Música")):
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=last_col)
+            cell=sheet.cell(row,1,text)
+            cell.font=Font(size=11 if row==3 else 9,bold=row==3,color="1E4B7A")
+            cell.alignment=Alignment(horizontal="center",vertical="center")
+        sheet.row_dimensions[1].height=24
+        sheet.row_dimensions[2].height=18
+        sheet.row_dimensions[3].height=20
+        sheet.row_dimensions[4].height=18
         sheet.merge_cells(start_row=5,start_column=1,end_row=5,end_column=last_col)
-        sheet.cell(5,1,export_context(request)).alignment = Alignment(wrap_text=True)
-        sheet.row_dimensions[5].height = 30
+        sheet.cell(5,1,export_context(request)).alignment = Alignment(vertical="center",shrink_to_fit=True)
+        sheet.cell(5,1).font=Font(size=9,color="1E4B7A")
+        sheet.cell(5,1).fill=PatternFill("solid",fgColor="EAF2F8")
+        sheet.row_dimensions[5].height = 18
     title(ws,9,"Relatório consolidado de Exames e Testes")
     headers=["REGIÃO","Músicos · Culto Oficial","Músicos · Oficialização","Músicos · Troca Instrumento","Organistas · RJM","Organistas · Culto Oficial","Organistas · Oficialização","Organistas · Teste Especial","TOTAL GERAL"]
     for column,value in enumerate(headers,1):cell=ws.cell(6,column,value);cell.font=Font(bold=True,color="FFFFFF");cell.fill=PatternFill("solid",fgColor="1E4B7A");cell.alignment=Alignment(horizontal="center",wrap_text=True)
@@ -499,17 +513,35 @@ def export_excel(request):
     for column,value in enumerate(detail_headers,1):cell=detail.cell(6,column,value);cell.font=Font(bold=True,color="FFFFFF");cell.fill=PatternFill("solid",fgColor="1E4B7A");cell.alignment=Alignment(horizontal="center")
     for index,item in enumerate(items,1):
         exam_date=datetime.strptime(item["data_exame"],"%Y-%m-%d").strftime("%d/%m/%Y") if item.get("data_exame") else "—"
-        for column,value in enumerate([index,item.get("nome_aluno"),item.get("registro_msa"),item.get("municipio"),item.get("comum"),item.get("instrumento"),item.get("tipo_exame"),exam_date,result_label(item),"Sim" if item.get("prova_url") else "Não"],1):detail.cell(6+index,column,value)
-    for index,width in enumerate([6,30,14,18,34,20,28,13,20,12],1):detail.column_dimensions[chr(64+index)].width=width
+        for column,value in enumerate([index,item.get("nome_aluno"),item.get("registro_msa"),item.get("municipio"),item.get("comum"),item.get("instrumento"),item.get("tipo_exame"),exam_date,result_label(item),"Sim" if item.get("prova_url") else "Não"],1):
+            cell=detail.cell(6+index,column,value)
+            cell.font=Font(size=10,color="263238")
+            cell.alignment=Alignment(vertical="center",wrap_text=False,shrink_to_fit=True)
+            if index%2==0:cell.fill=PatternFill("solid",fgColor="F4F6F8")
+        result_cell=detail.cell(6+index,9)
+        result_cell.alignment=Alignment(horizontal="center",vertical="center",wrap_text=False,shrink_to_fit=True)
+        if norm(result_cell.value) in {"APROVADO","APROVADA"}:
+            result_cell.font=Font(size=10,bold=True,color="087A58")
+        detail.row_dimensions[6+index].height=20
+    for index,width in enumerate([6,42,14,23,58,18,25,14,20,12],1):detail.column_dimensions[chr(64+index)].width=width
     detail.freeze_panes="A7";detail.auto_filter.ref=f"A6:J{6+len(items)}";detail.sheet_view.showGridLines=False;detail.page_setup.orientation="landscape";detail.page_setup.fitToWidth=1
     for sheet in wb:
         sheet.print_title_rows = '1:6'
         sheet.sheet_properties.pageSetUpPr.fitToPage = True
         sheet.page_setup.fitToHeight = 0
+        sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+        sheet.page_margins = PageMargins(left=.3,right=.3,top=.3,bottom=.45,header=.1,footer=.2)
         sheet.print_area = sheet.dimensions
     if request.GET.get('historico'):
         wb.remove(ws)
-    stream=io.BytesIO();workbook_identity(wb, actor(request));wb.save(stream);stamp=datetime.now().strftime("%d_%m_%Y_%H_%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response
+    workbook_identity(wb, actor(request))
+    for sheet in wb:
+        for footer in (sheet.oddFooter,sheet.evenFooter,sheet.firstFooter):
+            footer.left.text=f'Exames - Regional Itapevi - {report_year(request,items)}'
+            footer.left.size=8
+            footer.left.color='1E4B7A'
+            footer.right.text+=' - Página &P'
+    stream=io.BytesIO();wb.save(stream);stamp=now.strftime("%d_%m_%Y_%H_%M");response=HttpResponse(stream.getvalue(),content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");response["Content-Disposition"]=f'attachment; filename="Exames_GEM_{stamp}.xlsx"';return response
 
 
 def export_pdf(request):
