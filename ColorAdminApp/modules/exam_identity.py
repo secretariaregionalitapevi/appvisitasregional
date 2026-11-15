@@ -69,9 +69,12 @@ def new_student_plan(row, choice, request, catalog):
         raise ValueError('Informe categoria e instrumento do novo aluno.')
     student_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'ccb-exam-student:' + code + ':' + name_key(name)))
     # Missing personal information and consent are never invented.
-    return dict(id=student_id, nome_aluno=name, comum_congregacao=common, municipio=city,
+    plan = dict(id=student_id, nome_aluno=name, comum_congregacao=common, municipio=city,
                 cargo_ministerio=category, instrumento=instrument, nivel='CANDIDATO(A)',
                 lancado_por=exams.actor(request), consentimento_lgpd=False)
+    if row.get('tonalidade') and instrument == row.get('instrumento'):
+        plan['tonalidade'] = row['tonalidade']
+    return plan
 
 
 def save_identity(student, row, choice, creating=False, update_cache=True):

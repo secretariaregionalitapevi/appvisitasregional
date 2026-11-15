@@ -19,7 +19,7 @@ def physical_closings(events, records, sites):
     result = []
     for (day, city), rows in groups.items():
         counts = Counter(row['categoria'] for row in rows)
-        result.append({'date': day, 'city': city, 'musicians': counts['MUSICO'], 'organists': counts['ORGANISTA'],
+        result.append({'date': day, 'city': city, 'musicians': counts['MUSICO'], 'organists': counts['ORGANISTA'], 'brethren': counts['IRMANDADE'],
                        'total': len(rows), 'instruments': dict(Counter(row.get('instrumento') or 'NÃO INFORMADO' for row in rows if row['categoria'] == 'MUSICO')),
                        'roles': dict(Counter(row['cargo'] for row in rows if row.get('cargo'))),
                        'source_label': 'LISTA NOMINAL IMPORTADA - PÚBLICO DO LOCAL, TODAS AS ORIGENS'})

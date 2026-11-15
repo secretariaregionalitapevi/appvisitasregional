@@ -1,7 +1,7 @@
 """Página operacional dos ensaios e RTs, sobre a migração 029."""
 import json
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from uuid import uuid4
@@ -15,9 +15,10 @@ from django.views.decorators.http import require_http_methods
 
 from .access_control import can_access, service_headers, user_scope, common_catalog, scope_details
 from .gem import can_open_module
-from .music_events_import import parse_workbook, norm
+from .music_events_import import is_local_conductor_role, parse_workbook, person_names, norm
 from .music_events_dashboard import aggregate, code, REGIONAL, regional_city
 from .music_events_identity import CommonResolver
+from ColorAdminApp.utils.supabase_http import supabase_get
 
 
 def _allowed(request):
@@ -29,9 +30,10 @@ def _read(table, **params):
     # Reutiliza TLS/conexão entre páginas da mesma consulta.
     with requests.Session() as client:
         while True:
-            response = client.get(
+            response = supabase_get(
                 f'{settings.SUPABASE_URL}/rest/v1/{table}', headers=service_headers(),
                 params={'select': '*', **params, 'offset': len(rows), 'limit': 1000}, timeout=(3.05, 15),
+                session=client,
             )
             response.raise_for_status()
             batch = response.json()
@@ -46,6 +48,16 @@ def _registry():
         registry = _read('musica_acompanhamento_aluno', select='id,nome_aluno,cargo_ministerio,status,nivel,instrumento,comum_congregacao,municipio,updated_at', order='id.asc')
         cache.set('music-events:registry:v2', registry, 300)
     return registry
+
+
+def _sam_registry():
+    rows=cache.get('music-events:sam-source:v1')
+    if rows is None:
+        rows=_read('sam_student_sync_state',
+            select='source_key,aluno_id,source_common,source_instrument,source_level,source_payload,last_seen_at',
+            missing_since='is.null',order='source_key.asc')
+        cache.set('music-events:sam-source:v1',rows,60)
+    return rows
 
 
 def _transitions():
@@ -74,6 +86,13 @@ def _reviews(events):
             if exc.response is not None and exc.response.status_code == 404:
                 return [], False
             raise
+    from .music_events_justifications import display_note
+    from .music_events_justifications import metadata
+    for review in reviews:
+        info=metadata(review.get('observacoes'))
+        if not review.get('encarregado_nome'):
+            review['encarregado_nome']=info.get('nome','')
+        review['observacoes'] = display_note(review.get('observacoes'))
     return reviews, True
 
 
@@ -279,6 +298,7 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     if filters['origem'] not in {'regional','visitantes','todos'}:
         raise ValueError('Origem inválida.')
     chosen = aggregate(events,[],[],[],filters)['events']
+    sam_filters={**filters,'municipios':list(filters['municipios']),'comuns':list(filters['comuns'])}
     # Sem recorte manual, um ensaio regular acompanha somente os municípios do ciclo.
     if chosen and not filters['municipios'] and filters['origem'] == 'regional':
         from .music_events_calendar import regular_destinations
@@ -295,8 +315,10 @@ def dashboard_data(request, *, include_history=True, history_only=False):
         catalog_future = executor.submit(common_catalog) if chosen or history_events else None
         if not history_only:
             registry_future = executor.submit(_registry)
+            sam_registry_future = executor.submit(_sam_registry)
             leaders_future = executor.submit(_leaders)
             reviews_future = executor.submit(_reviews, chosen)
+            transitions_future = executor.submit(_transitions)
         pending = []
         for start in range(0,len(history_events),40):
             batch = history_events[start:start+40]
@@ -311,8 +333,10 @@ def dashboard_data(request, *, include_history=True, history_only=False):
         catalog = catalog_future.result() if catalog_future else []
         if not history_only:
             registry = registry_future.result()
+            sam_states = sam_registry_future.result()
             members = leaders_future.result()
             reviews, review_available = reviews_future.result()
+            transitions = transitions_future.result()
     scope = user_scope(request)
     from .music_events_calendar import validated_sites
     locations = validated_sites(events, locations)
@@ -341,35 +365,47 @@ def dashboard_data(request, *, include_history=True, history_only=False):
         from .music_events_closing import physical_closings
         result['physical_closings'] = physical_closings(result['events'], records, locations)
     from .music_events_registry import attach_registry
+    from .music_sam_population import current_sam_people
+    sam_people=current_sam_people(sam_states,registry,catalog)
     if scope['level'] not in {'regional','global'}:
         registry=[r for r in registry if permitted({'comum_codigo':r.get('comum_congregacao'),'municipio_informado':r.get('municipio')})]
-    attach_registry(result,registry,catalog,include_zero=True)
+        sam_people=[r for r in sam_people if permitted({'comum_codigo':r.get('comum_congregacao'),'municipio_informado':r.get('municipio')})]
+    attach_registry(result,sam_people,catalog,include_zero=True)
+    from .music_events_participation import participation
+    result['sam_participation'] = participation({**result,'filters':sam_filters}, sam_people, records,
+        [common for common in catalog if can_access(scope, common)])
     from .music_events_conductors import summarize
     if scope['level'] not in {'regional','global'}:
         reviews=[r for r in reviews if permitted({'comum_codigo':r['comum_chave'],'municipio_informado':r['municipio']})]
-    result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry,transitions=_transitions())
+    result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry,transitions=transitions)
     from .music_events_leaders import attach_leaders
     if scope['level'] not in {'regional','global'}:
         members=[r for r in members if permitted({'comum_codigo':r.get('codigo_comum') or r.get('comum'),'municipio_informado':r.get('cidade')})]
     attach_leaders(result,registry,catalog,members)
     result['conductors']['available']=review_available
-    result['conductors']['catalog']=[{'key':code(x['comum']),'name':x['comum'],'city':x['cidade']}
-        for x in catalog if norm(x.get('cidade')) in {norm(c) for c in REGIONAL}
-        and can_access(scope,x)
-        and (not filters['municipios'] or norm(regional_city(x['cidade'])) in {norm(regional_city(c)) for c in filters['municipios']})
-        and (not filters['comuns'] or code(x['comum']) in filters['comuns'])]
+    resolver=CommonResolver(catalog)
+    leaders_by_common=defaultdict(set)
+    for people,name_field,role_field,common_field,code_field,city_field in [
+        (registry,'nome_aluno','cargo_ministerio','comum_congregacao','codigo_comum','municipio'),
+        (members,'nome','cargo_outros','comum','codigo_comum','cidade')]:
+        for person in people:
+            if not is_local_conductor_role(person.get(role_field)) or norm(person.get('status')) in {'INATIVO','EXCLUIR'}:
+                continue
+            common=resolver.resolve(person.get(code_field) or person.get(common_field),
+                                    person.get(city_field) or person.get('municipio'))
+            if common:
+                leaders_by_common[code(common['comum'])].update(person_names(person.get(name_field)))
+    result['conductors']['catalog']=[
+        {'key':code(common['comum']),'name':common['comum'],'city':common['cidade'],
+         'encarregados':sorted(leaders_by_common.get(code(common['comum']),set()),key=norm)}
+        for common in catalog if norm(common.get('cidade')) in {norm(c) for c in REGIONAL}
+        and can_access(scope,common)
+        and (not filters['municipios'] or norm(regional_city(common['cidade'])) in {norm(regional_city(c)) for c in filters['municipios']})
+        and (not filters['comuns'] or code(common['comum']) in filters['comuns'])]
     result['conductors']['sites']=[{'id':x['id'],'evento_id':x['evento_id'],'nome':x['nome']} for x in locations if x['evento_id'] in {e['id'] for e in chosen}]
     if len(chosen)==1:
-        by_key={r['comum_chave']:r for r in result['conductors']['rows']}
-        for row in result['rows']:
-            entry=by_key.get(code(row['comum']))
-            if entry:
-                row['encarregado']=entry['registro']
-                row['encarregado_na_lista']=entry['consta_lista']
-                row['encarregado_status']=entry['presenca_situacao']
-                row['encarregado_situacao']=entry['situacao']
-                row['encarregado_local']=' / '.join(entry.get('locais_validos',[]))
-                row['encarregado_situacao_label']=entry['presenca_lista_label']
+        from .music_events_conductors import attach_common_attendance
+        attach_common_attendance(result)
     elif len(chosen)>1:
         for row in result['rows']:row['encarregado']='Ver conferência por evento'
     from .music_events_evolution import evolution
@@ -399,6 +435,41 @@ def api_conductor(request,event_id):
         scope=user_scope(request)
         if not common or not (can_access(scope,common) or (scope['level']=='local' and code(scope.get('comum'))==key)):
             return JsonResponse({'error':'Comum não identificada ou fora do seu escopo.'},status=403)
+        person_name=str(raw.get('encarregado_nome') or '').strip()
+        explicit_person_name=bool(person_name)
+        from .music_events_justifications import metadata, pack_metadata
+        existing_rows=_read('musica_evento_encarregados',evento_id=f'eq.{event_id}',comum_chave='eq.'+key)
+        if not person_name and len(existing_rows)==1:
+            person_name=str(existing_rows[0].get('encarregado_nome')
+                            or metadata(existing_rows[0].get('observacoes')).get('nome') or '').strip()
+        elif not person_name and len(existing_rows)>1:
+            raise ValueError('Selecione qual encarregado terá a situação alterada.')
+        if not person_name and not existing_rows and raw.get('situacao') not in {'SEM_ENCARREGADO','NAO_INFORMADO'}:
+            raise ValueError('Selecione o encarregado que terá a situação registrada.')
+        if explicit_person_name:
+            stored_name=next((str(row.get('encarregado_nome')
+                                  or metadata(row.get('observacoes')).get('nome') or '').strip()
+                              for row in existing_rows
+                              if norm(row.get('encarregado_nome')
+                                      or metadata(row.get('observacoes')).get('nome'))==norm(person_name)),None)
+            if stored_name is not None:
+                person_name=stored_name
+            else:
+                resolver=CommonResolver(common_catalog())
+                registered_people=_registry()+[
+                    {**person,'nome_aluno':person.get('nome'),'cargo_ministerio':person.get('cargo_outros'),
+                     'comum_congregacao':person.get('codigo_comum') or person.get('comum'),
+                     'municipio':person.get('cidade')}
+                    for person in _leaders()]
+                registered=[name for person in registered_people
+                            if is_local_conductor_role(person.get('cargo_ministerio'))
+                            and norm(person.get('status')) not in {'INATIVO','EXCLUIR'}
+                            and resolver.resolve(person.get('comum_congregacao'),person.get('municipio'))==common
+                            for name in person_names(person.get('nome_aluno')) if norm(name)==norm(person_name)]
+                names=set(registered)
+                if len(names)!=1:
+                    raise ValueError('Selecione um encarregado local ativo e cadastrado nesta comum.')
+                person_name=next(iter(names))
         status=raw.get('situacao');notes=str(raw.get('observacoes') or '').strip()
         if len(notes)>500:raise ValueError('Use até 500 caracteres na observação.')
         if status not in LABELS:raise ValueError('Situação inválida.')
@@ -413,8 +484,18 @@ def api_conductor(request,event_id):
         profile=request.session.get('user_profile') or {};actor_id=request.session.get('user_id') or profile.get('user_id')
         actor=profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email')
         if not actor_id or not actor:return JsonResponse({'error':'Entre novamente para identificar o responsável.'},status=401)
-        existing=_read('musica_evento_encarregados',evento_id=f'eq.{event_id}',comum_chave='eq.'+key)
-        payload={'municipio':common['cidade'],'comum_nome':common['comum'],'situacao':status,'local_id':local,
+        existing=[row for row in existing_rows
+                  if norm(row.get('encarregado_nome') or metadata(row.get('observacoes')).get('nome'))==norm(person_name)]
+        imported = getattr(request, '_justification_metadata', None)
+        prior_metadata = metadata(existing[0].get('observacoes')) if existing else {}
+        if status == 'JUSTIFICOU' and imported:
+            if person_name:
+                imported['nome'] = person_name
+            notes = pack_metadata(imported)
+        elif status == 'JUSTIFICOU' and prior_metadata and not prior_metadata.get('excluida'):
+            notes = pack_metadata({**prior_metadata, 'motivo': notes})
+        payload={'municipio':common['cidade'],'comum_nome':common['comum'],'encarregado_nome':person_name,
+                 'situacao':status,'local_id':local,
                  'observacoes':notes,'updated_by_user_id':str(actor_id),'updated_by_name':actor}
         params=None
         if existing:method=requests.patch;params={'id':'eq.'+existing[0]['id']}
@@ -423,7 +504,7 @@ def api_conductor(request,event_id):
         response=method(f'{settings.SUPABASE_URL}/rest/v1/musica_evento_encarregados',headers=service_headers('return=representation'),json=payload,params=params,timeout=15)
         response.raise_for_status();_invalidate_annual();return JsonResponse({'item':response.json()[0]})
     except (ValueError,TypeError) as exc:return JsonResponse({'error':str(exc)},status=400)
-    except requests.RequestException:return JsonResponse({'error':'Não foi possível salvar. Confira a conexão e aplique a migração 031 para habilitar a conferência dos encarregados.'},status=502)
+    except requests.RequestException:return JsonResponse({'error':'Não foi possível salvar. Confira a conexão e aplique a migração 056 para habilitar as conferências individuais dos encarregados.'},status=502)
 
 
 @require_http_methods(['GET'])
@@ -454,6 +535,7 @@ def _annual_sources(year):
     records, sites, invitations = [], [], []
     with ThreadPoolExecutor(max_workers=8) as executor:
         registry_future = executor.submit(_registry)
+        sam_registry_future = executor.submit(_sam_registry)
         leaders_future = executor.submit(_leaders)
         transitions_future = executor.submit(_transitions)
         catalog_future = executor.submit(common_catalog)
@@ -472,8 +554,11 @@ def _annual_sources(year):
         for target, future in pending:
             target.extend(future.result())
         reviews, available = review_future.result()
-        return {'events': events, 'records': records, 'sites': sites, 'registry': registry_future.result(),
-                'catalog': catalog_future.result(), 'reviews': reviews, 'members': leaders_future.result(),
+        from .music_sam_population import current_sam_people
+        registry=registry_future.result();catalog=catalog_future.result()
+        return {'events': events, 'records': records, 'sites': sites, 'registry': registry,
+                'reference_people':current_sam_people(sam_registry_future.result(),registry,catalog),
+                'catalog': catalog, 'reviews': reviews, 'members': leaders_future.result(),
                 'invitations': invitations, 'review_available': available, 'transitions': transitions_future.result()}
 
 
@@ -491,7 +576,7 @@ def annual_dashboard_data(request):
     if status and status not in {'no_participation', 'no_musicians', 'no_organists', 'no_leader'}:
         raise ValueError('Filtro de acompanhamento inválido.')
     generation = cache.get('music-events:annual-generation', '0')
-    key = f'music-events:annual-sources:v1:{year}:{generation}'
+    key = f'music-events:annual-sources:v2:{year}:{generation}'
     sources = None if request.GET.get('atualizar') == '1' else cache.get(key)
     if sources is None:
         sources = _annual_sources(year)
@@ -537,7 +622,9 @@ def export_dashboard(request, file_format):
         return JsonResponse({'error':'Formato inválido.'},status=404)
     try:
         from .music_events_reports import export_response
-        data = dashboard_data(request)
+        data = dashboard_data(request, include_history=request.GET.get('relatorio') == 'executivo')
+        if request.GET.get('relatorio') == 'participacao':
+            data={**data,'filters':data.get('sam_participation',{}).get('scope_filters',data['filters'])}
         if request.GET.get('relatorio') == 'geral':
             if not data.get('attendance_overview'):
                 return JsonResponse({'error': 'Relatório global restrito à administração regional.'}, status=403)

@@ -53,6 +53,9 @@
       }))
     }));
   }
+  function sessionKey(row) {
+    return JSON.stringify([administration(row.municipio), category(row), String(row.data_exame || '').slice(0, 10)]);
+  }
   function page(rows, number, size = 10) {
     const pages = Math.max(1, Math.ceil(rows.length / size));
     number = Math.min(pages, Math.max(1, Number(number) || 1));
@@ -61,5 +64,5 @@
   function notes(value) {
     return String(value || '').split('\n').filter(line => !/^(Importado de:|Data confirmada pelo solicitante:|Nome anterior no cadastro:|Nome no documento:)/i.test(line.trim()) && !/^Agenda: .* \| (\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}) .* \| ID: [a-f0-9]+\s*$/i.test(line.trim())).join('\n').trim();
   }
-  root.ExamHistory = {administration, category, resultLabel, stage, levels, group, page, notes};
+  root.ExamHistory = {administration, category, resultLabel, stage, levels, group, sessionKey, page, notes};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -223,8 +223,8 @@
             <div class="col-12 col-xl-5 ms-xl-auto">
                 <div class="filter-actions">
                     <button class="btn btn-white border-gray-400 px-3" onclick="loadContent()"><i class="fa fa-sync-alt text-primary me-1"></i> Atualizar</button>
-                    <button class="btn btn-white border-gray-400 px-3" onclick="exportExcel()"><i class="fa fa-file-excel text-success me-1"></i> Excel</button>
-                    <button class="btn btn-white border-gray-400 px-3" onclick="exportPDF()"><i class="fa fa-file-pdf text-danger me-1"></i> PDF</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="AppExport.run(this, exportExcel)"><i class="fa fa-file-excel text-success me-1"></i> Excel</button>
+                    <button class="btn btn-white border-gray-400 px-3" onclick="AppExport.run(this, exportPDF)"><i class="fa fa-file-pdf text-danger me-1"></i> PDF</button>
                     <button class="btn btn-white border-gray-400 px-3" onclick="importCSV()"><i class="fa fa-upload text-indigo me-1"></i> Importar</button>
                     <input type="file" id="import-file" class="d-none" accept=".xlsx,.xls,.csv" onchange="processImport(this.files[0])">
                     <button class="btn btn-white border-gray-400 px-3" onclick="location.reload()"><i class="fa fa-eraser text-dark me-1"></i> Limpar</button>
@@ -658,7 +658,6 @@
             ];
 
             try {
-                Swal.fire({title: 'Preparando Excel...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
                 const records = await getAllExportRecords();
                 rows[8] = EXPORT_COLUMNS.map(([, label]) => label);
                 records.forEach(item => rows.push(EXPORT_COLUMNS.map(([key]) => item[key] ?? '')));
@@ -683,9 +682,8 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Irmandade");
             XLSX.writeFile(wb, "Cadastro_Irmandade.xlsx");
-                Swal.close();
             } catch (error) {
-                Swal.fire('Erro na exportação', error.message, 'error');
+                throw error;
             }
         };
 
@@ -726,12 +724,10 @@
             doc.setTextColor(100, 100, 100);
             doc.text(`${moment().format('DD/MM/YYYY')} às ${moment().format('HH:mm')}`, pageWidth - 14, 29, { align: 'right' });
 
-            Swal.fire({title: 'Preparando PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
             let pdfRecords;
             try { pdfRecords = await getAllExportRecords(); } catch (error) {
-                return Swal.fire('Erro na exportação', error.message, 'error');
+                throw error;
             }
-            Swal.close();
             const headers = [["Membro", "Comum", "Cargo / Ministério", "Celular", "Última visita", "Status"]];
             const tableData = pdfRecords.map(i => [
                 i.nome,

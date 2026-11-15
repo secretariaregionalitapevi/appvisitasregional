@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from django.core.cache import cache
 from django.test import RequestFactory, SimpleTestCase, override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook
 
 from ColorAdminApp.modules.music_events_import import parse_workbook
@@ -42,12 +43,52 @@ class AppContParserTests(SimpleTestCase):
         self.assertEqual(parsed['categories'], {'MUSICO': 1})
         self.assertEqual(parsed['records'][0]['data_hora_original'], '2026-09-20T08:30:00')
 
-    def test_same_uuid_at_different_location_is_blocked(self):
+    def test_same_person_uuid_with_corrected_location_keeps_only_last(self):
         row = self.row()
         other = row[:]
         other[8] = 'PIRAPORA'
-        with self.assertRaisesRegex(ValueError, 'local diferente'):
-            parse_workbook(self.workbook([row,other]))
+        parsed = parse_workbook(self.workbook([row, other]))
+        self.assertEqual(parsed['count'], 1)
+        self.assertEqual(parsed['duplicates'], 1)
+        self.assertEqual(parsed['records'][0]['local'], 'PIRAPORA')
+        self.assertEqual(parsed['locations'], {'PIRAPORA': 1})
+        self.assertEqual(parsed['conflicting_duplicates'], 0)
+
+    def test_multiple_repetitions_keep_one_person_and_correct_totals(self):
+        row = self.row()
+        changed = row[:]; changed[8] = 'PIRAPORA'
+        final = changed[:]; final[5] = 'OFICIALIZADO'
+        parsed = parse_workbook(self.workbook([row, changed, final, self.row(name='Outra pessoa')]))
+        self.assertEqual(parsed['count'], 2)
+        self.assertEqual(parsed['duplicates'], 2)
+        self.assertEqual(sum(parsed['locations'].values()), 2)
+        self.assertEqual(parsed['categories'], {'MUSICO': 2})
+        self.assertEqual(parsed['records'][0]['nivel'], 'OFICIALIZADO')
+
+    def test_conflicting_uuid_is_separated_without_blocking_other_people(self):
+        row = self.row()
+        for column, value in [(1, 'Outra identidade'), (2, 'BR-22-2 - Outra comum'), (3, 'COTIA')]:
+            changed = row[:]; changed[column] = value
+            parsed = parse_workbook(self.workbook([row, changed, self.row(name='Pessoa válida')]))
+            self.assertEqual(parsed['count'], 1)
+            self.assertEqual(parsed['records'][0]['nome'], 'Pessoa válida')
+            self.assertEqual(parsed['conflicting_duplicates'], 1)
+            self.assertEqual(parsed['excluded_conflict_rows'], 2)
+            self.assertEqual(parsed['duplicate_conflicts'][0]['linhas'], [2, 3])
+
+    def test_identity_conflict_is_not_hidden_by_third_repetition(self):
+        row = self.row(); changed = row[:]; changed[1] = 'Pessoa diferente'
+        parsed = parse_workbook(self.workbook([row, changed, row, self.row(name='Pessoa válida')]))
+        self.assertEqual(parsed['count'], 1)
+        self.assertEqual(parsed['conflicting_duplicates'], 1)
+        self.assertEqual(parsed['excluded_conflict_rows'], 3)
+
+    def test_name_accents_case_and_common_description_do_not_duplicate_person(self):
+        row = self.row(name='José da Silva')
+        changed = row[:]; changed[1] = ' JOSE DA SILVA '; changed[2] = 'BR-22-1 - Descrição atualizada'
+        parsed = parse_workbook(self.workbook([row, changed]))
+        self.assertEqual(parsed['count'], 1)
+        self.assertEqual(parsed['conflicting_duplicates'], 0)
 
     def test_same_name_different_uuid_is_not_silently_removed(self):
         result = parse_workbook(self.workbook([self.row(),self.row()]))
@@ -82,6 +123,28 @@ class AppContApiTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
         cache.set('music-events-import:actor-1:token-1',{'sha256':'a'*64,'records':[{'nome':'Teste','local':'ITAPEVI'}]},1800)
+
+    @patch.object(music_events,'_allowed',return_value=True)
+    @patch.object(music_events,'user_scope',return_value={'level':'global'})
+    @patch.object(music_events.requests,'post')
+    def test_duplicate_with_corrected_destination_reaches_rpc_only_once(self, post, scope, allowed):
+        helper = AppContParserTests()
+        row = helper.row(); row[9] = datetime(2026, 11, 15, 9)
+        corrected = row[:]; corrected[8] = 'CAUCAIA DO ALTO'
+        request = RequestFactory().post('/', {'arquivo': SimpleUploadedFile('dados.xlsx', helper.workbook([row, corrected]))})
+        request.session = self.request({}).session
+        preview = music_events.api_import(request, 'previa')
+        self.assertEqual(preview.status_code, 200)
+        data = json.loads(preview.content)
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['duplicates'], 1)
+        post.return_value.json.return_value = {'evento_id': 'event', 'quantidade': 1}
+        response = music_events.api_import(self.request({'token': data['token'], 'titulo': 'Ensaio novembro',
+            'data_evento': '2026-11-15', 'tipo': 'ENSAIO_REGIONAL', 'conferido': True}), 'confirmar')
+        self.assertEqual(response.status_code, 200)
+        sent = post.call_args.kwargs['json']['p_registros']
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['local'], 'CAUCAIA DO ALTO')
 
     @patch.object(music_events,'_allowed',return_value=True)
     @patch.object(music_events,'user_scope',return_value={'level':'global'})

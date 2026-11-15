@@ -105,7 +105,8 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
                 'candidatos':0,'cargos':{},'musicos_outro_local':0,'organistas_outro_local':0,
                 '_locais_referencia':set(),'_locais_outros':set()}
     def increment(target, row):
-        target[row['categoria']] += 1
+        if not (candidate_level(row.get('nivel')) and row['categoria'] in {'MUSICO','ORGANISTA'}):
+            target[row['categoria']] += 1
         target['total'] += 1
         if row.get('cargo'):
             target['cargos'][row['cargo']] = target['cargos'].get(row['cargo'],0)+1
@@ -115,6 +116,9 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
         if profile == 'INSTRUTOR': target['instrutores'] += 1
         if profile == 'INSTRUTORA': target['instrutoras'] += 1
         if candidate_level(row.get('nivel')): target['candidatos'] += 1
+        if candidate_level(row.get('nivel')) and row['categoria'] in {'MUSICO','ORGANISTA'}:
+            field='candidatos_musicos' if row['categoria']=='MUSICO' else 'candidatas_organistas'
+            target[field]=target.get(field,0)+1
         reference_id=reference_site.get((row['evento_id'],row['common_key']))
         if reference_id:
             target['_locais_referencia'].add(site.get(reference_id,{}).get('nome') or 'Não informado')
@@ -129,10 +133,10 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
         increment(municipal.setdefault(row['city'],empty(city=row['city'])),row)
         increment(local_counts.setdefault(row['local_id'],{**empty(), 'nome':row['local']}),row)
         roles[row.get('cargo') or 'Não informado'] += 1
-        if row['categoria'] in {'MUSICO','ORGANISTA'}:
+        if row['categoria'] in {'MUSICO','ORGANISTA'} and not candidate_level(row.get('nivel')):
             instruments['Organistas' if row['categoria']=='ORGANISTA' else row.get('instrumento') or 'Não informado'] += 1
             families[row.get('familia') or 'OUTROS'] += 1
-        if row['categoria']=='MUSICO':
+        if row['categoria']=='MUSICO' and not candidate_level(row.get('nivel')):
             musician_families[row.get('familia') or 'OUTROS'] += 1
     # Para múltiplos eventos: soma de oportunidades de presença, nunca pessoas únicas no período.
     eligible_by_id = {(x['evento_id'],str(x['sam_pessoa_id'])): x for x in eligible}
@@ -170,7 +174,7 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
                 group['percentual_'+field]=round(100*group.get('_'+field+'_elegiveis',0)/denominator,2) if denominator else None
             base_m += group['musicos_base'] or 0; base_o += group['organistas_base'] or 0
             present_m += group.get('_musicos_elegiveis',0); present_o += group.get('_organistas_elegiveis',0)
-    totals = Counter(x['categoria'] for x in rows)
+    totals = Counter(x['categoria'] for x in rows if not (candidate_level(x.get('nivel')) and x['categoria'] in {'MUSICO','ORGANISTA'}))
     totals.update({'total':len(rows),'eventos':len(chosen),'comuns':len(groups),
                    'locais':len(local_counts),'municipios':len(municipal)})
     totals['encarregados'] = sum(norm(x.get('cargo'))=='ENCARREGADO LOCAL' for x in rows)

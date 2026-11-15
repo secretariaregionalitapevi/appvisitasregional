@@ -1,4 +1,5 @@
 import io
+import json
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase
@@ -29,6 +30,34 @@ class ExamExportTests(SimpleTestCase):
         self.assertNotIn('Evento da agenda', text)
         self.assertNotIn('EVENTO NÃO DEVE SER EXPORTADO', text)
         self.assertEqual(text.count('APROVADA'), 23)
+
+    def test_selected_session_filters_both_exports_by_date_category_and_administration(self):
+        rows = [self.rows[0],
+                dict(self.rows[1], nome_aluno='OUTRO DIA', data_exame='2026-11-14'),
+                dict(self.rows[2], nome_aluno='OUTRA CATEGORIA', categoria='MÚSICO', instrumento='TUBA'),
+                dict(self.rows[3], nome_aluno='OUTRA ADMINISTRACAO', municipio='JANDIRA')]
+        request = RequestFactory().get('/musica/exames/exportar/', {
+            'historico': '1', 'sessao_individual': json.dumps(['ITAPEVI', 'Organistas', '2026-11-07'])})
+        request.session = self.request.session
+        with patch.object(music_exams, 'can_open_module', return_value=True), \
+                patch.object(music_exams, 'fetch_rows', return_value=rows), \
+                patch.object(music_exams, 'fetch_legacy', return_value=[]):
+            excel = music_exams.export_excel(request)
+            pdf = music_exams.export_pdf(request)
+        sheet = load_workbook(io.BytesIO(excel.content))['Registros Individuais']
+        self.assertEqual(sheet.max_row, 7)
+        self.assertEqual(sheet['B7'].value, self.rows[0]['nome_aluno'])
+        self.assertIn('07/11/2026', sheet['A5'].value)
+        self.assertIn('ORGANISTAS', sheet['A5'].value)
+        text = '\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+        self.assertIn(self.rows[0]['nome_aluno'], text)
+        self.assertIn('07/11/2026', text)
+        for excluded in ['OUTRO DIA', 'OUTRA CATEGORIA', 'OUTRA ADMINISTRACAO']:
+            self.assertNotIn(excluded, text)
+
+    def test_invalid_session_does_not_export_all_rows(self):
+        request = RequestFactory().get('/', {'sessao_individual': 'invalid'})
+        self.assertEqual(music_exams.history_rows(request, self.rows), [])
 
     def test_pdf_repeats_headings_on_later_pages(self):
         pdf = PdfReader(io.BytesIO(exam_exports.history_pdf(self.request, self.rows * 4).content))

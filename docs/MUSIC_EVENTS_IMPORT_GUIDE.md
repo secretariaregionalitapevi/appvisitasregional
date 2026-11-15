@@ -19,7 +19,7 @@ Reenviar o mesmo arquivo conserva o evento existente, identificado pelo hash do 
 
 ## Valores de controle da planilha recebida
 
-Leitura da aba `Dados`, mantendo a última ocorrência de cada UUID repetido da mesma pessoa/local:
+Leitura da aba `Dados`, mantendo a última ocorrência de cada UUID repetido da mesma pessoa:
 
 | Conferência | Valor |
 | --- | ---: |
@@ -38,7 +38,7 @@ Na entrada há 1.051 linhas com data 20/09/2026, três com 19/09/2026 e uma com 
 
 O cargo e o instrumento são dimensões separadas: um instrutor tocando violino conta como músico e aparece também na distribuição por cargo. Não somar os cargos novamente ao total de participantes. Órgão/funções de organistas contam como organistas na proposta de classificação; registros sem instrumento são classificados pelo cargo. A prévia exige que o operador confira esse resultado.
 
-UUID repetido com nome ou local diferente bloqueia a importação. Nomes iguais com UUIDs diferentes são sinalizados como possíveis duplicidades/homônimos e **preservados**, sem presumir que sejam a mesma pessoa. Portanto, 1.050 é o total de registros únicos pelo UUID do app, e não uma afirmação de identidade pessoal conciliada com o SAM.
+UUID repetido da mesma pessoa é consolidado automaticamente em um único registro. A identidade é conferida pelo nome, comum (usando o código quando disponível) e município normalizados; o local do ensaio pode ter sido corrigido e não impede a consolidação. A última ocorrência da linha é mantida, e todos os totais são calculados após a deduplicação. Quando um UUID aparece com identidades divergentes, suas linhas são separadas para conferência e os demais registros continuam disponíveis para importação. A prévia informa quantidades e linhas afetadas. Nomes iguais com UUIDs diferentes são sinalizados como possíveis duplicidades/homônimos e **preservados**, sem presumir que sejam a mesma pessoa. Portanto, 1.050 é o total de registros únicos pelo UUID do app, e não uma afirmação de identidade pessoal conciliada com o SAM.
 
 ## O que já pode ser testado
 
@@ -59,8 +59,8 @@ Aplicar a migração **031_musica_eventos_encarregados.sql** para salvar essa co
 
 - **Presente:** identificado pela presença nominal com cargo Encarregado Local, ou confirmado administrativamente. O relatório apresenta o local em que compareceu.
 - **J · Justificou:** registro manual, com justificativa ou referência recebida obrigatória.
-- **NJ · Não justificou:** informado explicitamente após conferência.
-- **Não informado:** ainda não foi conferido. Não vira NJ automaticamente.
+- **NJ · Não justificou:** sem presença nominal, justificativa ou outra situação registrada. Por definição da Secretaria, registros antigos como **Não informado** são apresentados e contabilizados como NJ, em vermelho.
+- A presença nominal prevalece. Justificou, Sem encarregado e Enfermo permanecem separados quando registrados.
 
 Usar **Conferir** na linha da comum ou **Registrar conferência** para incluir uma comum sem participantes na planilha. As alterações registram o usuário autenticado e conservam auditoria. Eventos encerrados não permitem edição.
 
@@ -121,6 +121,16 @@ Evento e tipo de encontro ficam visíveis no cabeçalho. A barra de período, mu
 A aba **Visão geral** reúne um único gráfico de evolução e uma tabela dos sete municípios. O seletor do gráfico escolhe município e tipo; duas linhas na mesma escala mostram músicos e organistas. Sem dois encontros comparáveis, não há indicação de alta ou queda. **Comuns** apresenta uma tabela de seis colunas e paginação de vinte linhas. **Encarregados** mantém a conferência e os relatórios próprios. **Composição e cargos** concentra naipes, instrumentos e cargos em gráficos de barras compactos, com expansão opcional da lista. **Eventos** concentra a administração. As abas não alteram o recorte nem removem dados das exportações.
 
 
+### Justificativas de encarregados
+
+Na aba **Encarregados**, o painel **Justificativas de encarregados** permite cadastrar, importar, visualizar, editar e excluir justificativas dentro deste sistema. Recebe PDF (até 30 páginas), Excel `.xlsx`, CSV UTF-8 e imagens PNG/JPG/WebP, até 12 MB. Imagens e PDFs digitalizados usam o OCR já configurado no sistema. Nas planilhas, incluir os cabeçalhos Nome, Comum congregação, Cargo ou ministério e Motivo da ausência; Município, Data do evento e Evento/Bloco são opcionais.
+
+Selecionar o evento, abrir a prévia e conferir comum, município e nome do encarregado no cadastro SAM. Outros cargos são ignorados. Datas incompatíveis, comuns ambíguas, nomes não confirmados e duplicidades ficam pendentes e não são gravados. Para tratar uma pendência manualmente, usar **Registrar conferência** após verificar o documento e o cadastro. Conferências existentes são preservadas; uma presença nominal continua prevalecendo sobre a justificativa.
+
+**Registrar justificativa** abre o cadastro interno: selecionar a comum, conferir o município identificado, escolher um encarregado cadastrado nessa comum e informar o motivo. O registro é vinculado somente ao identificador do evento escolhido. Conferências existentes não são sobrescritas pelo cadastro. A relação permite visualizar, editar e excluir individualmente ou por seleção de grupo, com filtro por lote e auditoria preservada. A edição em grupo aplica o mesmo motivo às selecionadas.
+
+O evento é sincronizado com o painel principal mesmo quando as consultas terminam em ordens diferentes. **Conferir arquivo** é habilitado após selecionar um evento aberto e um arquivo. Se houver vários blocos no documento, escolher somente o bloco correspondente ao evento antes de conferir. Datas divergentes permanecem pendentes. Uma justificativa de Cotia de 15/11/2026 não é reutilizada em outro evento, mesmo que tenha a mesma data. A importação exige prévia e confirmação; registros já conferidos são preservados. No relatório unificado, a situação aparece como **JUSTIFICOU**; a presença usa verde `#21854A`.
+
 ### PDF para apresentação
 
 **PDF frequência** e a rota PDF sem tipo explícito geram somente a relação de presença por comum no formato do relatório regional: encarregado local, músicos presentes, organistas presentes, total geral, base SAM de músicos e organistas e os respectivos percentuais.
@@ -130,8 +140,23 @@ O **PDF de encarregados** continua separado. Ele mostra o encarregado cadastrado
 Selecionar um evento também limita as séries históricas oferecidas no painel ao circuito e conjunto de locais daquele evento. Um único registro é apresentado como primeiro registro, com data e quantidades; não é desenhado um gráfico sem evolução.
 
 
+### Participação sobre o SAM
+
+A aba **Participação SAM** reutiliza a consulta paginada do cadastro `musica_acompanhamento_aluno`, com cache de cinco minutos. Compara o cadastro atual com a lista nominal de cada evento pelo município da comum de origem, independentemente da sede física do ensaio. O acesso municipal/local mantém o mesmo escopo aplicado pelo servidor ao painel.
+
+A referência inclui Ativo, Alerta e Concluído em todos os níveis, inclusive candidatos(as) e oficializados, com instrumento definido e comum reconhecida no catálogo. Cadastrados sem presença também entram na base. Registros sem comum reconhecida e sem instrumento definido são informados para conferência. O percentual é `presentes / cadastrados * 100`; quando não há base, fica indisponível. Percentuais acima de 100% não são limitados artificialmente e exigem conferência.
+
+O resumo do recorte usa as somas das bases e presenças, nunca a média dos percentuais municipais. Cada evento permanece separado. Filtros de município/comum restringem ambas as populações; o filtro de local restringe apenas os presentes. Cordas, Madeiras e Metais detalham o total de músicos. Organistas são uma categoria separada; candidatos(as) são um subconjunto e não devem ser somados novamente. RT de família mostra somente o naipe correspondente.
+
+Os botões da seção exportam PDF e Excel com `relatorio=participacao`, usando o padrão institucional. O Excel completo também inclui as abas SAM. A referência atual não substitui a captura histórica vinculada ao evento. Validações: `tests_music_events_participation`, `scripts/test_music_events_participation.cjs` e `scripts/validation/validate_music_events_participation.py`.
+
 ### Gráficos visíveis na visão geral
 
 A visão geral apresenta composição musical em rosca com quantidades e percentuais, barras empilhadas de músicos/organistas nos sete municípios, presenças por encontro e principais instrumentos. Os gráficos não dependem da aba Composição. Os quatro KPIs exibem miniaturas da distribuição municipal, explicitamente identificadas como distribuição, sem sugerir crescimento temporal.
 
 Com um encontro, o painel mostra duas colunas de músicos e organistas na data do registro, informando que não existe série temporal suficiente. Com dois ou mais encontros equivalentes, mostra as duas linhas históricas e a variação sobre o anterior. A composição considera Cordas, Madeiras, Metais, Organistas e outros instrumentos; os percentuais usam o total musical. As barras municipais distinguem valores por categoria e total, permitindo abrir as comuns pelo município.
+
+
+### Orquestra e candidatos(as)
+
+A participação usa os membros atuais de `sam_student_sync_state` (`missing_since` vazio), classificados pelo cargo musical. O espelho pedagógico local não define a população SAM. Esta regra substitui o critério anterior de status local e instrumento definido. Candidatos e candidatas não integram a contagem geral de músicos e organistas da orquestra: cadastro, presentes e percentuais são separados. O público nominal total preserva todas as pessoas presentes. A consulta regional usa os sete municípios; filtros territoriais explícitos recortam ambos os lados da comparação.

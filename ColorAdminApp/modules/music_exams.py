@@ -46,11 +46,24 @@ def query_filters(request):
 
 def history_rows(request, rows):
     q = norm(request.GET.get('q'))
+    session = history_session(request)
+    if request.GET.get('sessao_individual'):
+        from .exam_group_delete import matches_group
+        rows = [r for r in rows if session and matches_group(r, session)]
     return [r for r in rows if
             (not q or q in norm(' '.join(str(r.get(k) or '') for k in ('nome_aluno', 'comum', 'instrumento'))))
             and (not request.GET.get('cidade_individual') or r.get('municipio') == request.GET['cidade_individual'])
             and (not request.GET.get('tipo_individual') or r.get('tipo_exame') == request.GET['tipo_individual'])
             and (not request.GET.get('resultado_individual') or r.get('resultado') == request.GET['resultado_individual'])]
+
+def history_session(request):
+    try:
+        value = json.loads(request.GET.get('sessao_individual') or 'null')
+        if not isinstance(value, list) or len(value) != 3 or not all(isinstance(v, str) for v in value):
+            return None
+        return dict(administracao=norm(value[0]), categoria=norm(value[1]), data_exame=value[2])
+    except (ValueError, TypeError):
+        return None
 
 def export_context(request):
     labels = {'municipio':'Município', 'comum':'Comum', 'ano':'Ano', 'mes':'Mês', 'inicio':'De', 'fim':'Até',
@@ -64,6 +77,14 @@ def export_context(request):
         if re.fullmatch(r'(?:date:)?\d{4}-\d{2}-\d{2}', value):
             value = datetime.strptime(value.removeprefix('date:'), '%Y-%m-%d').strftime('%d/%m/%Y')
         values.append(f'{label}: {value}')
+    session = history_session(request)
+    if session:
+        day = session['data_exame']
+        try:
+            day = datetime.strptime(day, '%Y-%m-%d').strftime('%d/%m/%Y')
+        except ValueError:
+            day = 'Data não informada'
+        values.append(f"Exame selecionado: {session['administracao']} · {session['categoria']} · {day}")
     return ' · '.join(values) or 'Todos os registros autorizados'
 def matches_filters(row,filters,legacy=False):
     if filters["municipio"] and regional_group(row.get("municipio"))!=filters["municipio"]:return False

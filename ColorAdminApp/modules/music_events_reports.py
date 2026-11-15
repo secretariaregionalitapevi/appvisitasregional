@@ -17,6 +17,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, Image, PageBreak, Flowable
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.graphics.shapes import Drawing, Rect, String
+from .music_events_conductors import attendance_label, attendance_status
 
 NAVY='1E4B7A'; PALE='EAF2F8'
 HEADERS=['Município','Comum','Encarregado: situação / local','Músicos','Organistas','Total musical',
@@ -31,6 +32,14 @@ def vertical_label(text,height):
 
 
 def report_note(data):
+    if data.get('report') == 'participacao':
+        overview = data.get('sam_participation', {})
+        return (overview.get('criterion', 'Referência SAM indisponível.') +
+                ' Cada evento é calculado separadamente. Filtro de local restringe somente as presenças. '
+                'Sem base: percentual indisponível. Valores acima de 100% exigem conferência cadastral. '
+                f"Cadastros sem comum reconhecida: {overview.get('unresolved_registry', 0)}; "
+                f"sem instrumento: {overview.get('undefined_instrument', 0)}; "
+                f"presenças sem comum reconhecida: {overview.get('unresolved_present', 0)}.")
     if data.get('report')=='geral':
         if data.get('attendance_overview',{}).get('has_official'):
             return 'Resultados do fechamento oficial onde indicado, conforme relatório original. Os cargos podem se sobrepor à participação musical. O detalhamento por comum utiliza a lista nominal preservada.'
@@ -40,7 +49,7 @@ def report_note(data):
     if data.get('registry',{}).get('available') and not data['base_complete']:
         if len(data['events']) != 1:
             return 'Cadastro musical atual como referência. Percentuais omitidos neste consolidado: consulte um evento por vez para comparar presenças e cadastro da comum.'
-        return 'Base SAM atual: Ativo, Alerta e Concluído, todos os níveis. Percentual = presentes da comum ÷ cadastro SAM atual; referência válida na data de emissão.'
+        return 'Catálogo SAM atual por cargo musical. A base e as presenças da orquestra excluem candidatos(as), que têm indicadores próprios. Percentual = orquestra presente da comum ÷ orquestra cadastrada no SAM.'
     return 'Sem referência cadastral para este recorte.' if not data['base_complete'] else 'Percentuais sobre a base histórica SAM e presenças elegíveis vinculadas.'
 
 
@@ -58,6 +67,9 @@ def scope_label(data):
 
 
 def sheets(data):
+    if data.get('report') == 'participacao':
+        from .music_events_participation import participation_sheets
+        return participation_sheets(data)
     if data.get('report')=='geral':
         overview=data['attendance_overview']
         if overview.get('has_official'):
@@ -91,7 +103,7 @@ def sheets(data):
     current=not data['base_complete'] and data.get('registry',{}).get('available')
     frequency=[]
     def subtotal(rows,label):
-        m=sum(r['MUSICO'] for r in rows);o=sum(r['ORGANISTA'] for r in rows)
+        m=sum(r.get('musicos_orquestra',r['MUSICO']) if current else r['MUSICO'] for r in rows);o=sum(r.get('organistas_orquestra',r['ORGANISTA']) if current else r['ORGANISTA'] for r in rows)
         validated=data['base_complete'] and any(r['musicos_base'] is not None for r in rows)
         bm=(sum(r['cadastro_musicos'] for r in rows) if all(r.get('cadastro_musicos') is not None for r in rows) else None) if current else sum(r['musicos_base'] or 0 for r in rows) if validated else None
         bo=(sum(r['cadastro_organistas'] for r in rows) if all(r.get('cadastro_organistas') is not None for r in rows) else None) if current else sum(r['organistas_base'] or 0 for r in rows) if validated else None
@@ -107,8 +119,12 @@ def sheets(data):
         bo=r.get('cadastro_organistas') if current else r.get('organistas_base')
         pm=(r['MUSICO']/bm if bm and len(data['events'])==1 else None) if current else (r['percentual_musicos']/100 if r['percentual_musicos'] is not None else None)
         po=(r['ORGANISTA']/bo if bo and len(data['events'])==1 else None) if current else (r['percentual_organistas']/100 if r['percentual_organistas'] is not None else None)
-        leader=(r['encarregado_nome']+'\n'+r.get('encarregado_situacao_label',r['encarregado'])) if r.get('encarregado_nome') else r['encarregado']
-        frequency.append([r['municipio'],r['comum'],leader,r['MUSICO'],r['ORGANISTA'],r['MUSICO']+r['ORGANISTA'],
+        leader=(r['encarregado_nome']+'\n'+attendance_label(r)) if r.get('encarregado_nome') else attendance_label(r)
+        m=r.get('musicos_orquestra',r['MUSICO']) if current else r['MUSICO'];o=r.get('organistas_orquestra',r['ORGANISTA']) if current else r['ORGANISTA']
+        if current:
+            pm=m/bm if bm and len(data['events'])==1 else None
+            po=o/bo if bo and len(data['events'])==1 else None
+        frequency.append([r['municipio'],r['comum'],leader,m,o,m+o,
                           bm,bo,pm,po])
     if city_rows:frequency.append(subtotal(city_rows,city_rows[-1]['municipio']))
     if data['rows']:frequency.append(subtotal(data['rows'],'TOTAL GERAL'))
@@ -120,7 +136,7 @@ def sheets(data):
     conductor_rows=[]
     for r in conductors.get('rows',[]):
         present_names=(' / '.join(r.get('nomes') or []) if r['situacao']=='PRESENTE' else '') or r.get('encarregado_nome') or 'Não identificado'
-        status=r.get('presenca_lista_label', 'NJ')
+        status=attendance_label(r)
         conductor_rows.append([datetime.strptime(str(r['data'])[:10],'%Y-%m-%d').strftime('%d/%m/%Y'),r['municipio'],
             r['comum']+'\nEncarregado: '+present_names,status,r.get('participacao','') if r.get('consta_lista') and r.get('locais_validos') else '',
             ' / '.join(r.get('locais_validos',[]))])
@@ -128,7 +144,7 @@ def sheets(data):
             ('Encarregados por comum',['Data','Município de origem','Comum / encarregado','Presença','Participação','Local do ensaio'],
              conductor_rows,[16,26,70,22,30,42]),
             ('Encarregados por município',['Município','PRESENTE','JUSTIFICOU','NJ','SE','EF'],
-             [[r['municipio']]+[sum(item.get('presenca_situacao')==status for item in conductors.get('rows',[]) if item['municipio']==r['municipio'])
+             [[r['municipio']]+[sum(attendance_status(item)==status for item in conductors.get('rows',[]) if item['municipio']==r['municipio'])
                                 for status in ['PRESENTE','JUSTIFICOU','NAO_JUSTIFICOU','SEM_ENCARREGADO','ENFERMO']]
               for r in conductors.get('municipalities',[])],[50,25,25,25,25,25]),
             ('Resumo por local',['Local','Músicos','Organistas','Ministério','Apoio','Irmandade','Total'],
@@ -136,9 +152,12 @@ def sheets(data):
             ('Instrumentos',['Músicos por instrumento / Organistas','Participantes presentes'],list(sorted(data['instruments'].items())),[95,45]),
             ('Famílias',['Família / naipe','Presentes'],list(sorted(data['families'].items())),[95,45]),
             ('Cargos',['Cargo (dimensão não aditiva)','Presentes'],list(sorted(data['roles'].items())),[95,45])]
-    if data.get('report')=='encarregados':return reports[1:2]
+    if data.get('report')=='encarregados':return reports[1:3]
     if data.get('report')=='comuns':return reports[:1]
     if data.get('report')=='composicao':return reports[-3:]
+    if data.get('sam_participation'):
+        from .music_events_participation import participation_sheets
+        reports.extend(participation_sheets(data))
     return reports
 
 
@@ -284,9 +303,12 @@ def build_excel(data, actor, now):
             cell=ws.cell(index,1,text);cell.font=Font(size=15 if index==1 else 10,bold=True,color='FFFFFF' if index<3 else NAVY)
             cell.fill=PatternFill('solid',fgColor=NAVY if index<3 else PALE);cell.alignment=Alignment(horizontal='center')
         for index,text in [(5,f'Emissão: {now:%d/%m/%Y %H:%M} · Responsável: {actor}'),(6,'Recorte: '+scope_label(data)),
-                           (7,report_note(data))]:
+                           (7,report_note({**data,'report':'participacao'}) if name.startswith('SAM ') else report_note(data))]:
             ws.merge_cells(start_row=index,start_column=1,end_row=index,end_column=len(headers));ws.cell(index,1,text)
             ws.cell(index,1).alignment=Alignment(wrap_text=True,vertical='center');ws.row_dimensions[index].height=30 if index==6 else 23
+        if name.startswith('SAM '):
+            for index,height in [(1,25),(2,20),(3,22),(4,22),(6,40),(7,72)]:
+                ws.row_dimensions[index].height=height
         for col,label in enumerate(headers,1):
             cell=ws.cell(9,col,label);cell.fill=PatternFill('solid',fgColor=NAVY);cell.font=Font(bold=True,color='FFFFFF');cell.alignment=Alignment(horizontal='center',wrap_text=True)
         ws.row_dimensions[9].height=30
@@ -298,10 +320,13 @@ def build_excel(data, actor, now):
                 cell.border=Border(bottom=Side(style='hair',color='D8DEE5'))
                 if index%2==0:cell.fill=PatternFill('solid',fgColor='F4F6F8')
                 if name=='Frequência por comum' and col in {9,10}:cell.number_format='0.00%'
+                if name=='Frequência por comum' and col==3 and str(value).split('\n')[-1]=='NJ':cell.font=Font(size=10,bold=True,color='E00000')
+                if name.startswith('SAM ') and col in {7,10}:cell.number_format='0.00%'
+                if name.startswith('SAM ') and col >= 5:cell.alignment=Alignment(horizontal='center',vertical='center',wrap_text=True)
                 if name=='Frequência por comum' and (row[1]=='SUBTOTAL' or row[0]=='TOTAL GERAL'):
                     cell.fill=PatternFill('solid',fgColor=PALE);cell.font=Font(bold=True,color=NAVY)
                 if name=='Encarregados por comum' and col==4:
-                    color='148052' if value in {'PRESENTE','JUSTIFICOU'} else 'C92D4D' if value=='NÃO JUSTIFICOU' else NAVY
+                    color='21854A' if value == 'PRESENTE' else '148052' if value == 'JUSTIFICOU' else 'E00000' if value in {'NÃO JUSTIFICOU','NJ'} else NAVY
                     cell.font=Font(bold=True,color=color)
                 if name=='Encarregados por comum' and col==5:
                     cell.font=Font(bold=True,color='C26A00' if value=='FORA DO MUNICÍPIO' else '148052')
@@ -343,9 +368,9 @@ def build_pdf(data,actor,now):
     def para(value,head=False):
         text=str(value if value is not None else '—');cell_style=header_style if head else style
         if not head and text=='PRESENTE':
-            cell_style=ParagraphStyle('present',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#148052'))
-        if not head and text in {'JUSTIFICOU','NÃO JUSTIFICOU','NÃO INFORMADO','SEM ENCARREGADO','ENFERMO'}:
-            tone='#148052' if text=='JUSTIFICOU' else '#c92d4d' if text=='NÃO JUSTIFICOU' else '#526b7a'
+            cell_style=ParagraphStyle('present',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#21854A'))
+        if not head and text in {'JUSTIFICOU','NÃO JUSTIFICOU','NJ','SEM ENCARREGADO','ENFERMO'}:
+            tone='#148052' if text=='JUSTIFICOU' else '#E00000' if text in {'NÃO JUSTIFICOU','NJ'} else '#526b7a'
             cell_style=ParagraphStyle('conductor-state',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor(tone))
         if not head and text in {'NO MUNICÍPIO','FORA DO MUNICÍPIO'}:
             cell_style=ParagraphStyle('attendance-place',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#c26a00' if text.startswith('FORA') else '#148052'))
@@ -358,6 +383,7 @@ def build_pdf(data,actor,now):
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-43,'Regional Itapevi - São Paulo')
         canvas.setFillColor(colors.HexColor('#1e4b7a'));canvas.setFont('Helvetica-Bold',12);canvas.drawCentredString(center,page_height-60,'ENSAIOS REGIONAIS E RTs')
         title={'geral':'Público geral e conciliação do ensaio','executivo':'Resumo executivo de presença','encarregados':'Presença dos Encarregados Locais','comuns':'Frequência musical por comum','composicao':'Composição musical e cargos'}.get(data.get('report'),'Relatório administrativo de frequência')
+        if data.get('report') == 'participacao':title='Participação sobre o SAM atual'
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-74,title)
         f=data['filters'];identity=data.get('report_identity',{})
         recorte=', '.join(f.get('municipios',[])) or ('Regional Itapevi' if f.get('origem','regional')=='regional' else 'Visitantes' if f.get('origem')=='visitantes' else 'Regional e visitantes')
@@ -374,7 +400,10 @@ def build_pdf(data,actor,now):
         doc.build(executive_story(data,width,style,header_style,context),onFirstPage=header,onLaterPages=header,canvasmaker=NumberedCanvas)
         return stream.getvalue()
     for name,headers,rows,_ in sheets(data):
-        if name=='Frequência por comum':
+        if name.startswith('SAM '):
+            ratios=[.18,.07,.15,.12,.08,.07,.08,.09,.08,.08]
+            widths=[width*x/sum(ratios) for x in ratios]
+        elif name=='Frequência por comum':
             ratios=[.09,.275,.14,.075,.08,.075,.09,.095,.04,.04]
             # Razões normalizadas garantem o uso exato da largura útil.
             widths=[width*x/sum(ratios) for x in ratios]
@@ -382,16 +411,24 @@ def build_pdf(data,actor,now):
         elif len(headers)==2:widths=[width*.8,width*.2]
         else:widths=[width*.28]+[width*.72/(len(headers)-1)]*(len(headers)-1)
         title_style=ParagraphStyle('tabletitle',parent=style,fontName='Helvetica-Bold',fontSize=10,leading=14,textColor=colors.HexColor('#1e4b7a'))
+        if name.startswith('SAM ') and data.get('report') != 'participacao':
+            story.extend([Paragraph(escape(report_note({**data,'report':'participacao'})),style),Spacer(1,10)])
         body=[[Paragraph(escape(name),title_style)]+[para('')]*(len(headers)-1)]
         if name=='Frequência por comum':
             body.append([para('')]*3+[para('PRESENTES NO ENSAIO',True)]+[para('')]*2+
                         [para('NÚMEROS POR LOCALIDADE',True)]+[para('')]*3)
         body.append([para(h,True) for h in headers])
         for row in rows:
-            body.append([para(f'{v*100:.2f}%' if name=='Frequência por comum' and i in {8,9} and v is not None else v) for i,v in enumerate(row)])
+            percentage_columns = {6,9} if name.startswith('SAM ') else {8,9} if name=='Frequência por comum' else set()
+            body.append([para(f'{v*100:.2f}%' if i in percentage_columns and v is not None else v) for i,v in enumerate(row)])
         if not rows:body.append([para('Sem registros neste recorte')]+[para('')]*(len(headers)-1))
         header_rows=3 if name=='Frequência por comum' else 2
         table=Table(body,colWidths=widths,repeatRows=header_rows,hAlign='LEFT')
+        if name.startswith('SAM '):
+            centered=ParagraphStyle('sam-number',parent=style,alignment=1)
+            for cells in body[header_rows:]:
+                for cell in cells[4:]:
+                    cell.style=centered
         table.setStyle(TableStyle([('SPAN',(0,0),(-1,0)),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eaf2f8')),
             ('BACKGROUND',(0,header_rows-1),(-1,header_rows-1),colors.HexColor('#1e4b7a')),
             ('ROWBACKGROUNDS',(0,header_rows),(-1,-1),[colors.white,colors.HexColor('#f4f6f8')]),
@@ -419,12 +456,14 @@ def export_response(data,request,file_format):
     data['report_identity']={'scope':' · '.join(filter(None,[{'global':'Global','regional':'Regional','municipal':'Municipal','local':'Local'}.get(scope['level']),scope.get('municipio')])),
                              'common':scope.get('comum') or ''}
     requested=request.GET.get('relatorio')
-    data['report']=requested if requested in {'geral','executivo','encarregados','comuns','composicao'} else ('comuns' if file_format=='pdf' else 'completo')
+    data['report']=requested if requested in {'geral','executivo','encarregados','comuns','composicao','participacao'} else ('comuns' if file_format=='pdf' else 'completo')
     content=build_excel(data,actor,now) if file_format=='excel' else build_pdf(data,actor,now)
     ext='xlsx' if file_format=='excel' else 'pdf'
     response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext=='xlsx' else 'application/pdf')
     prefix={'executivo':'Resumo_Executivo_Ensaios_RTs','encarregados':'Encarregados_Locais','comuns':'Participacao_por_Comum','composicao':'Composicao_Musical'}.get(data.get('report'),'Ensaios_RTs')
     response['Content-Disposition']=f'attachment; filename="{prefix}_{now:%d-%m-%Y_%H-%M}.{ext}"'
+    if data.get('report') == 'participacao':
+        response['Content-Disposition']=f'attachment; filename="Participacao_SAM_{now:%d_%m_%Y_%H_%M}.{ext}"'
     events = data.get('events', [])
     if file_format == 'pdf' and events and all(e.get('tipo') == 'ENSAIO_REGIONAL' for e in events):
         from .music_events_filenames import presence_filename, download_header, rehearsal_places

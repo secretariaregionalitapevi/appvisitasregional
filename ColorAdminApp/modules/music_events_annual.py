@@ -2,12 +2,12 @@
 from collections import Counter, defaultdict
 
 from .access_control import can_access
-from .music_events_dashboard import REGIONAL, code, regional_city
+from .music_events_dashboard import REGIONAL, code, regional_city, candidate_level
 from .music_events_identity import CommonResolver
 from .music_events_import import norm
 from .music_events_registry import attach_registry
 from .music_events_leaders import attach_leaders
-from .music_events_conductors import summarize, attendance_status
+from .music_events_conductors import summarize, attendance_status, common_attendance
 from .music_events_calendar import validated_sites
 from .music_events_closing import physical_closings
 
@@ -53,7 +53,7 @@ def annual_comparison(data, day):
 
 
 def annual_data(events, records, sites, registry, catalog, reviews, members, invitations,
-                year, scope, cities=(), commons=(), review_available=True, transitions=None):
+                year, scope, cities=(), commons=(), review_available=True, transitions=None, reference_people=None):
     """Zeros só pertencem a datas carregadas; ausência de conferência nunca vira NJ."""
     events = [e for e in events if e['tipo'] == 'ENSAIO_REGIONAL'
               and str(e['data_evento'])[:4] == str(year) and e.get('status') != 'RASCUNHO']
@@ -94,7 +94,9 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                                      municipio=r.get('cidade')) for r in members]
     conductors = summarize(events, records, list(site_map.values()), reviews, {'origem': 'regional'},
                            catalog, leaders=leader_registry, transitions=transitions)
-    reviews_by_key = {(r['evento_id'], r['comum_chave']): r for r in conductors['rows']}
+    reviews_by_key = defaultdict(list)
+    for review in conductors['rows']:
+        reviews_by_key[(review['evento_id'], review['comum_chave'])].append(review)
     by_date = defaultdict(list)
     for event in events:
         by_date[str(event['data_evento'])[:10]].append(event['id'])
@@ -124,7 +126,9 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                          'unresolved': sum(bool(r.get('comum_nao_reconhecida')) for r in rows_by_date[day])})
     base_data = {'rows': [{'comum': c['comum'], 'municipio': regional_city(c['cidade'])} for c in selected_catalog],
                  'events': events, 'conductors': {}}
-    attach_registry(base_data, registry, catalog)
+    reference=registry if reference_people is None else [r for r in reference_people
+        if can_access(scope,{'comum':r.get('comum_congregacao'),'cidade':r.get('municipio')})]
+    attach_registry(base_data, reference, catalog)
     attach_leaders(base_data, registry, catalog, members)
     output = []
     for base in base_data['rows']:
@@ -148,11 +152,16 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                     continue
                 seen.add(identity)
                 people.append(person)
-            counts = Counter(person['categoria'] for person in people)
-            entries = [reviews_by_key[(event, key)] for event in ids if (event, key) in reviews_by_key]
+            orchestra=[person for person in people if not candidate_level(person.get('nivel'))]
+            candidate_counts=Counter(person['categoria'] for person in people if candidate_level(person.get('nivel')))
+            counts = Counter(person['categoria'] for person in orchestra)
+            entries = [entry for event in ids for entry in reviews_by_key.get((event, key), [])]
             present = [entry for entry in entries if attendance_status(entry) == 'PRESENTE']
-            states = {entry['situacao'] for entry in entries}
-            status = 'PRESENTE' if present else next(iter(states)) if len(states) == 1 else 'NAO_INFORMADO'
+            status = common_attendance(entries)
+            leader_details = [{'nome': entry.get('encarregado_nome') or 'Encarregado não identificado',
+                               'situacao': entry.get('situacao') or 'NAO_INFORMADO',
+                               'locais': entry.get('locais', [])}
+                              for entry in entries]
             loaded = session['loaded']
             m, o = counts['MUSICO'], counts['ORGANISTA']
             unresolved = unresolved_by_date_city[(day, norm(base['municipio']))]
@@ -161,24 +170,26 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
             for person in people:
                 name = site_map.get(person['local_id'], {}).get('nome', 'Não informado')
                 group = attendance_by_location.setdefault(name, {'MUSICO': 0, 'ORGANISTA': 0, 'total': 0})
-                if person['categoria'] in {'MUSICO', 'ORGANISTA'}:
+                if person['categoria'] in {'MUSICO', 'ORGANISTA'} and not candidate_level(person.get('nivel')):
                     group[person['categoria']] += 1
                 group['total'] += 1
             cell = {'date': day, 'loaded': loaded, 'musicians': m if loaded else None,
                     'organists': o if loaded else None, 'leader_status': status,
                     'leader_on_list': bool(present),
-                    'leader_attendance': next((state for state in ['PRESENTE', 'JUSTIFICOU', 'ENFERMO', 'SEM_ENCARREGADO'] if state in states), 'NAO_JUSTIFICOU'),
+                    'leader_attendance': status,
+                    'leader_details': leader_details,
                     'leader_valid_locations': sorted({local for entry in present for local in entry['locais_validos']}),
                     'leader_locations': sorted({local for entry in present for local in entry['locais']}),
                     'locations': locations, 'unresolved': unresolved,
                     'attendance_by_location': attendance_by_location,
-                    'instruments': dict(Counter(p.get('instrumento') or 'Não informado' for p in people if p['categoria'] == 'MUSICO')),
+                    'instruments': dict(Counter(p.get('instrumento') or 'Não informado' for p in orchestra if p['categoria'] == 'MUSICO')),
                     'roles': dict(Counter(p.get('cargo') for p in people if p.get('cargo'))),
-                    'families': dict(Counter(p.get('familia') or 'OUTROS' for p in people if p['categoria'] == 'MUSICO')),
+                    'families': dict(Counter(p.get('familia') or 'OUTROS' for p in orchestra if p['categoria'] == 'MUSICO')),
                     'categories': dict(counts),
+                    'candidate_musicians':candidate_counts['MUSICO'],'candidate_organists':candidate_counts['ORGANISTA'],
                     'musician_percent': rate(m, base.get('cadastro_musicos')) if loaded else None,
                     'organist_percent': rate(o, base.get('cadastro_organistas')) if loaded else None,
-                    'others': sum(v for cat, v in counts.items() if cat not in {'MUSICO', 'ORGANISTA'})}
+                    'others': len(people)-m-o}
             row['cells'].append(cell)
             if loaded:
                 row['loaded_sessions'] += 1
@@ -217,7 +228,7 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
                         'no_musicians': sum(r['no_musicians'] for r in output),
                         'no_organists': sum(r['no_organists'] for r in output),
                         'no_leader': sum(r['no_leader'] for r in output)},
-            'note': 'Base SAM atual: Ativo, Alerta e Concluído, todos os níveis. Percentuais por ensaio = presentes / cadastro da comum. '
+            'note': 'Base SAM atual: orquestra por cargo musical, sem candidatos(as). Percentuais por ensaio = presentes / cadastro da comum. '
                     'Percentual anual = soma das presenças / (cadastro atual × ensaios carregados do circuito). '
                     'Datas simultâneas são uma oportunidade; locais não multiplicam a base. '
                     'Encarregado local: PRESENTE, J, NJ, SE (sem encarregado) ou EF (enfermo). Ano completo exige os três ensaios carregados. '

@@ -95,9 +95,22 @@ class MusicEventsPerformanceTests(SimpleTestCase):
     def test_paginated_read_reuses_connection_and_does_not_truncate(self, session):
         client = session.return_value.__enter__.return_value
         responses = [Mock(), Mock()]
+        for response in responses:
+            response.status_code = 200
         responses[0].json.return_value = [{'id': i} for i in range(1000)]
         responses[1].json.return_value = [{'id': 1000}]
         client.get.side_effect = responses
         self.assertEqual(len(module._read('example')), 1001)
         self.assertEqual(session.call_count, 1)
         self.assertEqual([call.kwargs['params']['offset'] for call in client.get.call_args_list], [0, 1000])
+
+    @patch('ColorAdminApp.utils.supabase_http.time.sleep')
+    @patch.object(module.requests, 'Session')
+    def test_paginated_read_recovers_from_transient_gateway_failure(self, session, _sleep):
+        client = session.return_value.__enter__.return_value
+        unavailable, recovered = Mock(status_code=503), Mock(status_code=200)
+        recovered.json.return_value = [{'id': 'event-1'}]
+        client.get.side_effect = [unavailable, recovered]
+
+        self.assertEqual(module._read('example'), [{'id': 'event-1'}])
+        self.assertEqual(client.get.call_count, 2)

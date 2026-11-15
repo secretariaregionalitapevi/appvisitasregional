@@ -2,7 +2,7 @@ import io
 from datetime import datetime
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
@@ -184,7 +184,6 @@ class DashboardTests(SimpleTestCase):
         self.assertNotIn('Cadastro atual',text)
 
     def test_pdf_endpoint_defaults_to_frequency_report(self):
-        from django.test import RequestFactory
         from ColorAdminApp.modules.music_events_reports import export_response
         e,r,l=self.fixture();d=aggregate(e,r,l,[],{'evento':'e1'})
         req=RequestFactory().get('/musica/eventos/exportar-pdf/')
@@ -205,3 +204,26 @@ class DashboardTests(SimpleTestCase):
         self.assertIn('RELATÓRIO UNIFICADO ENSAIO REGIONAL',text)
         self.assertNotIn('Instrumentos',text)
         self.assertNotIn('Encarregados por município',text)
+
+    def test_common_pdf_export_skips_unused_history_and_generates_file(self):
+        from ColorAdminApp.modules import music_events
+        from ColorAdminApp.modules import music_events_annual
+        events, records, sites = self.fixture()
+        data = aggregate(events, records, sites, [], {'evento': 'e1'})
+        request = RequestFactory().get('/musica/eventos/exportar-pdf/', {
+            'evento': 'e1', 'relatorio': 'comuns',
+        })
+        request.session = {'user_profile': {'role_id': 1, 'full_name': 'Operador de teste'}}
+        with patch.object(music_events, '_allowed', return_value=True), \
+                patch.object(music_events, 'dashboard_data', return_value=data) as dashboard, \
+                patch.object(music_events, 'annual_dashboard_data', return_value={}) as annual, \
+                patch.object(music_events_annual, 'annual_comparison', return_value={}):
+            response = music_events.export_dashboard(request, 'pdf')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        dashboard.assert_called_once_with(request, include_history=False)
+        annual.assert_called_once()
+        text = '\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(response.content)).pages)
+        self.assertIn('RELATÓRIO UNIFICADO ENSAIO REGIONAL', text)
+        self.assertIn('Responsável: Secretaria Regional da Música', text)

@@ -26,9 +26,9 @@ USEFUL = WIDTH - 56
 CITY_COLORS = {'CAUCAIA DO ALTO': '#FFE699', 'COTIA': '#BDD7EE',
                'VARGEM GRANDE PAULISTA': '#D9E6AE', 'ITAPEVI': '#BFE3DA',
                'JANDIRA': '#DDD0EA', 'PIRAPORA DO BOM JESUS': '#F4C7A8',
-               'SANTANA DE PARNAÍBA': '#F6D8E2'}
+               'SANTANA DE PARNAÍBA': '#D6E1EB'}
 STATUS = {'PRESENTE': 'PRESENTE', 'JUSTIFICOU': 'JUSTIFICOU', 'NAO_JUSTIFICOU': 'NJ',
-          'SEM_ENCARREGADO': 'SE', 'ENFERMO': 'EF', 'NAO_INFORMADO': 'NÃO INFORMADO'}
+          'SEM_ENCARREGADO': 'SE', 'ENFERMO': 'EF', 'NAO_INFORMADO': 'NJ'}
 STYLE = ParagraphStyle('model', fontName='Helvetica', fontSize=9, leading=10)
 CENTER = ParagraphStyle('model-center', parent=STYLE, alignment=1)
 BOLD = ParagraphStyle('model-bold', parent=CENTER, fontName='Helvetica-Bold')
@@ -52,16 +52,16 @@ def leader_on_list(row):
 
 def leader_text(row, locations=()):
     return {'PRESENTE': 'PRESENTE', 'JUSTIFICOU': 'J', 'NAO_JUSTIFICOU': 'NJ',
-            'SEM_ENCARREGADO': 'SE', 'ENFERMO': 'EF'}[attendance_status(row)]
+            'NAO_INFORMADO': 'NJ', 'SEM_ENCARREGADO': 'SE',
+            'ENFERMO': 'EF'}[attendance_status(row)]
 
 
 def presence_legend():
-    text = Paragraph('<font color="#1E4B7A"><b>J - JUSTIFICOU</b></font> &nbsp; '
-                     '<font color="#E00000"><b>NJ - NÃO JUSTIFICOU</b></font> &nbsp; '
-                     '<font color="#85A4DC"><b>SE - SEM ENCARREGADO</b></font> &nbsp; '
-                     '<font color="#C65B00"><b>EF - ENFERMO</b></font>',
-                     ParagraphStyle('presence-legend', parent=CENTER, fontSize=8, leading=11))
-    table = Table([[para('LEGENDA', BOLD), text]], colWidths=[sum(model_widths()[:3]), sum(model_widths()[3:])])
+    items=[('J - JUSTIFICOU','#1E4B7A'),('NJ - NÃO JUSTIFICOU','#E00000'),
+           ('SE - SEM ENCARREGADO','#85A4DC'),('EF - ENFERMO','#C65B00')]
+    cells=[para('LEGENDA',BOLD)]+[para(label,ParagraphStyle('legend-'+str(i),parent=BOLD,
+            fontSize=8,leading=10,textColor=colors.HexColor(color))) for i,(label,color) in enumerate(items)]
+    table = Table([cells], colWidths=[100]+[(USEFUL-100)/4]*4,rowHeights=[23])
     table.setStyle(TableStyle([('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#D9D9D9')),
                                ('GRID', (0, 0), (-1, -1), .4, colors.HexColor('#89949D')),
                                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -274,45 +274,51 @@ def legacy_grid(rows):
                'Músicos', 'Organistas', '% Músicos', '% Organistas']
     head = ParagraphStyle('grid-head', parent=BOLD, textColor=colors.white, fontSize=8, leading=9)
     body = [['', '', para('PRESENTES NO ENSAIO', BOLD), '', '', '', para('CADASTRO SAM - COMUM DE ORIGEM', BOLD), '', '', ''], [para(h, head) for h in headers]]
+    heights=[17,22]
+    data_rows,city_blocks=[],[]
     for row in rows:
+        if not city_blocks or city_blocks[-1][0] != row['municipio']:
+            city_blocks.append((row['municipio'],[]))
+        index=len(body)
         leader = leader_text(row, [row['encarregado_local']] if row.get('encarregado_local') else ())
-        color = '#14532D' if leader == 'PRESENTE' else '#1E4B7A' if leader == 'J' else '#E00000' if leader == 'NJ' else '#85A4DC' if leader == 'SE' else '#C65B00' if leader == 'EF' else '#000000'
+        color = '#21854A' if leader == 'PRESENTE' else '#1E4B7A' if leader == 'J' else '#E00000' if leader == 'NJ' else '#85A4DC' if leader == 'SE' else '#C65B00' if leader == 'EF' else '#000000'
         leader_style = ParagraphStyle('model-state', parent=BOLD, textColor=colors.HexColor(color))
         bm, bo = row.get('cadastro_musicos'), row.get('cadastro_organistas')
         m, o = row['MUSICO'], row['ORGANISTA']
         pm = row.get('model_percent_m', 100 * m / bm if bm else None)
         po = row.get('model_percent_o', 100 * o / bo if bo else None)
-        body.append(['', para(common_name(row['comum'])), para(leader, leader_style),
+        body.append(['', para(common_name(row['comum'])), para('JUSTIFICOU' if leader == 'J' else leader, leader_style),
                      para(m, CENTER), para(o, CENTER), para(m + o, BOLD), para(bm, CENTER), para(bo, CENTER),
                      para(f'{pm:.0f}%' if pm is not None else '—', CENTER),
                      para(f'{po:.0f}%' if po is not None else '—', CENTER)])
-    # 12 pt no modelo. Linhas crescem se nomes extensos precisarem de quebra.
-    heights = [17, 22]
-    for cells in body[2:]:
+        data_rows.append((index,row))
+        city_blocks[-1][1].append(index)
+        cells=body[-1]
         heights.append(max(17, *(cell.wrap(width - 8, 100)[1] + 6 for cell, width in zip(cells[1:], model_widths()[1:]))))
     table = Table(body, colWidths=model_widths(), rowHeights=heights, repeatRows=2)
-    styles = [('SPAN', (0, 0), (1, 0)), ('SPAN', (2, 0), (5, 0)), ('SPAN', (6, 0), (9, 0)), ('BACKGROUND', (2, 0), (5, 0), colors.HexColor('#BDD7EE')), ('BACKGROUND', (6, 0), (9, 0), colors.HexColor('#C6E0B4')), ('GRID', (0, 0), (-1, -1), .3, colors.HexColor('#D8DEE5')), ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#1E4B7A')), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    styles = [('SPAN', (0, 0), (1, 0)), ('SPAN', (2, 0), (5, 0)), ('SPAN', (6, 0), (9, 0)), ('BACKGROUND', (2, 0), (5, 0), colors.HexColor('#BDD7EE')), ('BACKGROUND', (6, 0), (9, 0), colors.HexColor('#EAF2F8')), ('GRID', (0, 0), (-1, -1), .3, colors.HexColor('#D8DEE5')), ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#1E4B7A')), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
               ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
               ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0)]
-    for index, row in enumerate(rows, 2):
+    for index, row in data_rows:
         styles.append(('BACKGROUND', (1, index), (7, index), colors.HexColor('#F4F6F8') if index % 2 else colors.white))
-    start = 0
-    while start < len(rows):
-        end, city = start, rows[start]['municipio']
-        while end + 1 < len(rows) and rows[end + 1]['municipio'] == city:
-            end += 1
-        table._cellvalues[start + 2][0] = CityLabel(city, sum(heights[start + 2:end + 3]) - 2)
-        styles += [('SPAN', (0, start + 2), (0, end + 2)),
-                   ('BACKGROUND', (0, start + 2), (0, end + 2), colors.HexColor('#EAF2F8')),
-                   ('ALIGN', (0, start + 2), (0, end + 2), 'CENTER')]
-        start = end + 1
-    for index, row in enumerate(rows, 2):
+    for city,indices in city_blocks:
+        first,last=indices[0],indices[-1]
+        tone=next((color for label,color in CITY_COLORS.items()
+                   if normalized_city(label)==normalized_city(city)),'#EAF2F8')
+        table._cellvalues[first][0] = CityLabel(city, sum(heights[i] for i in indices) - 2)
+        styles += [('SPAN', (0, first), (0, last)),
+                   ('BACKGROUND', (0, first), (0, last), colors.HexColor(tone)),
+                   ('ALIGN', (0, first), (0, last), 'CENTER'),
+                   ('BOX',(0,first),(-1,last),.8,colors.HexColor('#1e4b7a'))]
+    for index, row in data_rows:
         missing_leader = not leader_on_list(row)
         if row['MUSICO'] == 0 and row['ORGANISTA'] == 0 and missing_leader:
             styles.append(('BACKGROUND', (1, index), (-1, index), colors.HexColor('#FFF7EB')))
         for column, missing in [(2, missing_leader), (3, row['MUSICO'] == 0), (4, row['ORGANISTA'] == 0)]:
             if missing:
                 styles.append(('BACKGROUND', (column, index), (column, index), colors.HexColor('#FFF4E2')))
+        if leader_text(row)=='NJ':
+            styles.append(('BACKGROUND',(2,index),(2,index),colors.HexColor('#FDECEF')))
         # Percentuais mantêm a escala verde inclusive em linhas sem participação.
         for column, category, basefield, percentfield in [
                 (8, 'MUSICO', 'cadastro_musicos', 'model_percent_m'),
@@ -378,6 +384,9 @@ def build_model_pdf(data, actor='Secretaria Musical', now=None, include_summary=
     current = not data.get('base_complete') and data.get('registry', {}).get('available')
     for original in data.get('rows', []):
         row = dict(original)
+        if current:
+            row['MUSICO']=row.get('musicos_orquestra',row['MUSICO'])
+            row['ORGANISTA']=row.get('organistas_orquestra',row['ORGANISTA'])
         if not current:
             row['cadastro_musicos'], row['cadastro_organistas'] = row.get('musicos_base'), row.get('organistas_base')
             row['model_percent_m'], row['model_percent_o'] = row.get('percentual_musicos'), row.get('percentual_organistas')
@@ -417,12 +426,24 @@ def session_report(data, session):
         cell = next((c for c in row['cells'] if c['date'] == session['date'] and c['loaded']), None)
         if cell is None:
             continue
-        leader = leader_text(cell, cell.get('leader_valid_locations', []))
+        details = cell.get('leader_details', [])
+        leader = ' / '.join(
+            f"{item['nome']}: {STATUS.get(item['situacao'], 'NÃO INFORMADO')}"
+            for item in details) if details else leader_text(cell, cell.get('leader_valid_locations', []))
         rows.append({**row, 'MUSICO': cell['musicians'], 'ORGANISTA': cell['organists'], 'encarregado': leader,
-                     'encarregado_situacao': cell['leader_status']})
+                     'encarregado_situacao': 'PRESENTE' if cell.get('leader_on_list') else cell['leader_status']})
         rows[-1].update(encarregado_na_lista=cell.get('leader_on_list', False), leader_attendance=cell['leader_attendance'], encarregado_local=' / '.join(cell.get('leader_valid_locations', [])))
-        conductors.append({'situacao': cell['leader_status'], 'locais': cell['leader_locations'],
-                           'municipio': row['municipio'], 'comum_chave': row['key'], 'consta_lista': cell.get('leader_on_list', False), 'leader_attendance': cell['leader_attendance']})
+        if details:
+            conductors.extend({'situacao': item['situacao'], 'encarregado_nome': item['nome'],
+                               'nomes': [item['nome']] if item['situacao'] == 'PRESENTE' else [],
+                               'locais': item['locais'], 'municipio': row['municipio'],
+                               'comum_chave': row['key'], 'consta_lista': item['situacao'] == 'PRESENTE',
+                               'leader_attendance': item['situacao']} for item in details)
+        else:
+            conductors.append({'situacao': cell['leader_status'], 'locais': cell['leader_locations'],
+                               'municipio': row['municipio'], 'comum_chave': row['key'],
+                               'consta_lista': cell.get('leader_on_list', False),
+                               'leader_attendance': cell['leader_attendance']})
         origin = municipalities.setdefault(row['municipio'], {'municipio': row['municipio'], 'MUSICO': 0, 'ORGANISTA': 0, 'total': 0})
         origin['MUSICO'] += cell['musicians']; origin['ORGANISTA'] += cell['organists']
         origin['total'] += cell['musicians'] + cell['organists'] + cell['others']
@@ -433,7 +454,7 @@ def session_report(data, session):
             for key in ['MUSICO', 'ORGANISTA', 'total']:
                 group[key] += counts.get(key, 0)
     pending = sum(pending_by_city.values())
-    note = ('Base SAM atual na emissão, todos os níveis ativos. Percentual = presentes da comum / cadastro atual. '
+    note = ('Base SAM atual na emissão, orquestra, sem candidatos(as). Percentual = presentes da comum / cadastro atual. '
             'Sem base ou população zero: —. Encarregado local: PRESENTE, J, NJ, SE (sem encarregado) ou EF (enfermo).')
     if pending:
         note += f' {pending} presenças com comum não conciliada neste município/recorte; conferir antes de concluir ausência.'
@@ -468,7 +489,7 @@ def annual_matrix_pdf(data, actor, now):
                                          ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8)]))
             note_style = ParagraphStyle('matrix-note', parent=STYLE, fontSize=8, leading=11, textColor=colors.HexColor('#526371'))
             story.extend([context, Spacer(1, 8),
-                          para('Base de comparação: cadastro SAM atual, com Ativo, Alerta e Concluído em todos os níveis. '
+                          para('Base de comparação: cadastro SAM atual, por cargo musical, excluindo candidatos(as). '
                                'Percentual de músicos e de organistas: presentes da comum divididos pelo respectivo cadastro.', note_style),
                           para('Leitura do acompanhamento: encontros sem dados carregados ficam pendentes. '
                                'Encarregado local: PRESENTE, JUSTIFICOU ou NJ; local validado é informação complementar.', note_style), Spacer(1, 10)])

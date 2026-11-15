@@ -29,7 +29,8 @@
 
 ## Feedback de progresso e resultado
 
-- Avisos de geração, exportação, sucesso e erro devem reutilizar o feedback centralizado do sistema, com fundo escurecido e desfocado. Nunca posicionar esses avisos como toast lateral.
+- Durante a geração ou exportação de relatórios, indicar o progresso somente no próprio botão, com carregamento e bloqueio de cliques repetidos. Não exibir modal, overlay, fundo desfocado ou aviso adicional de geração em nenhuma parte do projeto.
+- Avisos de sucesso e erro devem reutilizar o feedback centralizado do sistema, com fundo escurecido e desfocado. Nunca posicionar esses avisos como toast lateral.
 - O feedback deve permanecer centralizado e visível acima de modais abertos, preservando o círculo de carregamento do botão e a confirmação apenas após a operação concluir.
 
 ## Acesso municipal ao APP_CARTAS

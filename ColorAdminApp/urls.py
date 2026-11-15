@@ -1,4 +1,4 @@
-from .modules import music_letters_roster_api
+from .modules import music_letters_roster_api, music_events_justifications
 from django.urls import path
 
 from . import views
@@ -154,6 +154,7 @@ urlpatterns = [
     path('musica/ensaios-regionais/', music_events.page, name='musicRegionalRehearsals'),
     path('musica/reunioes-tecnicas/', music_events.page, {'category': 'REUNIAO_TECNICA'}, name='musicTechnicalMeetings'),
     path('musica/eventos/api/importacao/<str:action>/', music_events.api_import, name='musicEventsImport'),
+    path('musica/eventos/api/eventos/<uuid:event_id>/justificativas/<str:action>/', music_events_justifications.api, name='musicEventsJustifications'),
     path('musica/eventos/api/eventos/<uuid:event_id>/encarregado/', music_events.api_conductor, name='musicEventsConductor'),
     path('musica/eventos/api/painel/', music_events.api_dashboard, name='musicEventsDashboard'),
     path('musica/eventos/api/historico/', music_events.api_evolution, name='musicEventsEvolution'),

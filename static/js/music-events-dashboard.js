@@ -18,7 +18,8 @@
   const kind=e=>e.tipo==='ENSAIO_REGIONAL'?'Ensaio Regional':e.familia==='GERAL'?'RT Geral':`RT · ${e.familia.charAt(0)+e.familia.slice(1).toLocaleLowerCase('pt-BR')}`;
   function eventLabel(e){const day=date(e.data_evento);let title=String(e.titulo||kind(e)).replace(/\bensaio regional\b/gi,'Ensaio Regional');title=title.split(day).join('').split(String(e.data_evento).slice(0,10)).join('').replace(/^[\s·|–—:-]+|[\s·|–—:-]+$/g,'').trim();return `${title||kind(e)} · ${day}`;}
   const feedback=(message,tone='danger')=>{$('#events-feedback').innerHTML=message?`<div class="alert alert-${tone}">${esc(message)}</div>`:'';};
-  async function request(url,options){const r=await fetch(url+(url.includes('?')?'&':'?')+'categoria='+encodeURIComponent(category),{cache:'no-store',...options});if(r.redirected)throw Error('Sua sessão expirou. Entre novamente.');const d=await r.json();if(!r.ok)throw Error(d.error||'Não foi possível concluir a operação.');return d;}
+  async function request(url,options){const r=await fetch(url+(url.includes('?')?'&':'?')+'categoria='+encodeURIComponent(category),{cache:'no-store',...options});if(r.redirected)throw Error('Sua sessão expirou. Entre novamente.');let d;try{d=await r.json();}catch{throw Error(r.ok?'O servidor retornou uma resposta inválida.':`O servidor retornou uma página de erro (HTTP ${r.status}).`);}if(!r.ok)throw Error(d.error||'Não foi possível concluir a operação.');return d;}
+  function showLoadError(error,hasData){feedback(error.message);$('#events-scope-reading').classList.remove('is-loading');if(hasData){$('#events-scope-reading').textContent='Não foi possível atualizar. Os dados anteriores continuam exibidos.';return;}$('.music-events').classList.remove('events-data-pending');$('#events-metrics').innerHTML='';$('#events-management-note').textContent='Não foi possível carregar o recorte. Use Atualizar para tentar novamente.';$('#events-scope-reading').textContent='Recorte indisponível. Tente atualizar novamente.';}
   const map={evento:'#events-event',ano:'#events-year',mes:'#events-month',inicio:'#events-start',fim:'#events-end',tipo:'#events-type',local:'#events-local',origem:'#events-origin',busca:'#events-search',status:'#events-status'};
   function query(){const q=new URLSearchParams({categoria:category});for(const [k,s]of Object.entries(map))if($(s).value)q.set(k,$(s).value);multi.values($('#events-city')).forEach(v=>q.append('municipio',v));multi.values($('#events-common')).forEach(v=>q.append('comum',v));return q;}
   function options(select,rows,placeholder){const value=select.value;select.innerHTML=`<option value="">${placeholder}</option>`+rows.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');if([...select.options].some(o=>o.value===value))select.value=value;}
@@ -44,7 +45,7 @@
 
   }
   function table(){const data=state.data;if(!data)return;const rows=data.rows.slice(state.page*20,(state.page+1)*20);let city=null,html='';
-    for(const r of rows){if(city!==r.municipio){city=r.municipio;html+=`<tr class="events-city-group"><td colspan="7">${esc(city)}</td></tr>`;}const m=r.musicos_base??r.cadastro_musicos,o=r.organistas_base??r.cadastro_organistas,status=r.encarregado_status||(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO'].includes(r.encarregado_situacao)?r.encarregado_situacao:'NAO_JUSTIFICOU'),label={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO'}[status];html+=`<tr><td><strong>${esc(r.comum)}</strong></td><td>${number(r.MUSICO)}</td><td>${number(r.ORGANISTA)}</td><td><b>${number(r.MUSICO+r.ORGANISTA)}</b></td><td class="events-registered-leader"><strong>${esc(r.encarregado_nome||'Não localizado no cadastro')}</strong><small><span class="conductor-status ${esc(status)}">${esc(label)}</span>${r.encarregado_local?` <span>${esc(r.encarregado_local)}</span>`:''}</small>${r.encarregado_nomes?.length>1?'<small class="text-warning">Mais de um encarregado cadastrado · conferir</small>':''}</td><td>${m==null?'—':number(m)} / ${o==null?'—':number(o)}</td><td>${esc(participation(r,'musicos'))} / ${esc(participation(r,'organistas'))}${r.cadastro_divergente?'<small>Conferir base / duplicidade</small>':''}</td></tr>`;}
+    for(const r of rows){if(city!==r.municipio){city=r.municipio;html+=`<tr class="events-city-group"><td colspan="7">${esc(city)}</td></tr>`;}const m=r.musicos_base??r.cadastro_musicos,o=r.organistas_base??r.cadastro_organistas,status=r.encarregado_status||(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO','NAO_INFORMADO'].includes(r.encarregado_situacao)?r.encarregado_situacao:'NAO_JUSTIFICOU'),label=r.encarregado_situacao_label==='Ver relatório de encarregados'?'Conferir por pessoa':{PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICADO:'NJ',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO',NAO_INFORMADO:'Não informado'}[status];html+=`<tr><td><strong>${esc(r.comum)}</strong></td><td>${number(r.MUSICO)}</td><td>${number(r.ORGANISTA)}</td><td><b>${number(r.MUSICO+r.ORGANISTA)}</b></td><td class="events-registered-leader"><strong>${esc(r.encarregado_nome||'Não localizado no cadastro')}</strong><small><span class="conductor-status ${esc(status)}">${esc(label)}</span>${r.encarregado_local?` <span>${esc(r.encarregado_local)}</span>`:''}</small>${r.encarregado_nomes?.length>1?'<small class="text-warning">Mais de um encarregado cadastrado · conferir</small>':''}</td><td>${m==null?'—':number(m)} / ${o==null?'—':number(o)}</td><td>${esc(participation(r,'musicos'))} / ${esc(participation(r,'organistas'))}${r.cadastro_divergente?'<small>Conferir base / duplicidade</small>':''}</td></tr>`;}
     $('#events-frequency-body').innerHTML=html||'<tr><td colspan="7" class="events-empty">Sem comuns neste recorte.</td></tr>';
     const t=data.totals;$('#events-base-musicians').textContent=data.base_complete?'Base histórica':'Cadastro atual';$('#events-frequency-foot').innerHTML=`<tr><td>Total · ${number(t.comuns)} comuns</td><td>${number(t.MUSICO)}</td><td>${number(t.ORGANISTA)}</td><td>${number((t.MUSICO||0)+(t.ORGANISTA||0))}</td><td colspan="3">${data.base_complete?'Referência histórica':'Referência cadastral atual'}</td></tr>`;
     $('#events-commons-count').textContent=`${number(data.rows.length)} comuns acompanhadas`;
@@ -62,25 +63,29 @@
     $('#events-count').textContent=`${number(t.eventos)} eventos`;table();document.dispatchEvent(new CustomEvent('music-events-data',{detail:data}));
   }
   let dashboardController, historyController;
-  async function loadHistory(params,version){const finishLoading=loading();
-    historyController=new AbortController();
+  async function loadHistory(params,version){historyController=new AbortController();
     try{const history=await request('/musica/eventos/api/historico/?'+params,{signal:historyController.signal});
       if(version!==state.version)return;
       state.data.evolution=history.evolution;
       document.dispatchEvent(new CustomEvent('music-events-history',{detail:history}));
-    }catch(error){if(version===state.version&&error.name!=='AbortError')document.dispatchEvent(new CustomEvent('music-events-history',{detail:{error:error.message}}));}finally{finishLoading();}
+    }catch(error){if(version===state.version&&error.name!=='AbortError')document.dispatchEvent(new CustomEvent('music-events-history',{detail:{error:error.message}}));}
   }
-  async function load(preloaded){const finishLoading=loading();const version=++state.version;state.data=null;$('.music-events').classList.add('events-data-pending');$('.music-events').setAttribute('aria-busy','true');$('#events-metrics').innerHTML='';$('#events-attendance-overview').hidden=true;$('#events-scope-reading').textContent='Carregando o recorte selecionado...';dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
+  async function load(preloaded){const version=++state.version,hasData=!!state.data;
+    if(!hasData){$('.music-events').classList.add('events-data-pending');$('#events-metrics').innerHTML='';$('#events-attendance-overview').hidden=true;}
+    $('.music-events').setAttribute('aria-busy','true');
+    $('#events-scope-reading').classList.add('is-loading');
+    $('#events-scope-reading').textContent=hasData?'Atualizando o recorte selecionado...':'Carregando o recorte selecionado...';
+    dashboardController?.abort();historyController?.abort();dashboardController=new AbortController();const params=query();$('#events-refresh').disabled=true;$('#events-excel').disabled=$('#events-pdf').disabled=true;
     try{const d=preloaded?.totals?preloaded:await request('/musica/eventos/api/painel/?'+params,{signal:dashboardController.signal});if(version!==state.version)return;
       multi.setOptions($('#events-city'),d.options.cities,'Todos os municípios');
       const selected=multi.values($('#events-common'));const cities=multi.normalizedValues($('#events-city'));
       const commons=d.options.commons.filter(x=>!cities.length||cities.includes(multi.normalize(x.city)));
       const c=$('#events-common');c.innerHTML='';commons.forEach(x=>c.add(new Option(x.label,x.value)));multi.setValues(c,selected);multi.refresh(c);
       options($('#events-local'),d.options.locations.map(x=>[x.id,x.nome]),'Todos os locais');
-      render(d);$('.music-events').classList.remove('events-data-pending');feedback('');$('#events-excel').disabled=$('#events-pdf').disabled=false;
+      render(d);$('#events-scope-reading').classList.remove('is-loading');$('.music-events').classList.remove('events-data-pending');feedback('');$('#events-excel').disabled=$('#events-pdf').disabled=false;
       void loadHistory(params,version);
-    }catch(error){if(version===state.version){feedback(error.message);$('#events-scope-reading').textContent='Recorte indisponivel. Tente atualizar novamente.';$('#events-management-note').textContent='Não foi possível atualizar o recorte. Use Atualizar para tentar novamente.';}}
-    finally{finishLoading();if(version===state.version){$('#events-refresh').disabled=false;$('.music-events').setAttribute('aria-busy','false');}}
+    }catch(error){if(version===state.version)showLoadError(error,hasData);}
+    finally{if(version===state.version){$('#events-refresh').disabled=false;$('.music-events').setAttribute('aria-busy','false');}}
   }
   async function initialize(selectedId){const finishLoading=loading();try{const initialParams=query();initialParams.delete('evento');initialParams.set('inicial','1');if(typeof selectedId==='string')initialParams.set('evento',selectedId);
     const [data,initialDashboard]=await Promise.all([request('/musica/eventos/api/eventos/'),request('/musica/eventos/api/painel/?'+initialParams)]);state.items=data.items;
@@ -91,13 +96,17 @@
     options($('#event-base'),bases.map(x=>[x.id,`${date(x.referencia)} · ${x.origem}`]),'Selecione a base');
     $('#events-base-state').textContent='O painel abre nos sete municípios da Regional. Visitantes ficam na visão complementar. O percentual considera somente presenças vinculadas ao público elegível do SAM. Cargos são dimensões sobrepostas e não devem ser somados novamente ao total.';
     await load(initialDashboard);
-  }catch(error){feedback(error.message);}finally{finishLoading();}}
+  }catch(error){showLoadError(error,!!state.data);}finally{finishLoading();}}
   options($('#events-month'),['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((x,i)=>[String(i+1).padStart(2,'0'),x]),'Todos');
-  Object.values(map).filter(x=>x!=='#events-search').forEach(s=>$(s).addEventListener('change',()=>{if(['#events-year','#events-month','#events-start','#events-end','#events-type'].includes(s)){$('#events-event').value='';$('#events-local').value='';}if(s==='#events-event')$('#events-local').value='';load();}));
-  $('#events-city').addEventListener('change',()=>{multi.clear($('#events-common'));load();});$('#events-common').addEventListener('change',load);
-  let timer;$('#events-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(load,350);};
-  $('#events-refresh').onclick=load;$('#events-clear').onclick=()=>{Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));load();};
-  $('#events-body').onclick=e=>{const b=e.target.closest('[data-event-id]');if(b){$('#events-event').value=b.dataset.eventId;$('#events-local').value='';load();$('.events-control').scrollIntoView({behavior:'smooth'});}};
+  let filterTimer,searchTimer;
+  const clearPendingLoads=()=>{clearTimeout(filterTimer);clearTimeout(searchTimer);};
+  const loadNow=()=>{clearPendingLoads();load();};
+  const scheduleFilterLoad=()=>{clearPendingLoads();filterTimer=setTimeout(load,200);};
+  Object.values(map).filter(x=>x!=='#events-search').forEach(s=>$(s).addEventListener('change',()=>{if(['#events-year','#events-month','#events-start','#events-end','#events-type'].includes(s)){$('#events-event').value='';$('#events-local').value='';}if(s==='#events-event')$('#events-local').value='';loadNow();}));
+  $('#events-city').addEventListener('change',()=>{multi.clear($('#events-common'));scheduleFilterLoad();});$('#events-common').addEventListener('change',scheduleFilterLoad);
+  $('#events-search').oninput=()=>{clearPendingLoads();searchTimer=setTimeout(load,350);};
+  $('#events-refresh').onclick=loadNow;$('#events-clear').onclick=()=>{clearPendingLoads();Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));load();};
+  $('#events-body').onclick=e=>{const b=e.target.closest('[data-event-id]');if(b){$('#events-event').value=b.dataset.eventId;$('#events-local').value='';loadNow();$('.events-control').scrollIntoView({behavior:'smooth'});}};
   $('#events-page-prev').onclick=()=>{state.page--;table();};$('#events-page-next').onclick=()=>{state.page++;table();};
   function generating(button){
     if(!button)return ()=>{};
@@ -108,7 +117,7 @@
   }
   async function download(format,report,extra={},button){if(button?.disabled)return;if(window.AppExport){const q=query();if(report)q.set('relatorio',report);for(const [key,value]of Object.entries(extra)){q.delete(key);if(value)q.append(key,value);}return AppExport.download(button,`/musica/eventos/exportar-${format}/?${q}`,{filename:`Ensaios_RTs.${format==='excel'?'xlsx':'pdf'}`});}const restore=generating(button);try{const q=query();if(report)q.set('relatorio',report);for(const [key,value] of Object.entries(extra)){q.delete(key);if(value)q.append(key,value);}const response=await fetch(`/musica/eventos/exportar-${format}/?${q}`,{cache:'no-store'});if(!response.ok||response.redirected)throw Error('Não foi possível exportar. Confira sua sessão e tente novamente.');const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=downloadName(response,`Ensaios_RTs.${format==='excel'?'xlsx':'pdf'}`);a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){feedback(error.message);}finally{restore();}}
   $('#events-excel').onclick=e=>download('excel',undefined,{},e.currentTarget);$('#events-pdf').onclick=e=>download('pdf','comuns',{},e.currentTarget);$('#events-commons-pdf').onclick=e=>download('pdf','comuns',{},e.currentTarget);
-  async function selectEvent(id){Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));await initialize(id);}
+  async function selectEvent(id){clearPendingLoads();Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));await initialize(id);}
   window.MusicEventsDashboard={loading,generating,downloadName,load:initialize,refresh:load,download,selectEvent,feedback,request,esc,date};
   $('#events-metrics').innerHTML=['Músicos presentes','Organistas presentes','Presenças totais','Comuns representadas'].map(label=>`<article class="events-metric events-loading"><small>${label}</small><strong>—</strong><p>Carregando indicadores…</p></article>`).join('');
   initialize();

@@ -5,6 +5,8 @@ import requests
 from django.conf import settings
 import logging
 
+from .utils.supabase_http import supabase_get
+
 logger = logging.getLogger(__name__)
 
 class SupabaseAuthMiddleware:
@@ -41,14 +43,14 @@ class SupabaseAuthMiddleware:
                 revoke_reason = 'invalid_session'
             else:
                 try:
-                    profile_response = requests.get(
+                    profile_response = supabase_get(
                         f"{settings.SUPABASE_URL}/rest/v1/profiles",
                         headers={
                             'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
                             'Authorization': f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
                         },
                         params={'user_id': f'eq.{user_id}', 'select': 'user_id,status,role_id,role,sector,comum,municipio,cidade', 'limit': '1'},
-                        timeout=5,
+                        timeout=(3.05, 5),
                     )
                     profile_response.raise_for_status()
                     profiles = profile_response.json()

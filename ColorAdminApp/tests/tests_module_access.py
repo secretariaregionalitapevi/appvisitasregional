@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.test import RequestFactory, SimpleTestCase
 from requests import Timeout
@@ -126,6 +126,31 @@ class DepartmentAccessMiddlewareTests(SimpleTestCase):
             response = middleware(request)
             self.assertEqual(response.status_code, 401, path)
             self.assertNotIn(b"private data", response.content)
+
+    @patch("ColorAdminApp.utils.supabase_http.time.sleep")
+    @patch("ColorAdminApp.module_access.explicit_modules", return_value=set())
+    @patch("ColorAdminApp.middleware.requests.get")
+    def test_profile_verification_recovers_from_transient_gateway_failure(self, get, _modules, _sleep):
+        from django.http import HttpResponse
+        from ColorAdminApp.middleware import SupabaseAuthMiddleware
+
+        unavailable = Mock(status_code=503)
+        approved = Mock(status_code=200)
+        approved.json.return_value = [{
+            "user_id": "approved-user", "status": "approved", "role_id": 2,
+            "sector": "Visitas",
+        }]
+        get.side_effect = [unavailable, approved]
+        request = RequestFactory().get("/visitas/api/dashboard/")
+        request.session = TestSession({
+            "authenticated": True, "user_id": "approved-user",
+            "user_profile": {"role_id": 2, "sector": "Visitas"},
+        })
+
+        response = SupabaseAuthMiddleware(lambda _request: HttpResponse("private data"))(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(get.call_count, 2)
 
     @patch("ColorAdminApp.module_access.explicit_modules", return_value=set())
     @patch("ColorAdminApp.middleware.requests.get")

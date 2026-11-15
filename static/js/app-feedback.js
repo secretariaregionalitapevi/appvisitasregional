@@ -22,10 +22,15 @@
   const iconFor = (type, flow) => type === 'loading' ? flows[flow].icon : type === 'success' ? 'fa-check' : type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-exclamation';
 
   function show(options = {}) {
-    const previousLayer = document.querySelector('#app-feedback-layer');
     const type = options.type || 'success';
     const loading = type === 'loading';
     const flow = options.flow || inferFlow(options.title);
+    const title = String(options.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    // Export progress belongs to the triggering button. Keep the close handle for legacy callers.
+    if (loading && (flow === 'export' || /^(gerando|preparando|exportando)\b.*(arquivo|relatorio|resumo|pdf|excel|planilha|documento)/.test(title))) {
+      return {close() {}, element:null};
+    }
+    const previousLayer = document.querySelector('#app-feedback-layer');
     const config = flows[flow] || flows.save;
     const escapedMessage = escapeHtml(options.message || '');
     const escapedHighlight = escapeHtml(options.highlight || '');

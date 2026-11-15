@@ -79,7 +79,7 @@ def import_exams(request):
             if len(rows) > 500:
                 raise ValueError('Importe no máximo 500 resultados por lote.')
             for row in rows:
-                if 'ORGANISTA' in exams.norm(request.FILES['arquivo'].name) or row.get('tipo_exame') == 'RJM':
+                if not row.get('categoria') and ('ORGANISTA' in exams.norm(request.FILES['arquivo'].name) or row.get('tipo_exame') == 'RJM'):
                     row['categoria'] = 'ORGANISTA'
             students = exams.visible_students(request, {common_code(r['comum']) for r in rows})
             for index, row in enumerate(rows):

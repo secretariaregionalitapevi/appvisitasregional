@@ -30,10 +30,59 @@ class ExamImportTests(SimpleTestCase):
         self.assertEqual(rows[0]['nome'],'ANA SILVA')
         self.assertEqual(rows[1]['resultado'],'AUSENTE')
 
+    @patch('ColorAdminApp.exam_import.PdfReader')
+    def test_pdf_continues_stage_across_pages_and_changes_at_next_heading(self, reader):
+        names = ['RENZO CARVALHO DOS SANTOS', 'MURILO SANTANA DA SILVA',
+                 'KENY ALAN SANTOS DA SILVA', 'PIETRO SOARES ARAUJO SILVA',
+                 'AMARILDO APARECIDO DOS SANTOS', 'MIGUEL SANTOS LIMA DA SILVA',
+                 'YURI HENRIQUE THOMÉ DA SILVA', 'SAMUEL PESSOA DOS SANTOS',
+                 'ARTHUR NEVES DOS SANTOS', 'SAMUEL FRUTUOSO AZANHA']
+        first_page = ('PARA EXAME DE OFICIALIZAÇÃO\n'
+                      '1 ANA SILVA    BR-22-1234 - CENTRAL    VIOLINO    APROVADO\n'
+                      'PARA TESTE CULTO OFICIAL\n')
+        second_page = '\n'.join(
+            f'{index} {name}    BR-22-3050 - JARDIM ROSEMARY II    VIOLINO    APROVADO'
+            for index, name in enumerate(names, 19))
+        second_page += ('\nTROCA DE INSTRUMENTO\n'
+                        '1 BIA SILVA    BR-22-1234 - CENTRAL    VIOLA    APROVADO')
+        reader.return_value.pages = [Mock(extract_text=Mock(return_value=text))
+                                     for text in [first_page, second_page]]
+        rows = read_document(SimpleUploadedFile('musicos.pdf', b'pdf'))
+        self.assertEqual(len(rows), 12)
+        self.assertEqual(rows[0]['tipo_exame'], 'OFICIALIZAÇÃO')
+        self.assertEqual([r['nome'] for r in rows[1:11]], names)
+        self.assertEqual([r['tipo_exame'] for r in rows[1:11]], ['CULTO OFICIAL'] * 10)
+        self.assertEqual(rows[-1]['tipo_exame'], 'TROCA DE INSTRUMENTO')
+        self.assertTrue(all(r['resultado'] == 'APROVADO' for r in rows))
+
     def test_common_and_homonyms_require_unambiguous_match(self):
         self.assertEqual(resolve_student(self.row,[self.student]),self.student)
         self.assertIsNone(resolve_student(self.row,[self.student,dict(self.student,id='other')]))
         self.assertIsNone(resolve_student(dict(self.row,comum='BR-22-9999'),[self.student]))
+
+    def test_pdf_instruments_are_not_mistaken_for_instructors(self):
+        rows = text_rows('RELAÇÃO DE MÚSICOS PARA EXAME\nPARA EXAME DE OFICIALIZAÇÃO\n'
+                         '6 JOÃO CAETANO    BR-22-3206 - JARDIM SANTA RITA II    TUBA-SI    APROVADO\n'
+                         '19 JOSONIL ONORIO DE ASSIS    BR-21-1039 - ITAPEVI CENTRAL    SAXOFONE TENOR - SIB    APROVADO')
+        self.assertEqual([r['instrumento'] for r in rows], ['TUBA', 'SAXOFONE TENOR'])
+        self.assertTrue(all(r['categoria'] == 'MÚSICO' for r in rows))
+        self.assertTrue(all(r['tonalidade'] == 'SI♭' for r in rows))
+        self.assertTrue(all(r['encarregado_local'] == '' for r in rows))
+        from ColorAdminApp.exam_identity import new_student_plan
+        catalog = [{'comum': r['comum'], 'cidade': 'ITAPEVI'} for r in rows]
+        self.request.session['user_profile']['role_id'] = 1
+        for row in rows:
+            student = new_student_plan(row, {}, self.request, catalog)
+            self.assertEqual(student['instrumento'], row['instrumento'])
+            self.assertEqual(student['tonalidade'], 'SI♭')
+            self.assertEqual(student['cargo_ministerio'], 'MÚSICO')
+
+    def test_instructor_column_remains_available_for_organists(self):
+        row = text_rows('RELAÇÃO DE ORGANISTAS\nPARA TESTE RJM\n'
+                        '1 ANA SILVA    BR-22-1234 - CENTRAL    MARIA SILVA    APROVADA')[0]
+        self.assertEqual(row['encarregado_local'], 'MARIA SILVA')
+        self.assertEqual(row['categoria'], 'ORGANISTA')
+        self.assertEqual(row['instrumento'], '')
 
     def test_particles_married_surname_and_spelling_match_within_common(self):
         for source, stored in [('ISADORA CUBAS CARREIRO CALONGAS','ISADORA CUBAS CARREIRO'),

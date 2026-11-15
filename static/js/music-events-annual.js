@@ -47,11 +47,15 @@
         const cell=cells.get(day);
         if(!cell)return '<td class="annual-outside">Não previsto neste ciclo</td>';
         if(!cell.loaded)return '<td class="annual-outside">Sem dados carregados</td>';
-        const status=cell.leader_attendance??(['PRESENTE','JUSTIFICOU','SEM_ENCARREGADO','ENFERMO'].includes(cell.leader_status)?cell.leader_status:'NAO_JUSTIFICOU');
-        const onList=status==='PRESENTE',leader={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO'}[status];
-        const places=onList?(cell.leader_valid_locations??cell.leader_locations).filter(local=>!['LOCAL A CONFERIR','NÃO INFORMADO'].includes(local.toUpperCase())):[];
-        const noLeader=!onList, noThree=cell.musicians===0&&cell.organists===0&&noLeader;
-        return `<td${noThree?' class="annual-missing-three"':''}><div class="annual-attendance"><span${cell.musicians===0?' class="annual-missing-category" title="SEM MÚSICO REGISTRADO NESTE ENSAIO"':''}>Músicos <b>${n(cell.musicians)}</b> <small>${pct(cell.musician_percent,row.cadastro_musicos)}</small></span><span${cell.organists===0?' class="annual-missing-category" title="SEM ORGANISTA REGISTRADA NESTE ENSAIO"':''}>Organistas <b>${n(cell.organists)}</b> <small>${pct(cell.organist_percent,row.cadastro_organistas)}</small></span></div><div class="annual-leader conductor-status ${status} ${status==='NAO_JUSTIFICOU'?'annual-missing-category':''}">Encarregado local: ${esc(leader)}</div>${places.length?`<small>LOCAL: ${esc(places.join(' / '))}</small>`:''}${noThree?'<small class="annual-missing-label">SEM REGISTRO DOS TRÊS PÚBLICOS</small>':''}${cell.unresolved?'<small class="text-warning">Conciliação de comuns pendente</small>':''}</td>`;
+        const statusNames={PRESENTE:'PRESENTE',JUSTIFICOU:'JUSTIFICOU',NAO_JUSTIFICOU:'NJ',SEM_ENCARREGADO:'SEM ENCARREGADO',ENFERMO:'ENFERMO',NAO_INFORMADO:'Não informado'};
+        const details=cell.leader_details||[];
+        const leaderRows=details.length?details.map(item=>{
+          const state=item.situacao||'NAO_INFORMADO',places=state==='PRESENTE'?(item.locais||[]).filter(local=>!['LOCAL A CONFERIR','NÃO INFORMADO'].includes(local.toUpperCase())):[];
+          return `<div class="annual-leader conductor-status ${state}">${esc(item.nome)}: ${esc(statusNames[state]||'Não informado')}</div>${places.length?`<small>LOCAL: ${esc(places.join(' / '))}</small>`:''}`;
+        }).join(''):'<div class="annual-leader conductor-status NAO_INFORMADO">Encarregado local: Não informado</div>';
+        const anyPresent=details.length?details.some(item=>item.situacao==='PRESENTE'):cell.leader_on_list;
+        const noThree=cell.musicians===0&&cell.organists===0&&!anyPresent;
+        return `<td${noThree?' class="annual-missing-three"':''}><div class="annual-attendance"><span${cell.musicians===0?' class="annual-missing-category" title="SEM MÚSICO REGISTRADO NESTE ENSAIO"':''}>Músicos <b>${n(cell.musicians)}</b> <small>${pct(cell.musician_percent,row.cadastro_musicos)}</small></span><span${cell.organists===0?' class="annual-missing-category" title="SEM ORGANISTA REGISTRADA NESTE ENSAIO"':''}>Organistas <b>${n(cell.organists)}</b> <small>${pct(cell.organist_percent,row.cadastro_organistas)}</small></span></div>${leaderRows}${noThree?'<small class="annual-missing-label">SEM REGISTRO DOS TRÊS PÚBLICOS</small>':''}${cell.unresolved?'<small class="text-warning">Conciliação de comuns pendente</small>':''}</td>`;
       }).join('')}<td>${leaderBadge}<small>Com músicos: ${row.musician_sessions} · Com organistas: ${row.organist_sessions} · Com encarregado local: ${row.leader_sessions}</small><small>${esc(row.reading)}</small><small>Cobertura dos dados: ${loadedCount}/${row.expected_sessions??3} ensaios carregados${row.year_complete?'':' · Ano ainda incompleto'}</small>${readings.length?`<small>${readings.map(esc).join(' · ')}</small>`:''}</td></tr>`;
     }).join('')+'</tbody></table></div>';
     }).join('')||'<div class="events-empty">Nenhuma comum para os filtros selecionados.</div>';
@@ -85,7 +89,6 @@
     }
     const restore=window.MusicEventsDashboard.generating(button);
     const query=params(city);if(day)query.set('data',day);if($('#annual-status').value)query.set('situacao',$('#annual-status').value);
-    $('#annual-message').textContent='Gerando o PDF com o acompanhamento e a grade por ensaio…';
     try{
       const response=await fetch('/musica/eventos/anual/exportar-pdf/?'+query,{cache:'no-store'});
       if(!response.ok||response.redirected){let message='Não foi possível gerar o PDF.';try{message=(await response.json()).error||message;}catch{}throw Error(message);}

@@ -13,7 +13,6 @@ async function run(button,produce,options={}){
  if(button&&(busy.has(button)||button.disabled||button.getAttribute('aria-disabled')==='true'))return false;
  const original=button?{html:button.innerHTML,disabled:button.disabled,busy:button.getAttribute('aria-busy'),aria:button.getAttribute('aria-disabled'),tab:button.getAttribute('tabindex')}:null;
  if(button){busy.add(button);button.disabled=true;button.setAttribute('aria-busy','true');button.setAttribute('aria-disabled','true');if(button.tagName==='A')button.setAttribute('tabindex','-1');button.innerHTML='<i class="fa fa-spinner fa-spin me-1" aria-hidden="true"></i>Gerando...';}
- toast('loading',options.title||'Gerando arquivo',options.message||'Preparando o arquivo com o recorte selecionado.');
  try{
   await produce();
   toast('success','Arquivo pronto',options.success||'Arquivo gerado. O download foi iniciado.','Confira os downloads do navegador.');

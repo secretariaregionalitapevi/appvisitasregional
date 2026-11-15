@@ -41,6 +41,24 @@ class IdentityAndRegistryTests(SimpleTestCase):
                                  ('SITIO JOSE TEIXEIRA - ITAPEVI', 'BR-21-1312')]:
             self.assertTrue(resolver.resolve(source, 'ITAPEVI')['comum'].startswith(expected))
 
+    def test_rehearsal_workbook_spelling_errors_resolve_to_cotia_commons(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        catalog = [{'comum': 'BR-22-0422 - JARDIM PIONEIRO', 'cidade': 'COTIA'},
+                   {'comum': 'BR-22-1722 - PORTAL DA PRIMAVERA', 'cidade': 'COTIA'}]
+        resolver = CommonResolver(catalog)
+        events = [{'id': 'e', 'data_evento': '2026-11-15', 'tipo': 'ENSAIO_REGIONAL'}]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': 'Pessoa',
+                    'comum_informada': source, 'municipio_informado': 'COTIA',
+                    'categoria': 'MUSICO'}
+                   for source in ['JD PIONEIRA', 'PORTTAL DA PRIMAVERA']]
+
+        data = aggregate(events, records, [{'id': 'l', 'evento_id': 'e', 'nome': 'COTIA'}],
+                         [], {}, catalog)
+
+        self.assertEqual({row['comum'] for row in data['rows']},
+                         {row['comum'] for row in catalog})
+        self.assertEqual(data['totals']['MUSICO'], 2)
+
     def test_ambiguous_short_name_does_not_merge_distinct_commons(self):
         from ColorAdminApp.modules.music_events_identity import CommonResolver
         resolver = CommonResolver([{'comum': 'BR-22-1 - JARDIM SANTA RITA - ITAPEVI', 'cidade': 'ITAPEVI'},

@@ -1,6 +1,7 @@
 """Leitura da aba nominal AppCont. Não usa resumos nem presume uma base SAM."""
 import hashlib
 import io
+import re
 import unicodedata
 import zipfile
 from collections import Counter
@@ -15,6 +16,20 @@ def norm(value):
                            if not unicodedata.combining(c)).upper().split())
 
 
+def is_local_conductor_role(value):
+    return 'ENCARREGADO LOCAL' in norm(value)
+
+
+def is_conductor_role(value):
+    role = norm(value)
+    return any(title in role for title in
+               ('ENCARREGADO LOCAL', 'ENCARREGADO DE ORQUESTRA', 'ENCARREGADO REGIONAL'))
+
+
+def person_names(value):
+    return [name.strip() for name in re.split(r'[,;/]', str(value or '')) if name.strip()]
+
+
 def category(cargo, instrument, family):
     role, inst = norm(cargo), norm(instrument)
     if inst in {'ORGAO', 'ORGANISTA'} or 'ORGANISTA' in role or (
@@ -27,6 +42,15 @@ def category(cargo, instrument, family):
     if role and role != 'IRMANDADE':
         return 'MINISTERIO'
     return 'IRMANDADE'
+
+
+def person_identity(record):
+    """O destino pode ser corrigido sem transformar uma pessoa em outra."""
+    from .music_events_identity import normalized_city
+    common = norm(record['comum_informada'])
+    code = re.match(r'^BR-\d+-\d+', common)
+    return (norm(record['nome']), code.group() if code else common,
+            normalized_city(record['municipio_informado']))
 
 
 def parse_workbook(content):
@@ -51,6 +75,7 @@ def parse_workbook(content):
             raise ValueError('É necessária uma única aba nominal com UUID, nome, comum, cidade, cargo, local e data do ensaio.')
         sheet, header_row, header = candidates[0]
         records, duplicates, dates, errors = {}, [], Counter(), []
+        identities, source_lines, conflicts = {}, {}, set()
         locations, categories, families = Counter(), Counter(), Counter()
         raw_count = 0
         for line, cells in enumerate(sheet.iter_rows(min_row=header_row + 1), header_row + 1):
@@ -93,14 +118,26 @@ def parse_workbook(content):
                           'observacoes': str(source.get('ANOTACOES') or '')[:4000]}
                 if identity in records:
                     previous = records[identity]
-                    if norm(previous['nome']) != norm(record['nome']) or norm(previous['local']) != norm(record['local']):
-                        raise ValueError('UUID repetido com pessoa ou local diferente; corrija o arquivo')
-                    duplicates.append({'linha': line, 'uuid': identity})
+                    if identities[identity] != person_identity(record):
+                        conflicts.add(identity)
+                    duplicates.append({'linha': line, 'uuid': identity, 'linha_anterior': source_lines[identity][-1],
+                                       'local_anterior': previous['local'], 'local_mantido': record['local']})
+                else:
+                    identities[identity] = person_identity(record)
+                    source_lines[identity] = []
+                source_lines[identity].append(line)
                 records[identity] = record  # Regra explícita: última ocorrência do UUID.
             except (ValueError, TypeError) as exc:
                 errors.append({'linha': line, 'motivo': str(exc)})
         if errors:
             raise ValueError('Linhas inválidas: ' + '; '.join(f"{e['linha']}: {e['motivo']}" for e in errors[:12]))
+        conflict_details = [{'uuid': identity, 'linhas': source_lines[identity],
+                             'motivo': 'UUID com nome, comum ou município divergente; separado para conferência.'}
+                            for identity in sorted(conflicts)]
+        for identity in conflicts:
+            records.pop(identity, None)
+        if not records and conflicts:
+            raise ValueError('Nenhum registro seguro para importar: os UUIDs repetidos têm identidades divergentes. Confira os nomes, comuns e municípios.')
         if not records:
             raise ValueError('A aba nominal está vazia.')
         for record in records.values():
@@ -110,6 +147,9 @@ def parse_workbook(content):
         names = Counter((norm(row['nome']),norm(row['comum_informada'])) for row in records.values())
         return {'sha256': hashlib.sha256(content).hexdigest(), 'sheet': sheet.title,
                 'raw_count': raw_count, 'count': len(records), 'duplicates': len(duplicates),
+                'duplicate_details': duplicates[:100], 'conflicting_duplicates': len(conflicts),
+                'excluded_conflict_rows': sum(len(source_lines[identity]) for identity in conflicts),
+                'duplicate_conflicts': conflict_details[:100],
                 'possible_duplicates': sum(value-1 for value in names.values() if value>1),
                 'dates': dict(dates), 'suggested_date': dates.most_common(1)[0][0],
                 'locations': dict(locations), 'categories': dict(categories), 'families': dict(families),

@@ -1,0 +1,56 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+let render;
+const buttons = ['excel', 'pdf'].map(format => ({dataset:{samExport:format}}));
+const target = {innerHTML:'',querySelectorAll:()=>buttons};
+let download;
+const context = {document:{getElementById:()=>target, addEventListener:(_,handler)=>{render=handler;}},
+  window:{MusicEventsDashboard:{download:(...args)=>{download=args;}}}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync('static/js/music-events-participation.js','utf8'),context);
+const row = {event_id:'e',event:'Ensaio de exemplo',date:'2026-11-15',city:'JANDIRA',group:'MUSICO',
+  label:'Músicos',registered:500,present:250,percent:50,candidate_base:100,candidate_present:25,candidate_percent:25};
+render({detail:{sam_participation:{available:true,criterion:'Referência atual',rows:[row],summaries:[row]}}});
+assert.match(target.innerHTML,/50%/);
+assert.match(target.innerHTML,/500/);
+assert.match(target.innerHTML,/250/);
+assert.match(target.innerHTML,/25%/);
+assert.match(target.innerHTML,/15\/11\/2026/);
+buttons[0].onclick();
+assert.equal(download[0],'excel');
+assert.equal(download[1],'participacao');
+const organist = {...row,group:'ORGANISTA',label:'Organistas',registered:80,present:20,percent:25,candidate_base:40,candidate_present:5,candidate_percent:12.5};
+const overview = {available:true,criterion:'Referência atual',rows:[row,organist],summaries:[row,organist]};
+render({detail:{sam_participation:overview}});
+assert.equal((target.innerHTML.match(/class="sam-city-panel"/g)||[]).length,1);
+assert.equal((target.innerHTML.match(/class="sam-local-kpi /g)||[]).length,2);
+assert.equal((target.innerHTML.match(/class="sam-insight-card"/g)||[]).length,4);
+function click(key,value) {
+  const section = {dataset:{samEvent:'e'}};
+  const button = {dataset:{[key]:value},closest:()=>section,getAttribute:()=>value};
+  target.onclick({target:{closest:()=>button}});
+}
+click('samCategory','ORGANISTA');
+assert.match(target.innerHTML,/Destaque: <strong>Organistas/);
+assert.match(target.innerHTML,/data-sam-category="ORGANISTA" aria-pressed="true"/);
+click('samMode','candidates');
+assert.match(target.innerHTML,/12,5%/);
+assert.match(target.innerHTML,/Candidatos e candidatas/);
+click('samView','table');
+assert.match(target.innerHTML,/data-sam-view="table" aria-pressed="true"/);
+assert.match(target.innerHTML,/sam-matrix/);
+assert.equal((target.innerHTML.match(/<th scope="row">JANDIRA/g)||[]).length,1);
+assert.doesNotMatch(target.innerHTML,/sam-full-detail/);
+render({detail:{sam_participation:overview}});
+assert.match(target.innerHTML,/data-sam-mode="candidates" aria-pressed="true"/);
+click('samMode','all');
+click('samCategory','MUSICO');
+render({detail:{sam_participation:{rows:[],summaries:[],criterion:'Sem base'}}});
+assert.equal(buttons[0].disabled,true);
+assert.match(target.innerHTML,/Selecione um evento/);
+render({detail:{sam_participation:{available:false,criterion:'Sem base',rows:[{...row,registered:0,percent:null,divergent:true}],summaries:[{...row,registered:0,percent:null,divergent:true}]}}});
+assert.match(target.innerHTML,/Sem base/);
+assert.match(target.innerHTML,/Conferir cadastro e presenças/);
+assert.doesNotMatch(target.innerHTML,/Infinity|NaN/);
+console.log('Participação SAM: percentuais, candidatos, exportação e estados sem base corretos.');

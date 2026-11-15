@@ -162,7 +162,7 @@ class AnnualMonitoringTests(SimpleTestCase):
         self.assertTrue(absent['year_complete'])
         self.assertEqual([c['musicians'] for c in absent['cells']], [0, 0, 0])
         self.assertTrue(all(c['musician_percent'] == 0 for c in absent['cells']))
-        self.assertTrue(all(c['leader_status'] == 'NAO_INFORMADO' for c in absent['cells']))
+        self.assertTrue(all(c['leader_status'] == 'NAO_JUSTIFICOU' for c in absent['cells']))
 
     def test_same_day_joint_administration_does_not_multiply_sam_or_people(self):
         data = self.data(cities=['COTIA', 'CAUCAIA DO ALTO', 'VARGEM GRANDE PAULISTA'])
@@ -213,6 +213,16 @@ class AnnualMonitoringTests(SimpleTestCase):
         data = annual_data(e, r, s, registry, catalog, [review], [], [], 2026, {'level': 'regional'}, ['ITAPEVI'])
         row = next(row for row in data['rows'] if row['key'] == 'BR-22-2')
         self.assertEqual(row['cells'][0]['leader_status'], 'JUSTIFICOU')
+
+    def test_present_conductor_represents_common_with_another_pending_name(self):
+        e,r,s,registry,catalog=fixture()
+        review={'evento_id':'jan','comum_chave':'BR-22-1','municipio':'ITAPEVI',
+                'comum_nome':'Central','encarregado_nome':'Outro encarregado','situacao':'NAO_INFORMADO'}
+        data=annual_data(e,r,s,registry,catalog,[review],[],[],2026,{'level':'regional'},['ITAPEVI'])
+        row=next(row for row in data['rows'] if row['key']=='BR-22-1')
+        self.assertEqual(row['cells'][0]['leader_status'],'PRESENTE')
+        self.assertTrue(row['cells'][0]['leader_on_list'])
+        self.assertEqual(len(row['cells'][0]['leader_details']),2)
 
     def test_existing_invitation_status_and_calendar_override_are_preserved(self):
         e, r, s, registry, catalog = fixture()

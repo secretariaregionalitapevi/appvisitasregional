@@ -84,6 +84,8 @@ Cabeçalhos PDF: usar **Responsável:** Secretaria Regional da Música. No rodap
 
 Excecao solicitada para nomes de PDFs de ensaios regionais: [RELATÓRIO] EnR_LOCAL_MMMaa.pdf, usando o local de realizacao e mes/ano do evento (exemplo EnR_ITAPEVI_MAI26).
 
+No relatório unificado, identificar os municípios somente pela coluna lateral colorida, usando `CITY_COLORS`: Caucaia do Alto `#FFE699`, Cotia `#BDD7EE`, Vargem Grande Paulista `#D9E6AE` e Santana de Parnaíba `#D6E1EB` (azul acinzentado). Não adicionar outra linha horizontal com o nome da cidade. Repetir a coluna de identificação quando o bloco continuar em outra página. A legenda J/NJ/SE/EF deve ficar inteira na mesma linha, inclusive EF - Enfermo. Registros antigos como Não informado são apresentados como NJ em vermelho, preservando a prioridade da presença nominal e as demais situações registradas.
+
 O Acompanhamento da Música segue a mesma regra geral de responsabilidade institucional no cabeçalho e usuário logado no rodapé, preservando emissão, recorte e paginação.
 
 No PDF de Acompanhamento, o rodapé ocupa uma única linha: à esquerda, `Regional Itapevi - ANO - Município - SP`; à direita, `Impresso por: Nome - Página N`. Nas colunas de eventos, exibir o nome do encontro e, abaixo, a data uma única vez.

@@ -318,7 +318,7 @@ class Command(BaseCommand):
                     "details": {"new_students": stats["new_students"], "level_changes": stats["level_changes"]},
                 })
                 from django.core.cache import cache
-                cache.delete_many(['gem:students:v7', 'music-events:registry:v2', 'darpe:sam-reference:v3', 'sam:transitions:v1'])
+                cache.delete_many(['gem:students:v7', 'music-events:registry:v2', 'music-events:sam-source:v1', 'darpe:sam-reference:v3', 'sam:transitions:v1'])
                 from ColorAdminApp.music_events import _invalidate_annual
                 _invalidate_annual()
             else:

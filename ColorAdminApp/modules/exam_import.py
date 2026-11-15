@@ -94,6 +94,28 @@ def table_rows(rows, title=''):
     return output
 
 
+def instrument_details(value):
+    """Recognize catalog instruments and keep tuning separate from their names."""
+    from .gem import INSTRUMENT_OPTIONS, INSTRUMENT_ORDER_ALIASES
+    key = normalized(value).replace('♭', 'B')
+    key = re.sub(r'\s*-\s*', ' ', key)
+    key = re.sub(r'\((DO|FA|LA|MI|SI)\)', r'\1', key)
+    key = re.sub(r'\s+', ' ', key).strip()
+    tone = re.search(r'\s+(DO|FA|LA|MI\s*B|MI|SI\s*B|SI)$', key)
+    tonality = ''
+    if tone:
+        note = tone.group(1).replace(' ', '')
+        tonality = {'DO': 'DÓ', 'FA': 'FÁ', 'LA': 'LÁ', 'MIB': 'MI♭', 'MI': 'MI',
+                    'SIB': 'SI♭', 'SI': 'SI♭'}[note]
+        key = key[:tone.start()].strip()
+    aliases = {normalized(v): v for v in INSTRUMENT_OPTIONS}
+    aliases.update({normalized(k): v for k, v in INSTRUMENT_ORDER_ALIASES.items()})
+    aliases.update({'SAX ALTO': 'SAXOFONE ALTO', 'SAX TENOR': 'SAXOFONE TENOR',
+                    'CLARINETA': 'CLARINETE', 'SAXOFONE CONTRALTO': 'SAXOFONE ALTO'})
+    instrument = aliases.get(key, '')
+    return instrument, tonality if instrument else ''
+
+
 def text_rows(text):
     """Layout-preserving extraction keeps headings above their respective rows."""
     kind = ''
@@ -109,12 +131,14 @@ def text_rows(text):
             continue
         name, tail = match.groups()
         parts = re.split(r'\s{2,}|\t', tail.strip())
+        instrument, tonality = instrument_details(parts[1]) if len(parts) > 1 else ('', '')
         # Without column boundaries only the unique common code is safe to infer.
         common = parts[0] if len(parts) > 1 else re.match(r'BR-\d{2}-\d+', tail, re.I).group()
         output.append(dict(nome=name.strip(), comum=common, tipo_exame=kind,
-                           categoria=category,
-                           resultado=result_kind(tail), data_exame='', instrumento='',
-                           encarregado_local=parts[1] if len(parts) > 2 else ''))
+                           categoria=('ORGANISTA' if normalized(instrument) == 'ORGAO' else 'MÚSICO') if instrument else category,
+                           resultado=result_kind(tail), data_exame='', instrumento=instrument,
+                           tonalidade=tonality,
+                           encarregado_local=parts[1] if len(parts) > 2 and not instrument else ''))
     return output
 
 
@@ -184,7 +208,7 @@ def read_document(file):
         reader = PdfReader(file)
         if len(reader.pages) > 30:
             raise ValueError('PDF limitado a 30 páginas por importação.')
-        output = []
+        page_texts = []
         for index, page in enumerate(reader.pages):
             text = page.extract_text(extraction_mode='layout') or ''
             if not text.strip():
@@ -198,8 +222,10 @@ def read_document(file):
                     text = ocr_image(buffer.getvalue())
                 finally:
                     pdf.close()
-            output.extend(text_rows(text))
-        return output
+            page_texts.append(text)
+        # A section may continue on the next page without repeating its heading.
+        # Parse once so only a new heading changes the current exam stage.
+        return text_rows('\n'.join(page_texts))
     if extension in {'.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff', '.bmp'}:
         return text_rows(ocr_image(file.read()))
     raise ValueError('Formato não suportado. Use PDF, XLSX, CSV, TSV, TXT ou imagem.')
