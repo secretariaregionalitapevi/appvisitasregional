@@ -9,6 +9,7 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 from ColorAdminApp.utils.supabase_http import supabase_get
+from .congregation_distribution import corrected_catalog, corrected_common
 
 
 COMMON_CATALOG_CACHE_KEY = "visitas:common_catalog:v1"
@@ -37,7 +38,7 @@ def common_catalog():
     """Mantém as telas disponíveis durante lentidões temporárias do Supabase."""
     cached = cache.get(COMMON_CATALOG_CACHE_KEY)
     if cached is not None:
-        return cached
+        return corrected_catalog(cached)
 
     try:
         response = supabase_get(
@@ -52,11 +53,11 @@ def common_catalog():
             raise ValueError("Resposta inválida no catálogo de comuns")
         cache.set(COMMON_CATALOG_CACHE_KEY, catalog, COMMON_CATALOG_CACHE_SECONDS)
         cache.set(COMMON_CATALOG_STALE_CACHE_KEY, catalog, COMMON_CATALOG_STALE_SECONDS)
-        return catalog
+        return corrected_catalog(catalog)
     except (requests.RequestException, ValueError):
         stale = cache.get(COMMON_CATALOG_STALE_CACHE_KEY)
         if stale is not None:
-            return stale
+            return corrected_catalog(stale)
         raise
 
 
@@ -67,7 +68,7 @@ def user_scope(request):
     level = explicit if explicit in {"local", "municipal", "regional", "global"} else (
         "global" if role_id == 1 else "regional" if role_id == 2 else "municipal" if role_id == 3 else "local"
     )
-    comum = str(profile.get("comum") or "").strip()
+    comum = corrected_common(str(profile.get("comum") or "").strip())
     municipio = str(profile.get("municipio") or profile.get("cidade") or "").strip()
     if level in {"local", "municipal"} and not municipio and comum:
         match = next((x for x in common_catalog() if _norm(x.get("comum")) == _norm(comum)), None)

@@ -14,7 +14,7 @@
     <hr><h3 class="h5">Justificativas vinculadas ao evento</h3><p class="small" id="just-event-reading">Selecione um evento para visualizar as justificativas.</p>
     <div class="d-flex gap-2 flex-wrap align-items-end mb-3"><div><label for="just-lot" class="form-label">Lote importado</label><select id="just-lot" class="form-select"><option value="">Todos os lotes deste evento</option></select></div><button id="just-reload" type="button" class="btn btn-outline-primary">Atualizar lista</button><button id="just-view-selected" type="button" class="btn btn-outline-primary" disabled>Visualizar selecionadas</button><button id="just-edit-selected" type="button" class="btn btn-outline-primary" disabled>Editar selecionadas</button><button id="just-delete-selected" type="button" class="btn btn-danger" disabled><i class="fa fa-trash me-1"></i>Excluir selecionadas</button></div>
     <p class="small text-muted">Cada encarregado tem sua própria justificativa e situação. Excluir remove apenas os registros selecionados e preserva o histórico.</p>
-    <div class="table-responsive"><table class="table events-table"><thead><tr><th><input id="just-select-all" type="checkbox" aria-label="Selecionar todas as justificativas visíveis"></th><th>Nome / comum / município</th><th>Motivo</th><th>Lote / origem</th><th class="justification-actions-cell">Ações</th></tr></thead><tbody id="just-saved"></tbody></table></div></div>`;
+    <label class="justification-select-all"><input id="just-select-all" type="checkbox"> Selecionar todas as justificativas deste evento e lote</label><div id="just-saved" class="justification-city-groups"></div></div>`;
   document.querySelector('[data-view-panel="conductors"]').prepend(panel);
   const $ = id => panel.querySelector('#just-' + id);
   let token = '', ready = 0, saved = [], selected = new Set(), editorIds = [], listedEvent = '', eventItems = [], eventsLoaded = false, busy = false, dashboardSelection = null;
@@ -108,6 +108,12 @@
   document.addEventListener('music-events-data', e => { dashboardSelection = e.detail; syncDashboardEvent(e.detail); });
   document.querySelector('#events-event').addEventListener('change', () => syncDashboardEvent());
   const post = (action, values) => request(endpoint(action), {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}, body:JSON.stringify(values)});
+  const expandedMunicipalities = new Set();
+  $('saved').addEventListener('toggle', event => {
+    const city = event.target.dataset?.justCity;
+    if (!city) return;
+    if (event.target.open) expandedMunicipalities.add(city); else expandedMunicipalities.delete(city);
+  }, true);
   const visibleRows = () => saved.filter(r => !$('lot').value || (r.lote || 'manual') === $('lot').value);
   function selectionState() {
     const visible = visibleRows(), count = visible.filter(r => selected.has(r.id)).length;
@@ -118,12 +124,25 @@
     $('select-all').indeterminate = count > 0 && count < visible.length;
   }
   function renderSaved() {
-    $('saved').innerHTML = visibleRows().map(r => `<tr><td><input type="checkbox" data-pick="${esc(r.id)}" ${selected.has(r.id) ? 'checked' : ''} aria-label="Selecionar ${esc(r.comum_nome)}"></td><td><strong>${esc(r.nome || 'Conferência por comum')}</strong><small>${esc(r.comum_nome)} · ${esc(r.municipio)}</small></td><td>${esc(r.motivo)}</td><td>${esc(r.origem)}<small>${esc(r.lote || 'Manual / legado')}</small></td><td class="justification-actions-cell"><div class="justification-row-actions"><button class="btn btn-sm btn-outline-primary" data-view="${esc(r.id)}" type="button" title="Visualizar justificativa" aria-label="Visualizar justificativa"><i class="fa fa-eye" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline-warning" data-edit="${esc(r.id)}" type="button" title="Editar justificativa" aria-label="Editar justificativa"><i class="fa fa-pen" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline-danger" data-delete="${esc(r.id)}" type="button" title="Excluir justificativa" aria-label="Excluir justificativa"><i class="fa fa-trash" aria-hidden="true"></i></button></div></td></tr>`).join('') || '<tr><td colspan="5">Nenhuma justificativa neste evento e lote.</td></tr>';
+    const groups = new Map();
+    visibleRows().forEach(row => {
+      const city = String(row.municipio || 'Município não informado').trim().toLocaleUpperCase('pt-BR');
+      if (!groups.has(city)) groups.set(city, []);
+      groups.get(city).push(row);
+    });
+    const renderRow = r => `<tr><td><input type="checkbox" data-pick="${esc(r.id)}" ${selected.has(r.id) ? 'checked' : ''} aria-label="Selecionar ${esc(r.comum_nome)}"></td><td><strong>${esc(r.nome || 'Conferência por comum')}</strong><small>${esc(r.comum_nome)} · ${esc(r.municipio)}</small></td><td>${esc(r.motivo_resumido ?? r.motivo)}</td><td>${esc(r.origem)}<small>${esc(r.lote || 'Manual / legado')}</small></td><td class="justification-actions-cell"><div class="justification-row-actions"><button class="btn btn-sm btn-outline-primary" data-view="${esc(r.id)}" type="button" title="Visualizar justificativa" aria-label="Visualizar justificativa"><i class="fa fa-eye" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline-warning" data-edit="${esc(r.id)}" type="button" title="Editar justificativa" aria-label="Editar justificativa"><i class="fa fa-pen" aria-hidden="true"></i></button><button class="btn btn-sm btn-outline-danger" data-delete="${esc(r.id)}" type="button" title="Excluir justificativa" aria-label="Excluir justificativa"><i class="fa fa-trash" aria-hidden="true"></i></button></div></td></tr>`;
+    $('saved').innerHTML = [...groups].sort(([a],[b]) => a.localeCompare(b,'pt-BR')).map(([city,rows]) => {
+      rows.sort((a,b) => String(a.comum_nome||'').replace(/^BR-\d+-\d+\s*-\s*/i,'').localeCompare(String(b.comum_nome||'').replace(/^BR-\d+-\d+\s*-\s*/i,''),'pt-BR') || String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
+      return `<details class="justification-city" data-just-city="${esc(city)}" ${expandedMunicipalities.has(city)?'open':''}>
+        <summary><span class="justification-city-label"><i class="fa fa-location-dot" aria-hidden="true"></i><strong>${esc(city)}</strong></span><span class="justification-city-count">${rows.length} ${rows.length===1?'justificativa':'justificativas'}</span><i class="fa fa-chevron-down justification-city-chevron" aria-hidden="true"></i></summary>
+        <div class="table-responsive"><table class="table events-table mb-0"><thead><tr><th aria-label="Seleção"></th><th>Nome / comum</th><th>Motivo</th><th>Lote / origem</th><th class="justification-actions-cell">Ações</th></tr></thead><tbody>${rows.map(renderRow).join('')}</tbody></table></div>
+      </details>`;
+    }).join('') || '<p class="justification-empty">Nenhuma justificativa neste evento e lote.</p>';
     selectionState();
   }
   async function loadSaved() {
     const event = $('event').value;
-    if (listedEvent !== event) { $('lot').innerHTML = '<option value="">Todos os lotes deste evento</option>'; listedEvent = event; }
+    if (listedEvent !== event) { expandedMunicipalities.clear(); $('lot').innerHTML = '<option value="">Todos os lotes deste evento</option>'; listedEvent = event; }
     saved = []; selected.clear(); renderSaved();
     if (!event) { $('event-reading').textContent = 'Selecione um evento para visualizar as justificativas.'; return; }
     const result = await post('listar', {});

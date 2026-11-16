@@ -4,6 +4,7 @@ from .music_events_dashboard import code, REGIONAL, regional_city
 from .music_events_import import is_local_conductor_role, norm, person_names
 from .music_events_identity import CommonResolver
 from .music_events_calendar import validated_sites
+from .music_conductor_identity import conductor_name, active_conductor, common_name_key
 
 LABELS={'PRESENTE':'Presente','JUSTIFICOU':'J · Justificou','NAO_JUSTIFICOU':'NJ · Não justificou',
         'NAO_INFORMADO':'Não informado','SEM_ENCARREGADO':'Sem encarregado','ENFERMO':'Enfermo'}
@@ -58,7 +59,7 @@ def attach_common_attendance(data):
     return data
 
 
-def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leaders=(),transitions=None):
+def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leaders=(),transitions=None,members=()):
     resolver=CommonResolver(catalog)
     registered_leaders={};leaders_by_event_common=defaultdict(dict);leaders_by_city_name={}
     changes_by_person = defaultdict(list)
@@ -74,7 +75,12 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
                 continue
             if transitions is not None:
                 from .sam_temporal import state_at
-                person = state_at(person, changes, event['data_evento'])
+                historical = state_at(person, changes, event['data_evento'])
+                # Sem alteração registrada, preservar o mapeamento cadastral.
+                # Mudanças comprovadas continuam usando a vigência do evento.
+                changed_fields = {change['campo'] for change in changes}
+                person = {**person, **{field: value for field, value in historical.items()
+                                      if field in changed_fields}}
             dated_leaders.append((event['id'], person))
     for event_id, person in dated_leaders:
         if not is_local_conductor_role(person.get('cargo_ministerio')) or norm(person.get('status')) in {'INATIVO','EXCLUIR'}:continue
@@ -82,11 +88,37 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         if not common:continue
         key=code(common['comum'])
         for name in person_names(person.get('nome_aluno')):
+            name = conductor_name(name, key)
+            if not active_conductor(name):continue
             identity=norm(name)
             if not identity:continue
             registered_leaders.setdefault((event_id,key),set()).add(identity)
             leaders_by_event_common[(event_id,key)][identity]=name
             leaders_by_city_name.setdefault((event_id,norm(regional_city(common['cidade'])),identity),set()).add(key)
+    # O cadastro da irmandade já mapeia responsáveis de comuns sem cargo no SAM.
+    # Aplicar a mesma precedência do quadro de responsáveis cadastrados.
+    from .music_registry_current import current_members
+    fallback = defaultdict(dict)
+    for person in current_members(leaders, members):
+        if not is_local_conductor_role(person.get('cargo_outros')) or norm(person.get('status')) in {'INATIVO','EXCLUIR'}:
+            continue
+        common = resolver.resolve(person.get('codigo_comum') or person.get('comum'), person.get('cidade'))
+        if not common:
+            continue
+        key = code(common['comum'])
+        for name in person_names(person.get('nome')):
+            name = conductor_name(name, key)
+            if not active_conductor(name):continue
+            fallback[key][norm(name)] = name
+    for event in events:
+        for key, names in fallback.items():
+            if leaders_by_event_common.get((event['id'], key)):
+                continue
+            common = resolver.by_code[key]
+            leaders_by_event_common[(event['id'], key)].update(names)
+            registered_leaders[(event['id'], key)] = set(names)
+            for identity in names:
+                leaders_by_city_name.setdefault((event['id'], norm(regional_city(common['cidade'])), identity), set()).add(key)
     records=resolver.records(records)
     canonical_by_code={code(x.get('comum')):x for x in catalog}
     for row in records:
@@ -101,6 +133,12 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         row=dict(original);canonical=resolver.resolve(row['comum_chave'],row['municipio'])
         if canonical:
             row.update(comum_chave=code(canonical['comum']),comum_nome=canonical['comum'],municipio=canonical['cidade'])
+        row['encarregado_nome'] = conductor_name(row.get('encarregado_nome'), row['comum_chave'])
+        if not active_conductor(row['encarregado_nome']):continue
+        names = leaders_by_event_common.get((row['evento_id'], row['comum_chave']), {})
+        if not row.get('encarregado_nome') and names:
+            normalized_reviews.extend({**row, 'encarregado_nome': name} for name in names.values())
+            continue
         normalized_reviews.append(row)
     reviews=sorted(normalized_reviews,key=lambda r:str(r.get('updated_at') or ''))
     event_map={e['id']:e for e in events};site_map={s['id']:s for s in validated_sites(events, sites)}
@@ -120,6 +158,15 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         return (not filters.get('municipios') or norm(regional_city(city)) in {norm(regional_city(x)) for x in filters['municipios']}) and (
             not filters.get('comuns') or key in filters['comuns']) and (origin=='todos' or
             ((norm(regional_city(city)) in {norm(x) for x in REGIONAL})==(origin=='regional')))
+    # A ausência de uma comum na lista de presentes não a retira do universo.
+    for event in events:
+        for key, common in canonical.items():
+            city = regional_city(common['cidade'])
+            if not allowed(city, key):
+                continue
+            names = leaders_by_event_common.get((event['id'], key), {})
+            for name in names.values() or ['']:
+                group_for(event['id'], key, common['comum'], city, name)
     for item in frequency:
         if item['evento_id'] not in event_map:continue
         key=code(item['comum_codigo']);city=regional_city(item.get('municipio') or 'Não informado')
@@ -140,7 +187,10 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
         if not allowed(city,key):continue
         event=event_map[row['evento_id']]
         common_name=c.get('comum') or ('A conferir: '+common if row.get('comum_nao_reconhecida') else common)
-        names=person_names(row.get('nome')) or ['']
+        for registered_name in leaders_by_event_common.get((event['id'], key), {}).values():
+            group_for(event['id'], key, common_name, city, registered_name)
+        names=[conductor_name(name, key) for name in person_names(row.get('nome')) if active_conductor(name)]
+        if not names and not row.get('nome'):names=['']
         imported_local_conductor=is_local_conductor_role(row.get('cargo'))
         if (not imported_local_conductor and not leaders_by_event_common.get((event['id'],key))
                 and not any(norm(person_name) in registered_leaders.get((event['id'],key),set())
@@ -165,9 +215,14 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
             person_name=candidates[0]['encarregado_nome'] if len(candidates)==1 else ''
         group_key=(event['id'],common_key,norm(person_name))
         prior=groups.get(group_key,{})
+        if review['situacao'] == 'JUSTIFICOU':
+            prior['justificativa_registrada'] = True
+            prior['justificativa_observacoes'] = review.get('observacoes') or ''
         if prior.get('situacao')=='PRESENTE':
             continue
         group=group_for(event['id'],common_key,review['comum_nome'],regional_city(review['municipio']),person_name)
+        if review['situacao'] == 'JUSTIFICOU':
+            group['justificativa_registrada'] = True
         group.update(situacao=review['situacao'],
             locais=[site_map[review['local_id']]['nome']] if review.get('local_id') in site_map else [],
             observacoes=review.get('observacoes') or '',fonte='Conferência administrativa',
@@ -198,11 +253,37 @@ def summarize(events,records,sites,reviews,filters,catalog=(),frequency=(),leade
                              'FORA DO MUNICÍPIO' if row['fora_municipio'] else 'NO MUNICÍPIO') if row['situacao']=='PRESENTE' else ''
         row['situacao_label']=LABELS[row['situacao']]
         row['registro']=row['presenca_lista_label']
+    common_entries = defaultdict(list)
+    for row in rows:
+        common_entries[(row['evento_id'], row['comum_chave'])].append(row)
+    common_rows = []
+    for entries in common_entries.values():
+        status = common_attendance(entries)
+        present = [entry for entry in entries if attendance_status(entry) == 'PRESENTE']
+        row = {**entries[0], 'situacao': status, 'presenca_situacao': status,
+               'encarregado_nome': ' / '.join(entry['encarregado_nome'] for entry in present),
+               'locais_validos': sorted({local for entry in present for local in entry['locais_validos']}),
+               'em_outro_local': any(entry['em_outro_local'] for entry in present)}
+        common_rows.append(row)
         group=by_city.setdefault(row['municipio'],{'municipio':row['municipio'],**{k:0 for k in LABELS},
             'PRESENTE_REFERENCIA':0,'PRESENTE_OUTRO':0,'total':0})
         group[row['situacao']]+=1;group['total']+=1
         if row['situacao']=='PRESENTE':group['PRESENTE_OUTRO' if row['em_outro_local'] else 'PRESENTE_REFERENCIA']+=1
-    return {'rows':sorted(rows,key=lambda r:(r['municipio'],r['comum'],r['data'],norm(r.get('encarregado_nome')))),
+    individual_by_city = {
+        city: {**group, **{status: 0 for status in LABELS}, 'total_individual': 0}
+        for city, group in by_city.items()
+    }
+    for row in rows:
+        group = individual_by_city[row['municipio']]
+        group[row['situacao']] += 1
+        if row.get('justificativa_registrada') and row['situacao'] != 'JUSTIFICOU':
+            group['JUSTIFICOU'] += 1
+        group['total_individual'] += 1
+    return {'rows':sorted(rows,key=lambda r:(norm(r['municipio']),common_name_key(r['comum']),r['data'],norm(r.get('encarregado_nome')))),
+            'common_rows': common_rows,
             'municipalities':sorted(by_city.values(),key=lambda x:x['municipio']),
-            'totals':dict(Counter(r['situacao'] for r in rows)),
-            'unit':'conferências individuais por encarregado e evento'}
+            'individual_municipalities': sorted(individual_by_city.values(), key=lambda x:x['municipio']),
+            'totals':dict(Counter(r['situacao'] for r in common_rows)),
+            'individual_totals': {**dict(Counter(r['situacao'] for r in rows)),
+                                  'JUSTIFICOU': sum(bool(r.get('justificativa_registrada')) or r['situacao'] == 'JUSTIFICOU' for r in rows)},
+            'unit':'congregações por evento; conferência individual preservada'}

@@ -17,6 +17,7 @@ from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
 from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
 from .music_events_identity import normalized_city
 from .music_events_import import norm
+from .music_conductor_identity import common_name_key
 from .music_events_filenames import report_scope
 from .music_events_closing import closing_for
 from .music_events_conductors import attendance_status, attendance_label
@@ -132,11 +133,16 @@ def administrative_closing(data, date, place):
             ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)]))
         return table
     instruments = source.get('instruments', {})
+    nominal_instruments = bool(closing and closing.get('declared') and not instruments and closing.get('nominal_instruments'))
+    if nominal_instruments:
+        instruments = closing['nominal_instruments']
     roles = sorted((name, count) for name, count in source.get('roles', {}).items()
                    if name.upper() not in {'MÚSICO', 'MUSICO', 'MUSICISTA', 'ORGANISTA', 'IRMANDADE', 'APOIO'})
     if closing and closing.get('declared'):
         roles = list(closing['roles'].items())
-    instrument_table, family_entries = instrument_family_table(instruments, organists, 300)
+    instrument_table, family_entries = instrument_family_table(instruments,
+        closing['nominal_organists'] if nominal_instruments else organists, 300,
+        title='INSTRUMENTOS NOMINAIS - CONCILIAÇÃO' if nominal_instruments else 'INSTRUMENTOS POR FAMÍLIA')
     family_entries += list(source.get('support', {}).items()) if closing else [('Encarregados locais presentes', conductor_count), ('Demais participantes', total - musicians - organists)]
     columns = Table([[instrument_table, section('Ministério e cargos', roles, 240),
                       section('COMPOSIÇÃO DO LOCAL' if closing else 'COMPOSIÇÃO DAS COMUNS', family_entries, USEFUL - 564)]], colWidths=[312, 252, USEFUL - 564])
@@ -144,10 +150,17 @@ def administrative_closing(data, date, place):
         ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 10)]))
     source_note = para(f'FONTE: {closing["source_label"]}.' if closing else 'BASE: LISTA DE PRESENÇAS DO ENSAIO.',
                        ParagraphStyle('closing-note', parent=STYLE, fontSize=8, leading=10))
+    if closing and closing.get('declared') and closing.get('nominal_musicians') is not None:
+        reconciliation = ('LISTA NOMINAL DO LOCAL: ' + str(closing['nominal_musicians']) + ' MÚSICOS, '
+            + str(closing['nominal_organists']) + ' ORGANISTAS, ' + str(closing['nominal_total']) + ' PESSOAS. '
+            + 'DIVERGÊNCIAS DE CLASSIFICAÇÃO E COBERTURA PERMANECEM PARA CONCILIAÇÃO; '
+            + 'O FECHAMENTO OFICIAL NÃO ALTERA AS PRESENÇAS POR COMUM.')
+        source_note = para('FONTE: ' + closing['source_label'] + '. ' + reconciliation,
+                          ParagraphStyle('closing-reconciliation', parent=STYLE, fontSize=8, leading=10))
     return [heading, Spacer(1, 4), context, Spacer(1, 8), cards, Spacer(1, 10), columns, Spacer(1, 8), source_note]
 
 
-def instrument_family_table(counts, organists, width):
+def instrument_family_table(counts, organists, width, title='INSTRUMENTOS POR FAMÍLIA'):
     families = [('', ['ORGANISTAS', 'ACORDEON'], '#FFFFFF'),
                 ('CORDAS', ['VIOLINO', 'VIOLA', 'VIOLONCELO'], '#D9D9D9'),
                 ('MADEIRAS', ['FLAUTA TRANSVERSAL', 'OBOÉ', "OBOÉ D'AMORE", 'CORNE INGLÊS', 'CLARINETE', 'CLARINETE ALTO',
@@ -168,7 +181,7 @@ def instrument_family_table(counts, organists, width):
     cell = ParagraphStyle('instrument-cell', parent=STYLE, fontSize=8.5, leading=10.5)
     number = ParagraphStyle('instrument-number', parent=cell, alignment=1)
     head = ParagraphStyle('instrument-head', parent=BOLD, fontSize=8, leading=10, textColor=colors.white)
-    body = [[para('INSTRUMENTOS POR FAMÍLIA', head), '', para('QUANTIDADE', head)]]
+    body = [[para(title, head), '', para('QUANTIDADE', head)]]
     styles = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E4B7A')),
               ('SPAN', (0, 0), (1, 0)),
               ('GRID', (0, 0), (-1, -1), .3, colors.HexColor('#C8D1DA')),
@@ -367,6 +380,27 @@ def model_summary(data):
     return [dashboard(data, USEFUL)]
 
 
+def municipality_participation(data):
+    rows = ((data.get('comparison') or {}).get('current') or {}).get('by_municipality', [])
+    if not rows:
+        return []
+    headings = ['Município de origem', 'Músicos no município', 'Músicos em outros locais',
+                'Organistas no município', 'Organistas em outros locais', 'Total musical da origem']
+    body = [[para(label, ParagraphStyle('origin-head', parent=BOLD, fontSize=8, textColor=colors.white)) for label in headings]]
+    for row in rows:
+        values = [row[key] for key in ['musicians_in', 'musicians_out', 'organists_in', 'organists_out']]
+        body.append([para(row['municipio'])] + [para(value, CENTER) for value in values + [sum(values)]])
+    table = Table(body, colWidths=[USEFUL*.27]+[USEFUL*.73/5]*5, repeatRows=1)
+    table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e4b7a')),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f4f6f8')]),
+        ('GRID',(0,0),(-1,-1),.35,colors.HexColor('#d8dee5')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
+    return [para('PARTICIPAÇÃO POR MUNICÍPIO DE ORIGEM', BOLD), Spacer(1,12), table, Spacer(1,10),
+            para('No município: origem e local de comparecimento pertencem ao mesmo município. '
+                 'Fazendinha corresponde a Santana de Parnaíba. Os totais desta tabela são nominais por origem; '
+                 'o fechamento oficial do local inclui todas as origens.', STYLE)]
+
+
 def build_model_pdf(data, actor='Secretaria Musical', now=None, include_summary=True, page_numbers=True, include_original=False, page_offset=0):
     data = scoped_report(data)
     now = now or datetime.now(ZoneInfo('America/Sao_Paulo'))
@@ -395,7 +429,7 @@ def build_model_pdf(data, actor='Secretaria Musical', now=None, include_summary=
         rows.append(row)
     story, chunk, height = [], [], 0
     chunks = []
-    for row in rows:
+    for row in sorted(rows, key=lambda row: (norm(row['municipio']), common_name_key(row['comum']))):
         # Paginação mede a altura real; não corta nomes nem força linhas altas para fora da página.
         row_height = legacy_grid([row]).wrap(USEFUL, HEIGHT)[1] - 39
         if chunk and height + row_height > 370:
@@ -410,8 +444,12 @@ def build_model_pdf(data, actor='Secretaria Musical', now=None, include_summary=
         story.extend([model_header(place, date, actor, now, page_offset + index + 1), legacy_grid(page_rows), presence_legend()])
     if include_summary:
         story.extend([PageBreak(), model_header(place, date, actor, now, page_offset + len(chunks) + 1), *model_summary(data)])
+        municipal = municipality_participation(data)
+        if municipal:
+            story.extend([PageBreak(), model_header(place, date, actor, now, page_offset + len(chunks) + 2), *municipal])
     if include_summary and data.get('instruments'):
-        story.extend([PageBreak(), *administrative_closing(data, date, place)])
+        story.extend([PageBreak(), model_header(place, date, actor, now, page_offset + len(chunks) + 2 + bool(municipal)),
+                      *administrative_closing(data, date, place)])
     draw = footer(actor, now, date, page_numbers)
     doc.build(story, onFirstPage=draw, onLaterPages=draw)
     content = stream.getvalue()
@@ -430,7 +468,8 @@ def session_report(data, session):
         leader = ' / '.join(
             f"{item['nome']}: {STATUS.get(item['situacao'], 'NÃO INFORMADO')}"
             for item in details) if details else leader_text(cell, cell.get('leader_valid_locations', []))
-        rows.append({**row, 'MUSICO': cell['musicians'], 'ORGANISTA': cell['organists'], 'encarregado': leader,
+        rows.append({**row, 'MUSICO': cell['musicians'], 'ORGANISTA': cell['organists'],
+                     'musicos_orquestra': cell['musicians'], 'organistas_orquestra': cell['organists'], 'encarregado': leader,
                      'encarregado_situacao': 'PRESENTE' if cell.get('leader_on_list') else cell['leader_status']})
         rows[-1].update(encarregado_na_lista=cell.get('leader_on_list', False), leader_attendance=cell['leader_attendance'], encarregado_local=' / '.join(cell.get('leader_valid_locations', [])))
         if details:

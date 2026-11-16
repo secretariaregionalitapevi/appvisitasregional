@@ -12,6 +12,144 @@ from ColorAdminApp.modules import music_events
 
 
 class ConductorSummaryTests(SimpleTestCase):
+    def test_retired_leaders_are_excluded_without_mutating_source_records(self):
+        events, _, sites = self.fixture()
+        catalog = [{'comum': 'BR-22-1 - A', 'cidade': 'COTIA'}]
+        names = ['GETÚLIO SANTIAGO COSTA', 'JOSE RICARDO BARDELI', 'SILAS AGUIAR ROCHA', 'Encarregado atual']
+        leaders = [{'nome_aluno': name, 'cargo_ministerio': 'ENCARREGADO LOCAL',
+                    'status': 'Concluido', 'comum_congregacao': catalog[0]['comum'], 'municipio': 'COTIA'}
+                   for name in names]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': name, 'cargo': 'ENCARREGADO LOCAL',
+                    'comum_codigo': 'BR-22-1', 'municipio_informado': 'COTIA'} for name in names]
+        reviews = [{'evento_id': 'e', 'comum_chave': 'BR-22-1', 'comum_nome': catalog[0]['comum'],
+                    'municipio': 'COTIA', 'encarregado_nome': name, 'situacao': 'JUSTIFICOU'} for name in names[:3]]
+        data = summarize(events, records, sites, reviews, {}, catalog=catalog, leaders=leaders)
+        self.assertEqual([r['encarregado_nome'] for r in data['rows']], ['Encarregado atual'])
+        self.assertEqual(data['individual_totals'], {'PRESENTE': 1, 'JUSTIFICOU': 0})
+        self.assertEqual([r['nome'] for r in records], names)
+        self.assertEqual(len(leaders), 4)
+
+    def test_confirmed_aliases_merge_review_and_presence_and_sort_by_common_name(self):
+        events, _, sites = self.fixture()
+        catalog = [{'comum': 'BR-22-2934 - PARQUE SUBURBANO II', 'cidade': 'ITAPEVI'},
+                   {'comum': 'BR-22-3789 - PAISAGEM CASA GRANDE', 'cidade': 'COTIA'},
+                   {'comum': 'BR-22-9999 - ALAMEDA', 'cidade': 'COTIA'}]
+        leaders = [{'nome_aluno': name, 'cargo_ministerio': 'ENCARREGADO LOCAL', 'status': 'Concluido',
+                    'comum_congregacao': common['comum'], 'municipio': common['cidade']}
+                   for common, name in [(catalog[0], 'OSÉIA DE SOUZA'), (catalog[0], 'OSÉIAS DE SOUZA'),
+                                        (catalog[1], 'ELCIO MONTEIRO REIS')]]
+        review = {'evento_id': 'e', 'comum_chave': 'BR-22-3789', 'comum_nome': catalog[1]['comum'],
+                  'municipio': 'COTIA', 'encarregado_nome': 'Elcio Monteiro dos Reis', 'situacao': 'JUSTIFICOU'}
+        data = summarize(events, [], sites, [review], {}, catalog=catalog, leaders=leaders)
+        self.assertEqual([r['comum_chave'] for r in data['rows']], ['BR-22-9999', 'BR-22-3789', 'BR-22-2934'])
+        self.assertEqual([r['encarregado_nome'] for r in data['rows'] if r['comum_chave'] == 'BR-22-2934'], ['OSÉIA DE SOUZA'])
+        elcio = next(r for r in data['rows'] if r['comum_chave'] == 'BR-22-3789')
+        self.assertEqual(elcio['situacao'], 'JUSTIFICOU')
+        self.assertEqual(elcio['encarregado_nome'], 'ELCIO MONTEIRO REIS')
+
+    def test_itapevi_includes_all_51_commons_even_with_only_seven_presences(self):
+        events, _, sites = self.fixture()
+        catalog = [{'comum': f'BR-22-{i:04d} - Comum {i}', 'cidade': 'ITAPEVI'} for i in range(1, 52)]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': f'Encarregado {i}',
+                    'comum_codigo': f'BR-22-{i:04d}', 'municipio_informado': 'ITAPEVI',
+                    'cargo': 'ENCARREGADO LOCAL'} for i in range(1, 8)]
+        data = summarize(events, records, sites, [], {}, catalog=catalog)
+        self.assertEqual(len(data['common_rows']), 51)
+        self.assertEqual(data['municipalities'][0]['total'], 51)
+        self.assertEqual(data['totals']['PRESENTE'], 7)
+        self.assertEqual(data['totals']['NAO_JUSTIFICOU'], 44)
+        filtered = summarize(events, records, sites, [], {'municipios': ['COTIA']}, catalog=catalog)
+        self.assertEqual(filtered['rows'], [])
+
+    def test_vgp_counts_ten_present_commons_without_counting_second_leader_as_absent_common(self):
+        events, _, _ = self.fixture()
+        sites = [{'id': 'l', 'evento_id': 'e', 'nome': 'VARGEM GRANDE'}]
+        catalog = [{'comum': f'BR-22-{i:04d} - Comum {i}', 'cidade': 'VARGEM GRANDE PAULISTA'} for i in range(1, 11)]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': f'Encarregado {i}',
+                    'comum_codigo': f'BR-22-{i:04d}', 'municipio_informado': 'VGP',
+                    'cargo': 'ENCARREGADO LOCAL'} for i in range(1, 11)]
+        leaders = [{'nome_aluno': 'Outro encarregado da primeira comum',
+                    'cargo_ministerio': 'ENCARREGADO LOCAL', 'comum_congregacao': catalog[0]['comum'],
+                    'municipio': 'VGP', 'status': 'Ativo'}]
+        data = summarize(events, records, sites, [], {}, catalog=catalog, leaders=leaders)
+        self.assertEqual(len(data['common_rows']), 10)
+        self.assertEqual(data['totals']['PRESENTE'], 10)
+        self.assertEqual(data['totals'].get('NAO_JUSTIFICOU', 0), 0)
+        self.assertEqual(data['individual_totals']['NAO_JUSTIFICOU'], 1)
+        self.assertTrue(all(row['participacao'] == 'NO MUNICÍPIO' for row in data['rows'] if row['situacao'] == 'PRESENTE'))
+
+    def test_absent_mapped_leader_is_named_from_registry(self):
+        events, _, sites = self.fixture()
+        catalog = [{'comum': 'BR-22-0432 - PEREIRAS', 'cidade': 'CAUCAIA DO ALTO'}]
+        leaders = [{'nome_aluno': 'MARIO AFONSO SANCHES', 'cargo_ministerio': 'ENCARREGADO LOCAL',
+                    'comum_congregacao': catalog[0]['comum'], 'municipio': 'CAUCAIA DO ALTO', 'status': 'Concluido'}]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': 'Outro músico',
+                    'comum_codigo': 'BR-22-0432', 'municipio_informado': 'CAUCAIA DO ALTO',
+                    'cargo': 'MÚSICO', 'categoria': 'MUSICO'}]
+        data = summarize(events, records, sites, [], {}, catalog=catalog, leaders=leaders, transitions=[])
+        self.assertEqual(len(data['rows']), 1)
+        row = data['rows'][0]
+        self.assertEqual(row['encarregado_nome'], 'MARIO AFONSO SANCHES')
+        self.assertEqual(row['situacao'], 'NAO_JUSTIFICOU')
+        self.assertFalse(row['consta_lista'])
+        self.assertEqual(row['locais_validos'], [])
+
+    def test_multiple_mapped_leaders_keep_individual_attendance(self):
+        events, _, sites = self.fixture()
+        common = 'BR-22-1 - A'
+        catalog = [{'comum': common, 'cidade': 'COTIA'}]
+        leaders = [{'nome_aluno': name, 'cargo_ministerio': 'ENCARREGADO LOCAL',
+                    'comum_congregacao': common, 'municipio': 'COTIA', 'status': 'Concluido'}
+                   for name in ['Presente cadastrado', 'Ausente cadastrado']]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': 'Presente cadastrado',
+                    'comum_codigo': 'BR-22-1', 'municipio_informado': 'COTIA', 'cargo': 'MÚSICO'}]
+        review = {'evento_id': 'e', 'comum_chave': 'BR-22-1', 'comum_nome': common,
+                  'municipio': 'COTIA', 'situacao': 'JUSTIFICOU', 'encarregado_nome': 'Ausente cadastrado'}
+        data = summarize(events, records, sites, [review], {}, catalog=catalog, leaders=leaders)
+        self.assertEqual({row['encarregado_nome']: row['situacao'] for row in data['rows']},
+                         {'Presente cadastrado': 'PRESENTE', 'Ausente cadastrado': 'JUSTIFICOU'})
+        city = data['individual_municipalities'][0]
+        self.assertEqual((city['PRESENTE'], city['JUSTIFICOU'], city['total']), (1, 1, 1))
+
+    def test_justification_is_counted_even_when_same_person_has_nominal_presence(self):
+        events, records, sites = self.fixture()
+        review = {'evento_id': 'e', 'comum_chave': 'BR-22-1', 'comum_nome': 'A',
+                  'municipio': 'COTIA', 'encarregado_nome': 'Encarregado de teste',
+                  'situacao': 'JUSTIFICOU', 'observacoes': 'Justificativa recebida'}
+        data = summarize(events, records[:1], sites, [review], {})
+        self.assertEqual(len(data['rows']), 1)
+        self.assertEqual(data['rows'][0]['situacao'], 'PRESENTE')
+        self.assertTrue(data['rows'][0]['justificativa_registrada'])
+        self.assertEqual(data['individual_totals']['JUSTIFICOU'], 1)
+        self.assertEqual(data['individual_municipalities'][0]['JUSTIFICOU'], 1)
+
+    def test_membership_mapping_is_used_when_sam_has_no_leader(self):
+        events, _, sites = self.fixture()
+        catalog = [{'comum': 'BR-22-1 - A', 'cidade': 'COTIA'}]
+        members = [{'nome': 'Responsável mapeado', 'cargo_outros': 'ENCARREGADO LOCAL',
+                    'codigo_comum': 'BR-22-1', 'cidade': 'COTIA', 'status': 'Ativo'}]
+        records = [{'evento_id': 'e', 'local_id': 'l', 'nome': 'Responsável mapeado',
+                    'comum_codigo': 'BR-22-1', 'municipio_informado': 'COTIA', 'cargo': 'MÚSICO'}]
+        data = summarize(events, records, sites, [], {}, catalog=catalog, members=members)
+        self.assertEqual(data['rows'][0]['encarregado_nome'], 'Responsável mapeado')
+        self.assertEqual(data['rows'][0]['situacao'], 'PRESENTE')
+
+    def test_documented_role_change_does_not_retroactively_mark_musician_as_leader(self):
+        events, records, sites = self.fixture()
+        records = records[:1]
+        records[0]['cargo'] = 'MÚSICO'
+        leaders = [{'id': 'person', 'nome_aluno': records[0]['nome'],
+                    'cargo_ministerio': 'ENCARREGADO LOCAL', 'status': 'Concluido',
+                    'comum_congregacao': 'BR-22-1 - A', 'municipio': 'COTIA'}]
+        changes = [{'aluno_id': 'person', 'campo': 'cargo_ministerio',
+                    'anterior': 'MÚSICO', 'posterior': 'ENCARREGADO LOCAL',
+                    'effective_at': '2026-08-01T12:00:00-03:00', 'date_basis': 'manual'}]
+        data = summarize(events, records, sites, [], {},
+                         catalog=[{'comum': 'BR-22-1 - A', 'cidade': 'COTIA'}],
+                         leaders=leaders, transitions=changes)
+        self.assertEqual(data['rows'][0]['situacao'], 'NAO_JUSTIFICOU')
+        self.assertFalse(data['rows'][0]['consta_lista'])
+
     def test_sick_and_without_conductor_are_preserved_in_reports(self):
         from ColorAdminApp.modules.music_events_conductors import attendance_status, attendance_label
         from ColorAdminApp.modules.music_events_annual_reports import leader_text
@@ -182,6 +320,7 @@ class ConductorSummaryTests(SimpleTestCase):
             {'evento_id':'e','comum_chave':'BR-22-3','comum_nome':'C','municipio':'COTIA','situacao':'NAO_INFORMADO','observacoes':'','local_id':None},
         ]
         data=aggregate(e,r,l,[],{});data['conductors']=summarize(e,r,l,reviews,{});data['report']='encarregados'
+        data['report_identity'] = {'scope': 'Global - Itapevi', 'common': 'BR-22-0673 - VILA DOUTOR CARDOSO'}
         book=load_workbook(io.BytesIO(build_excel(data,'Operador',datetime(2026,10,19,12,0))))
         self.assertIn('Encarregados por município',book.sheetnames)
         ws=book['Encarregados por comum'];statuses={ws.cell(row,4).value:ws.cell(row,5).value for row in range(10,ws.max_row+1)}
@@ -194,6 +333,10 @@ class ConductorSummaryTests(SimpleTestCase):
         self.assertEqual(city['E10'].value,0)
         text=''.join(p.extract_text() for p in PdfReader(io.BytesIO(build_pdf(data,'Operador',datetime(2026,10,19,12,0)))).pages)
         self.assertNotIn('Trabalho',text);self.assertIn('CAUCAIA DO ALTO',text);self.assertIn('PRESENTE',text);self.assertIn('JUSTIFICOU',text);self.assertNotIn('NÃO INFORMADO',text);self.assertIn('NJ',text)
+        self.assertIn('Localidades: 1', text)
+        self.assertNotIn('Escopo:', text)
+        self.assertNotIn('BR-22-0673', text)
+        self.assertNotIn('Comuns: Todas', text)
 
     def test_manual_presence_does_not_imply_a_nominal_list_entry(self):
         e,r,l=self.fixture()

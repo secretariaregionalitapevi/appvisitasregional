@@ -1,0 +1,14 @@
+{
+  "evento_id": "0c00b334-0ab6-4175-b759-028aef44161f",
+  "comum_chave": "BR-22-1804",
+  "comum_nome": "BR-22-1804 - JARDIM LAVAPÉS DAS GRAÇAS",
+  "municipio": "COTIA",
+  "encarregado_nome": "MICHEL FRANK BONFIM CHAVES",
+  "situacao": "JUSTIFICOU",
+  "local_id": null,
+  "observacoes": "{\"_justificativa\": 1, \"origem\": \"JUSTIFICATIVA ENSAIOS REGIONAIS 15-11-2026 - COTIA - CAUCAIA - VGP -9H00  (respostas)  2.pdf\", \"lote\": \"pdf-fae7408ba4eae577ed502f5e3bcdd683f4dd2587430c13c7718246cf3f73a674\", \"nome\": \"MICHEL FRANK BONFIM CHAVES\", \"cargo\": \"Encarregado Local\", \"motivo\": \"Outro motivo\", \"bloco\": \"JUSTIFICATIVA DE AUSÊNCIA ENSAIO REGIONAL - COTIA-CAUCAIA DO ALTO -VARGEM GRANDE PAULISTA - 15/11/2026\", \"solicitado_pelo_usuario\": true}",
+  "created_by_user_id": "codex:correcao-justificativa-pdf",
+  "created_by_name": "Codex - correção solicitada pelo usuário",
+  "updated_by_user_id": "codex:correcao-justificativa-pdf",
+  "updated_by_name": "Codex - correção solicitada pelo usuário"
+}

@@ -4,6 +4,7 @@ from collections import Counter
 
 from .music_events_import import norm
 from .music_events_identity import CommonResolver
+from .music_conductor_identity import common_name_key
 
 REGIONAL = ['CAUCAIA DO ALTO','COTIA','ITAPEVI','JANDIRA','PIRAPORA DO BOM JESUS',
             'SANTANA DE PARNAÍBA','VARGEM GRANDE PAULISTA']
@@ -17,7 +18,7 @@ def regional_city(value):
     aliases = {'CAUCAIA':'CAUCAIA DO ALTO','FAZENDINHA':'SANTANA DE PARNAÍBA',
                'SANTANA DE PARNAIBA (FAZENDINHA)':'SANTANA DE PARNAÍBA',
                'PIRAPORA':'PIRAPORA DO BOM JESUS','PARQUE LARANJEIRAS II':'PIRAPORA DO BOM JESUS',
-               'VGP':'VARGEM GRANDE PAULISTA'}
+               'VGP':'VARGEM GRANDE PAULISTA','VARGEM GRANDE':'VARGEM GRANDE PAULISTA'}
     return aliases.get(norm(value), next((c for c in REGIONAL if norm(c)==norm(value)), value))
 
 
@@ -197,8 +198,8 @@ def aggregate(events, records, locations, frequency, filters, catalog=(), eligib
         entry.update(label=CITY_LABELS.get(city,city.title()),
                      comuns=sum(norm(g['municipio'])==norm(city) for g in groups.values()))
         regional_overview.append(entry)
-    return {'events':chosen,'rows':sorted(groups.values(),key=lambda x:(norm(x['municipio']),norm(x['comum']))),
-            'municipalities':sorted(municipal.values(),key=lambda x:-x['total']),
+    return {'events':chosen,'rows':sorted(groups.values(),key=lambda x:(norm(x['municipio']),common_name_key(x['comum']))),
+            'municipalities':sorted(municipal.values(),key=lambda x:norm(x['municipio'])),
             'locations':sorted(local_counts.values(),key=lambda x:-x['total']),
             'instruments':dict(instruments),'families':dict(families),'musician_families':dict(musician_families),'roles':dict(roles),'totals':dict(totals),
             'base_complete':base_complete,'percent_m':round(100*present_m/base_m,2) if base_complete and base_m else None,

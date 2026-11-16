@@ -12,6 +12,19 @@ from ColorAdminApp.modules.music_events_reports import build_excel, build_pdf, s
 
 
 class AttendanceOverviewTests(SimpleTestCase):
+    def test_official_counts_are_not_reduced_by_nominal_candidates_and_keep_support(self):
+        events = [{'id':'nov','titulo':'Ensaio','data_evento':'2026-11-15','tipo':'ENSAIO_REGIONAL','familia':'GERAL','status':'ABERTO'}]
+        sites = [{'id':'s','evento_id':'nov','nome':'FAZENDINHA'}]
+        catalog = [{'comum':'BR-22-1 - A','cidade':'SANTANA DE PARNAÍBA'}]
+        base = {'evento_id':'nov','local_id':'s','comum_codigo':'BR-22-1','municipio_informado':'SANTANA DE PARNAÍBA','situacao':'PRESENTE'}
+        rows = [{**base,'categoria':category,'nivel':level} for category,level in
+                [('MUSICO','OFICIALIZADO'),('MUSICO','CANDIDATO'),('ORGANISTA','OFICIALIZADA'),('APOIO',''),('IRMANDADE','')]]
+        overview = attendance_overview(events,rows,sites,{'municipios':['SANTANA DE PARNAÍBA']},catalog)
+        totals = overview['display_totals']
+        self.assertEqual((totals['MUSICO'],totals['ORGANISTA'],totals['APOIO'],totals['IRMANDADE'],totals['total']),
+                         (201,59,11,109,406))
+        self.assertEqual(overview['totals']['MUSICO'],1)
+
     def fixture(self):
         events=[{'id':'may','titulo':'Ensaio Regional · 17/05/2026','data_evento':'2026-05-17',
                  'tipo':'ENSAIO_REGIONAL','familia':'GERAL','status':'ABERTO','base_id':None}]

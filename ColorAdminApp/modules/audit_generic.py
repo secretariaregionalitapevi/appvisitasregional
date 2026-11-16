@@ -73,6 +73,7 @@ MODULE_METADATA = {
 OPERATOR_NAME_ALIASES = {
     _norm("Ricardo Grangeiro"): "Ricardo Grangeiro",
     _norm("Ricardo Grangieiro"): "Ricardo Grangeiro",
+    _norm("Ricardo Grangeirio"): "Ricardo Grangeiro",
 }
 
 

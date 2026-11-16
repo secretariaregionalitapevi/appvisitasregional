@@ -31,12 +31,18 @@ def closing_for(data):
         return None
     dates = {str(e['data_evento'])[:10] for e in data.get('events', [])}
     cities = {normalized_city(city) for city in data.get('filters', {}).get('municipios', [])}
-    if len(dates) != 1 or len(cities) != 1:
+    # Santana recebe também as comuns de Pirapora neste recorte conjunto.
+    if cities == {'SANTANA DE PARNAIBA', 'PIRAPORA DO BOM JESUS'}:
+        cities = {'SANTANA DE PARNAIBA'}
+    if len(dates) != 1 or len(cities) != 1 or data.get('filters', {}).get('comuns'):
         return None
     day, city = next(iter(dates)), next(iter(cities))
     nominal = next((row for row in data.get('physical_closings', []) if row['date'] == day and row['city'] == city), None)
     for path in (Path(__file__).parents[2] / 'docs/references/music_events').glob('*_closing.json'):
         declared = json.loads(path.read_text(encoding='utf-8'))
         if declared['date'] == day and declared['city'] == city:
-            return {**declared, 'nominal_total': nominal['total'] if nominal else None, 'declared': True}
+            return {**declared, 'nominal_total': nominal['total'] if nominal else None,
+                    'nominal_musicians': nominal.get('musicians') if nominal else None,
+                    'nominal_instruments': nominal.get('instruments', {}) if nominal else {},
+                    'nominal_organists': nominal.get('organists') if nominal else None, 'declared': True}
     return nominal

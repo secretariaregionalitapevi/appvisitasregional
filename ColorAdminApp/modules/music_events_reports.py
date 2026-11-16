@@ -18,6 +18,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.graphics.shapes import Drawing, Rect, String
 from .music_events_conductors import attendance_label, attendance_status
+from .music_conductor_identity import common_name_key
 
 NAVY='1E4B7A'; PALE='EAF2F8'
 HEADERS=['Município','Comum','Encarregado: situação / local','Músicos','Organistas','Total musical',
@@ -45,7 +46,8 @@ def report_note(data):
             return 'Resultados do fechamento oficial onde indicado, conforme relatório original. Os cargos podem se sobrepor à participação musical. O detalhamento por comum utiliza a lista nominal preservada.'
         return 'Público nominal do evento, todas as origens. Cargos podem coincidir com músicos e organistas e não devem ser somados novamente. Fechamentos declarados são apresentados para conciliação.'
     if data.get('report')=='encarregados':
-        return 'Presença confirmada pela correspondência entre o encarregado cadastrado e a lista nominal do ensaio.'
+        return ('Presenças e justificativas contabilizadas por encarregado. A presença de outra pessoa da mesma comum não elimina a justificativa. '
+                'Uma pessoa pode ter presença nominal e justificativa registrada. Total de comuns conta congregações distintas.')
     if data.get('registry',{}).get('available') and not data['base_complete']:
         if len(data['events']) != 1:
             return 'Cadastro musical atual como referência. Percentuais omitidos neste consolidado: consulte um evento por vez para comparar presenças e cadastro da comum.'
@@ -134,19 +136,22 @@ def sheets(data):
     frequency_widths=[26,60,30,18,20,18,21,23,16,17]
     conductors=data.get('conductors',{})
     conductor_rows=[]
-    for r in conductors.get('rows',[]):
+    for r in sorted(conductors.get('rows',[]), key=lambda row: (row['municipio'], common_name_key(row['comum']), row['data'])):
         present_names=(' / '.join(r.get('nomes') or []) if r['situacao']=='PRESENTE' else '') or r.get('encarregado_nome') or 'Não identificado'
+        present_names = present_names.upper()
         status=attendance_label(r)
+        if r.get('justificativa_registrada') and status == 'PRESENTE':
+            status += '\nJUSTIFICOU'
         conductor_rows.append([datetime.strptime(str(r['data'])[:10],'%Y-%m-%d').strftime('%d/%m/%Y'),r['municipio'],
             r['comum']+'\nEncarregado: '+present_names,status,r.get('participacao','') if r.get('consta_lista') and r.get('locais_validos') else '',
             ' / '.join(r.get('locais_validos',[]))])
     reports=[('Frequência por comum',frequency_headers,frequency,frequency_widths),
             ('Encarregados por comum',['Data','Município de origem','Comum / encarregado','Presença','Participação','Local do ensaio'],
              conductor_rows,[16,26,70,22,30,42]),
-            ('Encarregados por município',['Município','PRESENTE','JUSTIFICOU','NJ','SE','EF'],
-             [[r['municipio']]+[sum(attendance_status(item)==status for item in conductors.get('rows',[]) if item['municipio']==r['municipio'])
-                                for status in ['PRESENTE','JUSTIFICOU','NAO_JUSTIFICOU','SEM_ENCARREGADO','ENFERMO']]
-              for r in conductors.get('municipalities',[])],[50,25,25,25,25,25]),
+            ('Encarregados por município',['Município','PRESENTE','JUSTIFICOU','NJ','SE','EF','Total de comuns'],
+             [[r['municipio']]+[r.get(status, 0)
+                                for status in ['PRESENTE','JUSTIFICOU','NAO_JUSTIFICOU','SEM_ENCARREGADO','ENFERMO']]+[r.get('total', 0)]
+              for r in conductors.get('individual_municipalities', conductors.get('municipalities',[]))],[50,25,25,25,25,25,25]),
             ('Resumo por local',['Local','Músicos','Organistas','Ministério','Apoio','Irmandade','Total'],
              [[x['nome'],x['MUSICO'],x['ORGANISTA'],x['MINISTERIO'],x['APOIO'],x['IRMANDADE'],x['total']] for x in data['locations']], [44,19,19,19,19,19,19]),
             ('Instrumentos',['Músicos por instrumento / Organistas','Participantes presentes'],list(sorted(data['instruments'].items())),[95,45]),
@@ -367,15 +372,19 @@ def build_pdf(data,actor,now):
     context=ParagraphStyle('context',parent=style,backColor=colors.HexColor('#eaf2f8'),borderPadding=6)
     def para(value,head=False):
         text=str(value if value is not None else '—');cell_style=header_style if head else style
+        if not head and text == 'PRESENTE\nJUSTIFICOU':
+            return Paragraph('<b><font color="#21854a">PRESENTE</font><br/>'
+                             '<font color="#2165ad">JUSTIFICOU</font></b>', style)
         if not head and text=='PRESENTE':
             cell_style=ParagraphStyle('present',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#21854A'))
         if not head and text in {'JUSTIFICOU','NÃO JUSTIFICOU','NJ','SEM ENCARREGADO','ENFERMO'}:
-            tone='#148052' if text=='JUSTIFICOU' else '#E00000' if text in {'NÃO JUSTIFICOU','NJ'} else '#526b7a'
+            tone={'JUSTIFICOU':'#2165ad','NÃO JUSTIFICOU':'#bd2948','NJ':'#bd2948',
+                  'SEM ENCARREGADO':'#7050ad','ENFERMO':'#946000'}[text]
             cell_style=ParagraphStyle('conductor-state',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor(tone))
         if not head and text in {'NO MUNICÍPIO','FORA DO MUNICÍPIO'}:
             cell_style=ParagraphStyle('attendance-place',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#c26a00' if text.startswith('FORA') else '#148052'))
         if not head and (text.startswith('NJ ·') or text.startswith('J ·')):
-            cell_style=ParagraphStyle('status',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#c92d4d' if text.startswith('NJ ·') else '#148052'))
+            cell_style=ParagraphStyle('status',parent=style,fontName='Helvetica-Bold',textColor=colors.HexColor('#bd2948' if text.startswith('NJ ·') else '#2165ad'))
         return Paragraph(escape(text).replace('\n','<br/>'),cell_style)
     def header(canvas,document):
         canvas.saveState();center=page_width/2
@@ -385,12 +394,13 @@ def build_pdf(data,actor,now):
         title={'geral':'Público geral e conciliação do ensaio','executivo':'Resumo executivo de presença','encarregados':'Presença dos Encarregados Locais','comuns':'Frequência musical por comum','composicao':'Composição musical e cargos'}.get(data.get('report'),'Relatório administrativo de frequência')
         if data.get('report') == 'participacao':title='Participação sobre o SAM atual'
         canvas.setFont('Helvetica',9);canvas.drawCentredString(center,page_height-74,title)
-        f=data['filters'];identity=data.get('report_identity',{})
-        recorte=', '.join(f.get('municipios',[])) or ('Regional Itapevi' if f.get('origem','regional')=='regional' else 'Visitantes' if f.get('origem')=='visitantes' else 'Regional e visitantes')
+        f=data['filters']
+        localities = {row['nome'] for row in data.get('locations', [])
+                      if not f.get('local') or row.get('id') == f['local']}
         canvas.report_actor = actor
-        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}','Recorte: '+recorte,'Comuns: '+(', '.join(f.get('comuns',[])) or 'Todas'),'Responsável: Secretaria Regional da Música']
-        if identity.get('scope'):lines.append('Escopo: '+identity['scope'])
-        if identity.get('common'):lines.append(identity['common'])
+        lines=[f'Emissão: {now:%d/%m/%Y %H:%M}',
+               f'Localidades: {len(localities)}',
+               'Responsável: Secretaria Regional da Música']
         meta=Paragraph('<br/>'.join('<b>'+escape(x.partition(':')[0])+':</b> '+escape(x.partition(':')[2].strip()) if ':' in x else escape(x) for x in lines),ParagraphStyle('meta',parent=style,alignment=2,fontSize=7,leading=9))
         _,height=meta.wrap(190,100);meta.drawOn(canvas,page_width-218,page_height-34-height)
         canvas.restoreState()
@@ -421,6 +431,9 @@ def build_pdf(data,actor,now):
         for row in rows:
             percentage_columns = {6,9} if name.startswith('SAM ') else {8,9} if name=='Frequência por comum' else set()
             body.append([para(f'{v*100:.2f}%' if i in percentage_columns and v is not None else v) for i,v in enumerate(row)])
+            if name == 'Encarregados por comum':
+                common, _, leader = str(row[2]).partition('\n')
+                body[-1][2] = Paragraph('<b>' + escape(common) + '</b><br/>' + escape(leader), style)
         if not rows:body.append([para('Sem registros neste recorte')]+[para('')]*(len(headers)-1))
         header_rows=3 if name=='Frequência por comum' else 2
         table=Table(body,colWidths=widths,repeatRows=header_rows,hAlign='LEFT')
@@ -429,6 +442,15 @@ def build_pdf(data,actor,now):
             for cells in body[header_rows:]:
                 for cell in cells[4:]:
                     cell.style=centered
+        elif name == 'Encarregados por município':
+            centered = ParagraphStyle('conductor-number', parent=style, alignment=1)
+            for cells in body[header_rows:]:
+                for cell in cells[1:]:
+                    cell.style = centered
+        elif name == 'Encarregados por comum':
+            for cells in body[header_rows:]:
+                for cell in cells[3:]:
+                    cell.style = ParagraphStyle('conductor-centered', parent=cell.style, alignment=1)
         table.setStyle(TableStyle([('SPAN',(0,0),(-1,0)),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eaf2f8')),
             ('BACKGROUND',(0,header_rows-1),(-1,header_rows-1),colors.HexColor('#1e4b7a')),
             ('ROWBACKGROUNDS',(0,header_rows),(-1,-1),[colors.white,colors.HexColor('#f4f6f8')]),

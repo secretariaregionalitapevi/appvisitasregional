@@ -41,10 +41,27 @@ def annual_comparison(data, day):
     days = sorted(set.intersection(*available)) if available else []
     def metrics(date):
         cells = [cell for row in cohort for cell in row['cells'] if cell['date'] == date and cell['loaded']]
-        states = Counter(attendance_status(cell) for cell in cells)
+        conferences = [entry for cell in cells for entry in (cell.get('leader_details') or [cell])]
+        states = Counter(attendance_status(entry) for entry in conferences)
+        states['JUSTIFICOU'] = sum(entry.get('justificativa_registrada') or attendance_status(entry) == 'JUSTIFICOU'
+                                  for entry in conferences)
         m, o = sum(c['musicians'] for c in cells), sum(c['organists'] for c in cells)
         represented = sum(bool(c['musicians'] or c['organists'] or attendance_status(c) == 'PRESENTE') for c in cells)
+        by_city = {}
+        for row in cohort:
+            cell = next((cell for cell in row['cells'] if cell['date'] == date and cell['loaded']), None)
+            if cell is None:
+                continue
+            city = regional_city(row['municipio'])
+            group = by_city.setdefault(city, {'municipio': city, 'musicians_in': 0, 'musicians_out': 0,
+                                             'organists_in': 0, 'organists_out': 0})
+            for location, counts in cell.get('attendance_by_location', {}).items():
+                suffix = 'in' if norm(regional_city(location)) == norm(city) else 'out'
+                group['musicians_' + suffix] += counts.get('MUSICO', 0)
+                group['organists_' + suffix] += counts.get('ORGANISTA', 0)
         return {'date': date, 'musicians': m, 'organists': o, 'leaders': states['PRESENTE'],
+                'by_municipality': sorted(by_city.values(), key=lambda row: norm(row['municipio'])),
+                'leader_records': len(conferences),
                 'total': m + o + sum(c['others'] for c in cells), 'commons': len(cells),
                 'represented': represented, 'without_participation': len(cells) - represented, 'states': dict(states)}
     previous = [date for date in days if date < day]
@@ -140,6 +157,8 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
             day, ids = session['date'], session['event_ids']
             # Convocações parciais não substituem o calendário regional.
             applicable = base['municipio'] in session['cities'] or key in session['invited']
+            if cities == {'SANTANA DE PARNAIBA', 'PIRAPORA DO BOM JESUS'}:
+                applicable = 'SANTANA DE PARNAÍBA' in session['cities']
             if not applicable:
                 continue
             people, seen = [], set()
@@ -156,10 +175,27 @@ def annual_data(events, records, sites, registry, catalog, reviews, members, inv
             candidate_counts=Counter(person['categoria'] for person in people if candidate_level(person.get('nivel')))
             counts = Counter(person['categoria'] for person in orchestra)
             entries = [entry for event in ids for entry in reviews_by_key.get((event, key), [])]
+            if any(entry.get('fonte') != 'Não conferido' for entry in entries):
+                entries = [entry for entry in entries if entry.get('fonte') != 'Não conferido' or entry.get('encarregado_nome')]
+            individual = {}
+            priority = {'PRESENTE': 3, 'JUSTIFICOU': 2, 'ENFERMO': 2, 'SEM_ENCARREGADO': 2}
+            for entry in entries:
+                identity = norm(entry.get('encarregado_nome'))
+                old = individual.get(identity)
+                if old is None:
+                    individual[identity] = dict(entry)
+                else:
+                    locations = sorted(set(old.get('locais', [])) | set(entry.get('locais', [])))
+                    justified = old.get('justificativa_registrada') or entry.get('justificativa_registrada')
+                    if priority.get(attendance_status(entry), 0) > priority.get(attendance_status(old), 0):
+                        individual[identity] = dict(entry)
+                    individual[identity].update(locais=locations, justificativa_registrada=bool(justified))
+            entries = list(individual.values())
             present = [entry for entry in entries if attendance_status(entry) == 'PRESENTE']
             status = common_attendance(entries)
             leader_details = [{'nome': entry.get('encarregado_nome') or 'Encarregado não identificado',
                                'situacao': entry.get('situacao') or 'NAO_INFORMADO',
+                               'justificativa_registrada': bool(entry.get('justificativa_registrada')),
                                'locais': entry.get('locais', [])}
                               for entry in entries]
             loaded = session['loaded']

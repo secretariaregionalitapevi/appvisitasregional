@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+from unittest.mock import patch
 from django.test import SimpleTestCase
 from pypdf import PdfReader
 from openpyxl import load_workbook
@@ -10,6 +11,52 @@ from ColorAdminApp.modules.music_events_reports import build_excel,build_pdf,sco
 
 
 class IdentityAndRegistryTests(SimpleTestCase):
+    def test_dashboard_orders_cities_and_common_names_without_codes(self):
+        catalog = [{'comum': 'BR-22-0001 - ZONA ALTA', 'cidade': 'COTIA'},
+                   {'comum': 'BR-22-9999 - ÁGUA CLARA', 'cidade': 'COTIA'},
+                   {'comum': 'BR-22-0002 - CENTRO', 'cidade': 'ITAPEVI'}]
+        records = [{'evento_id':'e', 'local_id':'l', 'nome':str(i),
+                    'comum_informada':common['comum'], 'municipio_informado':common['cidade'],
+                    'categoria':'MUSICO'} for i,common in enumerate(catalog)]
+        records += [{**records[-1], 'nome':'visitante'}]
+        result = aggregate([{'id':'e','data_evento':'2026-11-15','tipo':'ENSAIO_REGIONAL'}],
+                           records, [{'id':'l','evento_id':'e','nome':'COTIA'}], [], {}, catalog)
+        self.assertEqual([row['municipio'] for row in result['municipalities']], ['COTIA','ITAPEVI'])
+        self.assertEqual([row['comum'] for row in result['rows']],
+                         [catalog[1]['comum'],catalog[0]['comum'],catalog[2]['comum']])
+
+    def test_cached_catalog_applies_confirmed_capela_code_correction(self):
+        from ColorAdminApp.modules.access_control import common_catalog
+        raw = [{'comum':'BR-21-1251 - ALPHAVILLE','cidade':'SANTANA DE PARNAÍBA'},
+               {'comum':'BR-21-1251 - CAPELA VELHA - SURU','cidade':'SANTANA DE PARNAÍBA'}]
+        with patch('ColorAdminApp.modules.access_control.cache.get', return_value=raw):
+            catalog = common_catalog()
+        self.assertEqual([row['comum'].split(' - ')[0] for row in catalog], ['BR-21-1251','BR-21-1303'])
+        self.assertEqual(raw[1]['comum'],'BR-21-1251 - CAPELA VELHA - SURU')
+
+    def test_alphaville_and_capela_velha_keep_distinct_codes_and_presence(self):
+        from ColorAdminApp.modules.music_events_identity import CommonResolver
+        from ColorAdminApp.modules.congregation_distribution import corrected_catalog
+        raw = [{'comum':'BR-21-1251 - ALPHAVILLE','cidade':'SANTANA DE PARNAÍBA'},
+               {'comum':'BR-21-1251 - CAPELA VELHA - SURU','cidade':'SANTANA DE PARNAÍBA'}]
+        catalog = corrected_catalog(raw)
+        resolver = CommonResolver(raw)
+        self.assertEqual(resolver.resolve('BR-21-1251','SANTANA DE PARNAÍBA')['comum'], catalog[0]['comum'])
+        self.assertEqual(resolver.resolve(raw[1]['comum'],'SANTANA DE PARNAÍBA')['comum'], catalog[1]['comum'])
+        records = [{'evento_id':'e','local_id':'s','nome':name,'cargo':'ENCARREGADO LOCAL',
+                    'categoria':'MUSICO','comum_codigo':'BR-21-1251','comum_informada':common['comum'],
+                    'municipio_informado':'SANTANA DE PARNAÍBA'}
+                   for common,name in [(raw[0],'MARCIO LINO'),(raw[1],'PATRICK SANTOS DO NASCIMENTO')]]
+        resolved = resolver.records(records)
+        self.assertEqual([row['comum_codigo'] for row in resolved], ['BR-21-1251','BR-21-1303'])
+        events = [{'id':'e','titulo':'Ensaio','data_evento':'2026-11-15','tipo':'ENSAIO_REGIONAL'}]
+        sites = [{'id':'s','evento_id':'e','nome':'FAZENDINHA'}]
+        result = summarize(events,resolved,sites,[],{},catalog=catalog)
+        mapped = {row['encarregado_nome']:row['comum_chave'] for row in result['rows']}
+        self.assertEqual(mapped, {'MARCIO LINO':'BR-21-1251','PATRICK SANTOS DO NASCIMENTO':'BR-21-1303'})
+        self.assertEqual(len(result['common_rows']),2)
+        self.assertEqual(raw[1]['comum'],'BR-21-1251 - CAPELA VELHA - SURU')
+
     def test_itapevi_report_variants_merge_into_catalog_commons(self):
         from ColorAdminApp.modules.music_events_identity import CommonResolver
         catalog = [{'comum': 'BR-22-0673 - VILA DOUTOR CARDOSO', 'cidade': 'ITAPEVI'},
@@ -85,7 +132,9 @@ class IdentityAndRegistryTests(SimpleTestCase):
         self.assertEqual(len(d['rows']),1)
         self.assertEqual(d['rows'][0]['MUSICO'],4)
         self.assertEqual(d['totals']['comuns'],1)
-        self.assertEqual(len(summarize(e,r,l,[],{},c)['rows']),1)
+        conferences = summarize(e,r,l,[],{},c)['rows']
+        self.assertEqual(len([row for row in conferences if row['comum_chave']=='BR-22-2797']),1)
+        self.assertEqual(len(conferences),2)  # Catálogo completo inclui a comum sem presença.
 
     def test_same_name_elsewhere_is_not_merged_and_unknown_is_marked(self):
         c,e,l,r=self.fixture()
@@ -102,19 +151,19 @@ class IdentityAndRegistryTests(SimpleTestCase):
         self.assertEqual(d['rows'][0]['comum'],'BR-22-0416 - MOINHO VELHO')
         self.assertEqual(d['rows'][0]['MUSICO'],2)
 
-    def test_registry_all_levels_preserves_history_semantics(self):
+    def test_registry_excludes_candidates_and_preserves_history_semantics(self):
         c,e,l,r=self.fixture();d=aggregate(e,r,l,[],{},c)
         people=[{'id':str(i),'status':status,'nivel':level,'instrumento':instrument,'comum_congregacao':'LAGEADO','municipio':'COTIA'}
                 for i,(status,level,instrument) in enumerate([('Ativo','CANDIDATO(A)','VIOLINO'),('Concluido','OFICIALIZADO(A)','ÓRGÃO'),('Inativo','RJM','VIOLA'),('Excluir','RJM','TUBA')])]
         attach_registry(d,people+[people[0]],c)
-        self.assertEqual(d['rows'][0]['cadastro_musicos'],1)
+        self.assertEqual(d['rows'][0]['cadastro_musicos'],0)
         self.assertEqual(d['rows'][0]['cadastro_organistas'],1)
         self.assertIsNone(d['rows'][0]['percentual_musicos'])
         self.assertFalse(d['base_complete'])
         book=load_workbook(io.BytesIO(build_excel(d,'Operador',datetime(2026,10,19,12))))
         sheet=book['Frequência por comum']
         self.assertEqual(sheet['G9'].value,'Base SAM atual · músicos')
-        self.assertEqual(sheet['G10'].value,1)
+        self.assertEqual(sheet['G10'].value,0)
         pdf=PdfReader(io.BytesIO(build_pdf(d,'Operador',datetime(2026,10,19,12))))
         text='\n'.join(page.extract_text() for page in pdf.pages)
         self.assertIn('BASE SAM ATUAL',text.upper())

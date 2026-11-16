@@ -1,0 +1,261 @@
+{
+  "event": {
+    "id": "0c00b334-0ab6-4175-b759-028aef44161f",
+    "titulo": "Ensaio Regional · 15/11/2026",
+    "data_evento": "2026-11-15",
+    "tipo": "ENSAIO_REGIONAL",
+    "familia": "GERAL",
+    "base_id": null,
+    "criterio_publico": "ATIVOS_TODOS_NIVEIS",
+    "status": "ABERTO",
+    "created_at": "2026-11-15T17:00:37.823019+00:00",
+    "updated_at": "2026-11-15T17:00:37.823019+00:00",
+    "created_by_user_id": "2acc360f-f4db-485d-ae29-496fe9a7c2f4",
+    "created_by_name": "Ricardo Grangeiro",
+    "updated_by_user_id": "2acc360f-f4db-485d-ae29-496fe9a7c2f4",
+    "updated_by_name": "Ricardo Grangeiro",
+    "observacoes": "Contagem AppCont importada. Conciliação com cadastro SAM pendente."
+  },
+  "rows": [
+    {
+      "received_name": "Adonias",
+      "received_common": "Cid S Pedro Gleba A",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "ADONIAS RIBEIRO",
+          "common": {
+            "comum": "BR-22-2374 - CIDADE SÃO PEDRO - GLEBA A",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": []
+    },
+    {
+      "received_name": "Marcos",
+      "received_common": "Pq Alvorada",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "MARCOS ALVES DE OLIVEIRA",
+          "common": {
+            "comum": "BR-22-3951 - PARQUE ALVORADA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-3951 - PARQUE ALVORADA"
+      ]
+    },
+    {
+      "received_name": "Roberto",
+      "received_common": "Cristal Park IV",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "ROBERTO APARECIDO DA SILVA",
+          "common": {
+            "comum": "BR-21-1527 - CRISTAL PARK IV",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        },
+        {
+          "name": "CARLOS ROBERTO DE OLIVEIRA FECHETE",
+          "common": {
+            "comum": "BR-22-2955 - JARDIM BOM JESUS",
+            "cidade": "PIRAPORA DO BOM JESUS"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-21-1527 - CRISTAL PARK IV"
+      ]
+    },
+    {
+      "received_name": "Divã",
+      "received_common": "Germano",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "DIVÃ FIRMINO BARBOSA",
+          "common": {
+            "comum": "BR-22-2792 - GERMANO",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-2792 - GERMANO"
+      ]
+    },
+    {
+      "received_name": "Jeferson",
+      "received_common": "Pq Sinai",
+      "reason": "Trabalho",
+      "candidates": [],
+      "resolved_commons": []
+    },
+    {
+      "received_name": "Edson",
+      "received_common": "Jaguari",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "EDSON PARICIO DOS SANTOS CRUZ",
+          "common": {
+            "comum": "BR-21-0797 - JABOTICABEIRA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        },
+        {
+          "name": "EDSON BARBOSA DOS SANTOS",
+          "common": {
+            "comum": "BR-22-0273 - JAGUARI",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        },
+        {
+          "name": "EDSON PEREIRA RAMOS",
+          "common": {
+            "comum": "BR-22-2956 - PARQUE PAIOL",
+            "cidade": "PIRAPORA DO BOM JESUS"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-0273 - JAGUARI"
+      ]
+    },
+    {
+      "received_name": "Gabriel Bento",
+      "received_common": "Cristal Park III",
+      "reason": "Trabalho",
+      "candidates": [
+        {
+          "name": "GABRIEL DE LIMA CESAR BENTO",
+          "common": {
+            "comum": "BR-21-1061 - CRISTAL PARK III",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-21-1061 - CRISTAL PARK III"
+      ]
+    },
+    {
+      "received_name": "Carlos",
+      "received_common": "Jd Bom Jesus",
+      "reason": "Questão familiar",
+      "candidates": [
+        {
+          "name": "CARLOS ROBERTO DE OLIVEIRA FECHETE",
+          "common": {
+            "comum": "BR-22-2955 - JARDIM BOM JESUS",
+            "cidade": "PIRAPORA DO BOM JESUS"
+          }
+        },
+        {
+          "name": "CARLOS ALBERTO PEREIRA DE SOUSA",
+          "common": {
+            "comum": "BR-21-1124 - SITIO DO ROSARIO",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-2955 - JARDIM BOM JESUS"
+      ]
+    },
+    {
+      "received_name": "Elias",
+      "received_common": "Itaquara Park km 50",
+      "reason": "Questão familiar",
+      "candidates": [
+        {
+          "name": "ELIAS DA CRUZ",
+          "common": {
+            "comum": "BR-22-1806 - ITAQUARA PARQUE",
+            "cidade": "PIRAPORA DO BOM JESUS"
+          }
+        }
+      ],
+      "resolved_commons": []
+    },
+    {
+      "received_name": "Onofre",
+      "received_common": "Central Parnaíba",
+      "reason": "Questão familiar",
+      "candidates": [
+        {
+          "name": "ONOFRE KARWACKI",
+          "common": {
+            "comum": "BR-22-1251 - CENTRAL SANTANA DE PARNAÍBA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": []
+    },
+    {
+      "received_name": "Jorge",
+      "received_common": "Jd Isaura",
+      "reason": "Idade avançada; primeiro encarregado local",
+      "candidates": [
+        {
+          "name": "JORGE CORREIA DE MELO JUNIOR",
+          "common": {
+            "comum": "BR-22-0676 - CURURUQUARA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        },
+        {
+          "name": "JORGE AMÂNCIO",
+          "common": {
+            "comum": "BR-22-1252 - JARDIM ISAURA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-1252 - JARDIM ISAURA"
+      ]
+    },
+    {
+      "received_name": "Otoniel",
+      "received_common": "Jd Isaura",
+      "reason": "Cuidados com o pai enfermo; falecimento do pai informado na mensagem; segundo encarregado local",
+      "candidates": [
+        {
+          "name": "OTONIEL LUIZ",
+          "common": {
+            "comum": "BR-22-1252 - JARDIM ISAURA",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-1252 - JARDIM ISAURA"
+      ]
+    },
+    {
+      "received_name": "Deivid",
+      "received_common": "Pq Santana I",
+      "reason": "Cuidados com a esposa enferma, em tratamento de câncer",
+      "candidates": [
+        {
+          "name": "DEIVID FERREIRA CASADO",
+          "common": {
+            "comum": "BR-22-2833 - PARQUE SANTANA I",
+            "cidade": "SANTANA DE PARNAÍBA"
+          }
+        }
+      ],
+      "resolved_commons": [
+        "BR-22-2833 - PARQUE SANTANA I"
+      ]
+    }
+  ]
+}

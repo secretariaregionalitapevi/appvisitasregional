@@ -18,6 +18,7 @@ from .gem import can_open_module
 from .music_events_import import is_local_conductor_role, parse_workbook, person_names, norm
 from .music_events_dashboard import aggregate, code, REGIONAL, regional_city
 from .music_events_identity import CommonResolver
+from .music_conductor_identity import conductor_name, active_conductor
 from ColorAdminApp.utils.supabase_http import supabase_get
 
 
@@ -88,12 +89,41 @@ def _reviews(events):
             raise
     from .music_events_justifications import display_note
     from .music_events_justifications import metadata
+    expanded = []
+    for review in reviews:
+        info = metadata(review.get('observacoes'))
+        individuals = info.get('pessoas')
+        if isinstance(individuals, list) and individuals:
+            for individual in individuals:
+                if not isinstance(individual, dict) or individual.get('excluida') or not str(individual.get('nome') or '').strip():
+                    continue
+                expanded.append({**review, 'encarregado_nome': individual['nome'],
+                                 'situacao': individual.get('situacao') or review['situacao'],
+                                 'local_id': individual.get('local_id'),
+                                 'observacoes': individual.get('motivo') or info.get('motivo') or ''})
+        else:
+            expanded.append(review)
+    reviews = expanded
     for review in reviews:
         info=metadata(review.get('observacoes'))
         if not review.get('encarregado_nome'):
             review['encarregado_nome']=info.get('nome','')
         review['observacoes'] = display_note(review.get('observacoes'))
     return reviews, True
+
+
+def _latest_event_versions(events):
+    """Reimportações do mesmo evento aparecem uma vez, pela versão mais recente."""
+    latest = {}
+    for event in events:
+        key = (event.get('data_evento'), event.get('tipo'), event.get('familia'),
+               norm(event.get('titulo')))
+        previous = latest.get(key)
+        if previous is None or (str(event.get('created_at') or ''), str(event['id'])) > (
+                str(previous.get('created_at') or ''), str(previous['id'])):
+            latest[key] = event
+    selected = {event['id'] for event in latest.values()}
+    return [event for event in events if event['id'] in selected]
 
 
 def _visible_events(request):
@@ -103,7 +133,7 @@ def _visible_events(request):
         events = [event for event in events if event['tipo'] == category]
     scope = user_scope(request)
     if scope['level'] in {'regional', 'global'}:
-        return events
+        return _latest_event_versions(events)
     # A permissão segue a comum de origem, não o município físico do encontro.
     commons = {row['codigo']: row for row in _read('musica_evento_comuns', order='codigo.asc')}
     authorized = set()
@@ -125,7 +155,7 @@ def _visible_events(request):
         location = canonical.get(code(common)) or resolver.resolve(common,row.get('municipio_informado')) or {'comum':common,'cidade':row.get('municipio_informado')}
         if can_access(scope,location) or (scope['level']=='local' and code(scope.get('comum'))==code(common)):
             authorized.add(row['evento_id'])
-    return [event for event in events if event['id'] in authorized]
+    return _latest_event_versions([event for event in events if event['id'] in authorized])
 
 
 def page(request, category="ENSAIO_REGIONAL"):
@@ -377,7 +407,10 @@ def dashboard_data(request, *, include_history=True, history_only=False):
     from .music_events_conductors import summarize
     if scope['level'] not in {'regional','global'}:
         reviews=[r for r in reviews if permitted({'comum_codigo':r['comum_chave'],'municipio_informado':r['municipio']})]
-    result['conductors']=summarize(chosen,records,locations,reviews,filters,catalog,frequencies,registry,transitions=transitions)
+        members=[r for r in members if permitted({'comum_codigo':r.get('codigo_comum') or r.get('comum'),'municipio_informado':r.get('cidade')})]
+    # Destinos do ciclo não limitam a origem de quem compareceu ao ensaio.
+    conductor_catalog = [common for common in catalog if can_access(scope, common)]
+    result['conductors']=summarize(chosen,records,locations,reviews,sam_filters,conductor_catalog,frequencies,registry,transitions=transitions,members=members)
     from .music_events_leaders import attach_leaders
     if scope['level'] not in {'regional','global'}:
         members=[r for r in members if permitted({'comum_codigo':r.get('codigo_comum') or r.get('comum'),'municipio_informado':r.get('cidade')})]
@@ -394,14 +427,16 @@ def dashboard_data(request, *, include_history=True, history_only=False):
             common=resolver.resolve(person.get(code_field) or person.get(common_field),
                                     person.get(city_field) or person.get('municipio'))
             if common:
-                leaders_by_common[code(common['comum'])].update(person_names(person.get(name_field)))
+                leaders_by_common[code(common['comum'])].update(
+                    conductor_name(name, code(common['comum'])) for name in person_names(person.get(name_field))
+                    if active_conductor(name))
     result['conductors']['catalog']=[
         {'key':code(common['comum']),'name':common['comum'],'city':common['cidade'],
          'encarregados':sorted(leaders_by_common.get(code(common['comum']),set()),key=norm)}
         for common in catalog if norm(common.get('cidade')) in {norm(c) for c in REGIONAL}
         and can_access(scope,common)
-        and (not filters['municipios'] or norm(regional_city(common['cidade'])) in {norm(regional_city(c)) for c in filters['municipios']})
-        and (not filters['comuns'] or code(common['comum']) in filters['comuns'])]
+        and (not sam_filters['municipios'] or norm(regional_city(common['cidade'])) in {norm(regional_city(c)) for c in sam_filters['municipios']})
+        and (not sam_filters['comuns'] or code(common['comum']) in sam_filters['comuns'])]
     result['conductors']['sites']=[{'id':x['id'],'evento_id':x['evento_id'],'nome':x['nome']} for x in locations if x['evento_id'] in {e['id'] for e in chosen}]
     if len(chosen)==1:
         from .music_events_conductors import attach_common_attendance
@@ -436,6 +471,9 @@ def api_conductor(request,event_id):
         if not common or not (can_access(scope,common) or (scope['level']=='local' and code(scope.get('comum'))==key)):
             return JsonResponse({'error':'Comum não identificada ou fora do seu escopo.'},status=403)
         person_name=str(raw.get('encarregado_nome') or '').strip()
+        identity = lambda name: norm(conductor_name(name, key))
+        if person_name and not active_conductor(person_name):
+            raise ValueError('Esta pessoa não exerce mais a função de encarregado local.')
         explicit_person_name=bool(person_name)
         from .music_events_justifications import metadata, pack_metadata
         existing_rows=_read('musica_evento_encarregados',evento_id=f'eq.{event_id}',comum_chave='eq.'+key)
@@ -450,8 +488,8 @@ def api_conductor(request,event_id):
             stored_name=next((str(row.get('encarregado_nome')
                                   or metadata(row.get('observacoes')).get('nome') or '').strip()
                               for row in existing_rows
-                              if norm(row.get('encarregado_nome')
-                                      or metadata(row.get('observacoes')).get('nome'))==norm(person_name)),None)
+                              if identity(row.get('encarregado_nome')
+                                      or metadata(row.get('observacoes')).get('nome'))==identity(person_name)),None)
             if stored_name is not None:
                 person_name=stored_name
             else:
@@ -465,8 +503,8 @@ def api_conductor(request,event_id):
                             if is_local_conductor_role(person.get('cargo_ministerio'))
                             and norm(person.get('status')) not in {'INATIVO','EXCLUIR'}
                             and resolver.resolve(person.get('comum_congregacao'),person.get('municipio'))==common
-                            for name in person_names(person.get('nome_aluno')) if norm(name)==norm(person_name)]
-                names=set(registered)
+                            for name in person_names(person.get('nome_aluno')) if identity(name)==identity(person_name)]
+                names={conductor_name(name, key) for name in registered}
                 if len(names)!=1:
                     raise ValueError('Selecione um encarregado local ativo e cadastrado nesta comum.')
                 person_name=next(iter(names))
@@ -485,7 +523,7 @@ def api_conductor(request,event_id):
         actor=profile.get('full_name') or profile.get('nome') or profile.get('name') or profile.get('email')
         if not actor_id or not actor:return JsonResponse({'error':'Entre novamente para identificar o responsável.'},status=401)
         existing=[row for row in existing_rows
-                  if norm(row.get('encarregado_nome') or metadata(row.get('observacoes')).get('nome'))==norm(person_name)]
+                  if identity(row.get('encarregado_nome') or metadata(row.get('observacoes')).get('nome'))==identity(person_name)]
         imported = getattr(request, '_justification_metadata', None)
         prior_metadata = metadata(existing[0].get('observacoes')) if existing else {}
         if status == 'JUSTIFICOU' and imported:
@@ -529,9 +567,10 @@ def api_evolution(request):
 
 def _annual_sources(year):
     # O calendário é regional; o resultado nominal e as comuns passam pelo escopo abaixo.
-    events = _read('musica_eventos', select='id,titulo,data_evento,tipo,familia,status,base_id',
+    events = _read('musica_eventos', select='id,titulo,data_evento,tipo,familia,status,base_id,created_at',
                    tipo='eq.ENSAIO_REGIONAL', data_evento=f'gte.{year}-01-01',
                    **{'and': f'(data_evento.lt.{year + 1}-01-01)'}, order='data_evento.asc,id.asc')
+    events = _latest_event_versions(events)
     records, sites, invitations = [], [], []
     with ThreadPoolExecutor(max_workers=8) as executor:
         registry_future = executor.submit(_registry)

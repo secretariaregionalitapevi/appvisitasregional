@@ -1,0 +1,28 @@
+[
+  {
+    "evento_id": "0c00b334-0ab6-4175-b759-028aef44161f",
+    "comum_chave": "BR-21-1563",
+    "comum_nome": "BR-21-1563 - CURURUQUARA III",
+    "municipio": "SANTANA DE PARNAÍBA",
+    "situacao": "PRESENTE",
+    "local_id": "1a3d7d31-4051-4400-abb1-f912ed768e2f",
+    "observacoes": "{\"_justificativa\": 1, \"nome\": \"IGOR ROMAO FERREIRA\", \"motivo\": \"Presença confirmada expressamente pelo usuário a partir de mensagem encaminhada.\", \"origem\": \"Confirmação de presença fornecida pelo usuário\", \"cargo\": \"Encarregado Local\", \"tipo\": \"confirmacao_administrativa_presenca\", \"data_evento\": \"15/11/2026\"}",
+    "created_by_user_id": "codex:confirmacao-presenca-solicitada",
+    "created_by_name": "Codex - confirmação solicitada pelo usuário",
+    "updated_by_user_id": "codex:confirmacao-presenca-solicitada",
+    "updated_by_name": "Codex - confirmação solicitada pelo usuário"
+  },
+  {
+    "evento_id": "0c00b334-0ab6-4175-b759-028aef44161f",
+    "comum_chave": "BR-22-3132",
+    "comum_nome": "BR-22-3132 - JARDIM ITAPUÃ - STNA DE PARNAÍBA",
+    "municipio": "SANTANA DE PARNAÍBA",
+    "situacao": "PRESENTE",
+    "local_id": "1a3d7d31-4051-4400-abb1-f912ed768e2f",
+    "observacoes": "{\"_justificativa\": 1, \"nome\": \"WAGNER FABIANO PIRES\", \"motivo\": \"Presença confirmada expressamente pelo usuário a partir de mensagem encaminhada.\", \"origem\": \"Confirmação de presença fornecida pelo usuário\", \"cargo\": \"Encarregado Local\", \"tipo\": \"confirmacao_administrativa_presenca\", \"data_evento\": \"15/11/2026\"}",
+    "created_by_user_id": "codex:confirmacao-presenca-solicitada",
+    "created_by_name": "Codex - confirmação solicitada pelo usuário",
+    "updated_by_user_id": "codex:confirmacao-presenca-solicitada",
+    "updated_by_name": "Codex - confirmação solicitada pelo usuário"
+  }
+]

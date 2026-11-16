@@ -11,6 +11,35 @@ from ColorAdminApp.modules import music_events_justifications as module
 
 
 class JustificationImportTests(SimpleTestCase):
+    def test_reason_column_omits_names_and_deduplicates_equal_reasons(self):
+        notes = module.pack_metadata({'nome': 'JORGE / OTONIEL',
+            'motivo': 'JORGE: Enfermidade | OTONIEL: Enfermidade',
+            'pessoas': [{'nome': 'JORGE', 'motivo': 'Enfermidade'},
+                        {'nome': 'OTONIEL', 'motivo': 'Enfermidade'}]})
+        self.assertEqual(module.reason_summary(notes), 'Enfermidade')
+        self.assertEqual(module.display_note(notes), 'JORGE: Enfermidade | OTONIEL: Enfermidade')
+        different = module.pack_metadata({'pessoas': [{'nome': 'A', 'motivo': 'Trabalho'},
+                                                     {'nome': 'B', 'motivo': 'Questão familiar'}]})
+        self.assertEqual(module.reason_summary(different), 'Trabalho | Questão familiar')
+        self.assertEqual(module.reason_summary('Outro motivo'), 'Outro motivo')
+
+    def test_two_people_in_legacy_common_record_keep_independent_names_and_reasons(self):
+        event = {'id': 'e'}
+        notes = module.pack_metadata({'nome': 'JORGE AMÂNCIO / OTONIEL LUIZ',
+            'motivo': 'Motivos individuais', 'pessoas': [
+                {'nome': 'JORGE AMÂNCIO', 'motivo': 'Idade avançada', 'situacao': 'JUSTIFICOU'},
+                {'nome': 'OTONIEL LUIZ', 'motivo': 'Questão familiar', 'situacao': 'JUSTIFICOU'}]})
+        original = {'id': 'original', 'evento_id': 'e', 'comum_chave': 'BR-22-1252',
+                    'comum_nome': 'BR-22-1252 - JARDIM ISAURA', 'municipio': 'SANTANA DE PARNAÍBA',
+                    'situacao': 'JUSTIFICOU', 'observacoes': notes}
+        with patch.object(module.events, '_read', return_value=[original]):
+            rows, available = module.events._reviews([event])
+        self.assertTrue(available)
+        self.assertEqual([(row['encarregado_nome'], row['observacoes']) for row in rows],
+                         [('JORGE AMÂNCIO', 'Idade avançada'), ('OTONIEL LUIZ', 'Questão familiar')])
+        self.assertTrue(all(row['id'] == 'original' for row in rows))
+        self.assertEqual(original['observacoes'], notes)
+
     def setUp(self):
         self.catalog = [{'comum': 'BR-22-1 - JARDIM COTIA', 'cidade': 'COTIA'}]
         self.leaders = [{'nome_aluno': 'Natanael Zanin', 'cargo_ministerio': 'Encarregado Local',
@@ -221,6 +250,49 @@ class JustificationImportTests(SimpleTestCase):
 
 
 class EventJustificationManagementTests(SimpleTestCase):
+    def grouped_record(self):
+        row = dict(self.rows[0])
+        row['observacoes'] = module.pack_metadata({'nome': 'JORGE / OTONIEL', 'lote': 'lote-cotia',
+            'pessoas': [{'nome': 'JORGE', 'motivo': 'Enfermidade', 'situacao': 'JUSTIFICOU'},
+                        {'nome': 'OTONIEL', 'motivo': 'Enfermidade', 'situacao': 'JUSTIFICOU'}]})
+        self.read.return_value = [row]
+        return row
+
+    def test_grouped_people_are_listed_as_independent_items(self):
+        row = self.grouped_record()
+        response = self.call('listar')
+        items = json.loads(response.content)['items']
+        self.assertEqual([(p['id'], p['nome'], p['motivo']) for p in items],
+                         [(row['id'] + ':0', 'JORGE', 'Enfermidade'),
+                          (row['id'] + ':1', 'OTONIEL', 'Enfermidade')])
+
+    def test_edit_grouped_person_does_not_change_sibling(self):
+        row = self.grouped_record()
+        response = self.call('editar', {'ids': [row['id'] + ':0'], 'motivo': 'Motivo corrigido'})
+        self.assertEqual(response.status_code, 200)
+        info = module.metadata(self.write.call_args.kwargs['json']['observacoes'])
+        self.assertEqual(info['pessoas'][0]['motivo'], 'Motivo corrigido')
+        self.assertEqual(info['pessoas'][1]['motivo'], 'Enfermidade')
+        self.assertEqual(json.loads(response.content)['alterados'], 1)
+
+    def test_delete_grouped_person_preserves_sibling_and_original_history(self):
+        row = self.grouped_record()
+        response = self.call('excluir', {'ids': [row['id'] + ':0']})
+        self.assertEqual(response.status_code, 200)
+        payload = self.write.call_args.kwargs['json']
+        info = module.metadata(payload['observacoes'])
+        self.assertTrue(info['pessoas'][0]['excluida'])
+        self.assertEqual(info['pessoas'][0]['nome'], 'JORGE')
+        self.assertEqual(info['pessoas'][1]['situacao'], 'JUSTIFICOU')
+        self.assertEqual(payload['situacao'], 'JUSTIFICOU')
+        self.assertEqual(info['nome'], 'OTONIEL')
+
+    def test_grouped_person_selection_rejects_nonexistent_index(self):
+        row = self.grouped_record()
+        response = self.call('excluir', {'ids': [row['id'] + ':3']})
+        self.assertEqual(response.status_code, 400)
+        self.write.assert_not_called()
+
     def setUp(self):
         self.factory = RequestFactory()
         self.event = {'id': 'event-cotia', 'titulo': 'Cotia', 'data_evento': '2026-11-15', 'tipo': 'ENSAIO_REGIONAL', 'status': 'ABERTO'}

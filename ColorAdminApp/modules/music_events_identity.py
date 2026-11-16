@@ -1,6 +1,7 @@
 """Resolve comuns pelo catálogo; nomes ambíguos nunca recebem código por aproximação."""
 import re
 from .music_events_import import norm
+from .congregation_distribution import corrected_catalog, corrected_common
 
 
 def normalized_city(value):
@@ -61,7 +62,7 @@ class CommonResolver:
         self.has_catalog=bool(catalog)
         self.by_code={};self.by_name={}
         self.normalized = {}; self.cores = {}
-        for row in catalog:
+        for row in corrected_catalog(catalog):
             label=row.get('comum') or ''
             match=re.match(r'^(BR-\d+-\d+)\s*-\s*(.*)',label)
             if not match:continue
@@ -87,6 +88,7 @@ class CommonResolver:
                 self.cores.setdefault((canonical_city, core), {})[match[1]] = row
 
     def resolve(self, common, city):
+        common = corrected_common(common)
         match=re.match(r'^(BR-\d+-\d+)',norm(common))
         if match and match[1] in self.by_code:return self.by_code[match[1]]
         if match:
@@ -128,7 +130,9 @@ class CommonResolver:
         output=[]
         for original in rows:
             row=dict(original)
-            common=row.get('comum_codigo') or row.get('comum_informada') or ''
+            label = row.get('comum_informada') or ''
+            corrected = corrected_common(label)
+            common = corrected if corrected != label else row.get('comum_codigo') or label
             canonical=self.resolve(common,row.get('municipio_informado'))
             if canonical:
                 row['comum_codigo']=re.match(r'^(BR-\d+-\d+)',canonical['comum']).group(1)

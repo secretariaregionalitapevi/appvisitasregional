@@ -35,13 +35,13 @@
     }).join('')}</div>`;
   }
   function eventPanel(id) {
-    const summaries = current.summaries.filter(row => row.event_id === id);
+    const summaries = current.summaries.filter(row => row.event_id === id && row.group !== 'OUTROS');
     const state = choices.get(id) || {group:summaries[0].group, candidates:false, view:'cards', sort:'city'};
     if (!summaries.some(row => row.group === state.group)) state.group = summaries[0].group;
     choices.set(id, state);
     const selected = summaries.find(row => row.group === state.group);
     const total = metric(selected, state.candidates);
-    const allRows = current.rows.filter(row => row.event_id === id);
+    const allRows = current.rows.filter(row => row.event_id === id && row.group !== 'OUTROS');
     const rows = allRows.filter(row => row.group === state.group).sort((a,b) => state.sort === 'rate' ?
       (metric(b,state.candidates).rate ?? -1) - (metric(a,state.candidates).rate ?? -1) || a.city.localeCompare(b.city,'pt-BR') : a.city.localeCompare(b.city,'pt-BR'));
     const cities=[...new Set(allRows.map(row=>row.city))].sort((a,b)=>{

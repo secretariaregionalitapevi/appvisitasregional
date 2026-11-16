@@ -626,7 +626,6 @@ def apiAuth(request):
                         "status": "pending",
                         "cadastro_origem": registration_source,
                         "cadastro_origem_label": registration_label,
-                        "cadastro_origem_setor_selecionado": setor_selecionado,
                         "cadastro_origem_setor_sugerido": suggested_sector,
                         "cadastro_origem_rota": request.path,
                         "cadastro_origem_url": request.build_absolute_uri(),

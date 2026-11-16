@@ -21,6 +21,7 @@ from . import music_events as events
 from .access_control import common_catalog, user_scope
 from .music_events_identity import CommonResolver, normalized_name
 from .music_events_import import is_conductor_role, norm, person_names
+from .music_conductor_identity import conductor_name
 
 
 def metadata(notes):
@@ -40,11 +41,35 @@ def display_note(notes):
     return value.get('motivo', '') if value else notes
 
 
-def registered_name_matches(source, registered):
+def reason_summary(notes):
+    """Texto da coluna Motivo, sem repetir os nomes da coluna anterior."""
+    value = metadata(notes)
+    people = value.get('pessoas')
+    if isinstance(people, list):
+        reasons = {}
+        for person in people:
+            if not isinstance(person, dict) or person.get('excluida'):
+                continue
+            reason = str(person.get('motivo') or '').strip()
+            if reason:
+                reasons.setdefault(norm(reason), reason)
+        if reasons:
+            return ' | '.join(reasons.values())
+    return display_note(notes)
+
+
+def registered_name_matches(source, registered, common_key=''):
+    # Somente a divergência ortográfica confirmada usa alias na importação.
+    # Nomes abreviados continuam exigindo correspondência única no cadastro.
+    if common_key == 'BR-22-1804':
+        source = conductor_name(source, common_key)
+        registered = conductor_name(registered, common_key)
     source_tokens = set(normalized_name(source).split())
     if not source_tokens:
         return set()
     names = person_names(registered) or [str(registered or '')]
+    if common_key == 'BR-22-1804':
+        names = [conductor_name(name, common_key) for name in names]
     return {normalized_name(name) for name in names
             if source_tokens == set(normalized_name(name).split()) or
             len(source_tokens) > 1 and source_tokens <= set(normalized_name(name).split())}
@@ -204,12 +229,12 @@ def reconcile(rows, catalog, leaders, day):
             row['problema'] = 'Comum não identificada ou ambígua.'
         else:
             candidates_by_name = {
-                normalized_name(name): name
+                normalized_name(conductor_name(name, row['comum_chave']) if row['comum_chave'] == 'BR-22-1804' else name): name
                 for person in registered
                 for name in person_names(person.get('nome_aluno'))
             }
             for source_name in person_names(row.get('nome')):
-                matches = set().union(*(registered_name_matches(source_name, person.get('nome_aluno'))
+                matches = set().union(*(registered_name_matches(source_name, person.get('nome_aluno'), row['comum_chave'])
                                         for person in registered))
                 if len(matches) != 1:
                     row['problema'] = 'Nome/cargo não confirmado no cadastro de encarregados locais.'
@@ -262,7 +287,19 @@ def api(request, event_id, action):
                 if row.get('evento_id') != str(event_id) or row.get('situacao') != 'JUSTIFICOU':
                     continue
                 info = metadata(row.get('observacoes'))
+                people = info.get('pessoas')
+                if isinstance(people, list) and len(people) > 1:
+                    for index, person in enumerate(people):
+                        if person.get('excluida') or person.get('situacao', row['situacao']) != 'JUSTIFICOU':
+                            continue
+                        reason = person.get('motivo') or ''
+                        items.append({**row, 'id': f"{row['id']}:{index}", 'nome': person['nome'],
+                                      'motivo': reason, 'motivo_resumido': reason, 'observacoes': reason,
+                                      'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
+                                      'bloco': info.get('bloco', '')})
+                    continue
                 items.append({**row, 'motivo': display_note(row.get('observacoes')),
+                              'motivo_resumido': reason_summary(row.get('observacoes')),
                               'nome': row.get('encarregado_nome') or info.get('nome', ''),
                               'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
                               'bloco': info.get('bloco', ''), 'observacoes': display_note(row.get('observacoes'))})
@@ -388,6 +425,8 @@ def manage(request, event, action, actor_id):
     ids = raw.get('ids')
     if not isinstance(ids, list) or not ids or len(ids) > 200:
         raise ValueError('Selecione entre 1 e 200 justificativas deste evento.')
+    if any(':' in str(value) for value in ids):
+        return manage_grouped(request, event, action, actor_id, raw)
     ids = list({str(UUID(str(value))) for value in ids})
     rows = events._read('musica_evento_encarregados', evento_id='eq.' + event['id'],
                         id='in.(' + ','.join(ids) + ')', situacao='eq.JUSTIFICOU', order='id.asc')
@@ -445,5 +484,90 @@ def manage(request, event, action, actor_id):
         if not response.json():
             return JsonResponse({'error': f'{changed} alteradas. Outro usuário modificou a seleção. Atualize a lista.'}, status=409)
         changed += 1
+        events._invalidate_annual()
+    return JsonResponse({'alterados': changed})
+
+
+def manage_grouped(request, event, action, actor_id, raw):
+    """Edita cada pessoa de registros legados por comum sem atingir seus irmãos."""
+    from django.conf import settings
+    from .access_control import service_headers
+    from uuid import UUID
+    selections = {}
+    for value in set(map(str, raw['ids'])):
+        key, separator, suffix = value.partition(':')
+        key = str(UUID(key))
+        if separator and (not suffix.isdigit() or int(suffix) > 199):
+            raise ValueError('Identificação individual inválida. Atualize a lista.')
+        selections.setdefault(key, set()).add(int(suffix) if separator else None)
+    rows = events._read('musica_evento_encarregados', evento_id='eq.' + event['id'],
+                        id='in.(' + ','.join(selections) + ')', situacao='eq.JUSTIFICOU', order='id.asc')
+    if {row['id'] for row in rows if row.get('evento_id') == event['id'] and row.get('situacao') == 'JUSTIFICOU'} != set(selections):
+        raise ValueError('Seleção alterada ou fora deste evento. Atualize a lista.')
+    actor = request.session.get('user_profile') or {}
+    actor = actor.get('full_name') or actor.get('nome') or actor.get('name') or actor.get('email')
+    if not actor:
+        return JsonResponse({'error': 'Entre novamente para identificar o responsável.'}, status=401)
+    reason = str(raw.get('motivo') or '').strip()
+    if action == 'editar' and (not reason or len(reason) > 500):
+        raise ValueError('Informe um motivo de até 500 caracteres.')
+    if raw.get('nome') is not None and len(set(map(str, raw['ids']))) != 1:
+        raise ValueError('Altere o nome individualmente.')
+    plans = []
+    for row in rows:
+        info = metadata(row.get('observacoes'))
+        if raw.get('lote') and info.get('lote') != raw['lote']:
+            raise ValueError('A seleção contém justificativas de outro lote.')
+        people = info.get('pessoas')
+        grouped = isinstance(people, list) and len(people) > 1
+        if not grouped:
+            people = [{'nome': row.get('encarregado_nome') or info.get('nome', ''),
+                       'motivo': display_note(row.get('observacoes')), 'situacao': row['situacao']}]
+        indices = selections[row['id']]
+        if grouped and None in indices or not grouped and indices != {None}:
+            raise ValueError('Selecione a pessoa pela lista atualizada.')
+        indices = {0} if not grouped else indices
+        for index in indices:
+            if index >= len(people) or people[index].get('excluida') or people[index].get('situacao', row['situacao']) != 'JUSTIFICOU':
+                raise ValueError('A justificativa individual já foi alterada. Atualize a lista.')
+            person = people[index]
+            if action == 'editar':
+                if raw.get('nome') is not None:
+                    name = raw['nome']
+                    if not isinstance(name, str) or not name.strip() or len(name) > 180:
+                        raise ValueError('Informe um nome válido de até 180 caracteres.')
+                    checked = reconcile([{'nome': name, 'comum': row['comum_chave'],
+                                          'municipio': row['municipio'], 'cargo': 'Encarregado Local'}],
+                                        common_catalog(), events._registry(), event['data_evento'])
+                    if not checked or checked[0]['problema']:
+                        raise ValueError('Nome não confirmado no cadastro desta comum.')
+                    name = checked[0]['nome']
+                    if any(i != index and not other.get('excluida') and normalized_name(other['nome']) == normalized_name(name)
+                           for i, other in enumerate(people)):
+                        raise ValueError('Este encarregado já possui justificativa nesta comum.')
+                    person['nome'] = name
+                person['motivo'] = reason
+            else:
+                person.update(excluida=True, situacao='NAO_INFORMADO')
+        active = [p for p in people if not p.get('excluida')]
+        info.update(pessoas=people, nome=' / '.join(p['nome'] for p in active),
+                    motivo=' | '.join(dict.fromkeys(p.get('motivo', '') for p in active)))
+        payload = {'observacoes': pack_metadata(info), 'situacao': 'JUSTIFICOU' if active else 'NAO_INFORMADO',
+                   'local_id': None, 'updated_by_user_id': str(actor_id), 'updated_by_name': actor}
+        params = {'id': 'eq.' + row['id'], 'evento_id': 'eq.' + event['id'], 'situacao': 'eq.JUSTIFICOU'}
+        if row.get('updated_at'):
+            params['updated_at'] = 'eq.' + row['updated_at']
+        plans.append((payload, params, len(indices)))
+    changed = 0
+    for payload, params, count in plans:
+        try:
+            response = requests.patch(settings.SUPABASE_URL + '/rest/v1/musica_evento_encarregados',
+                                      headers=service_headers('return=representation'), params=params, json=payload, timeout=15)
+            response.raise_for_status()
+        except requests.RequestException:
+            return JsonResponse({'error': f'{changed} justificativas alteradas. Atualize a lista antes de repetir.'}, status=502)
+        if not response.json():
+            return JsonResponse({'error': 'Outro usuário modificou a seleção. Atualize a lista.'}, status=409)
+        changed += count
         events._invalidate_annual()
     return JsonResponse({'alterados': changed})

@@ -3,6 +3,7 @@ from collections import defaultdict
 from .music_events_identity import CommonResolver
 from .music_events_dashboard import code
 from .music_events_import import is_local_conductor_role, norm, person_names
+from .music_conductor_identity import conductor_name, active_conductor
 
 
 def attach_leaders(data,registry,catalog,members=()):
@@ -18,6 +19,8 @@ def attach_leaders(data,registry,catalog,members=()):
             canonical=resolver.resolve(row.get('codigo_comum') or row.get(common_field),row.get('municipio') or row.get('cidade'))
             if not canonical:continue
             for name in person_names(row.get(name_field)):
+                name = conductor_name(name, code(canonical['comum']))
+                if not active_conductor(name):continue
                 source_names[code(canonical['comum'])][norm(name)]=name
         for key,names in source_names.items():
             if key not in leaders:leaders[key]=names;sources[key]=source

@@ -44,31 +44,37 @@ def administration_user_modules(request, user_id):
                          names[primary] if primary in requested else
                          next(names[key] for key in names if key in requested))
 
-        # Sincroniza o setor pela ponte administrativa segura. Uma falha aqui não
-        # pode ser ocultada, pois deixaria o usuário salvo na pasta errada.
-        _update_profile_via_rpc(user_id, {"sector": target_sector})
-
         before = set()
         try:
             before_rows = _get_table("user_module_access", {"select": "module,active", "user_id": f"eq.{user_id}"})
             before = {row["module"] for row in before_rows if row.get("active")}
             now = datetime.now().astimezone().isoformat()
-            for module in VALID_MODULES:
-                active = module in requested
-                response = requests.post(
+            grants = [{"user_id": str(user_id), "module": module, "active": module in requested,
+                       "granted_by": actor_id, "revoked_at": None if module in requested else now,
+                       "updated_at": now} for module in sorted(requested | before)]
+            # Um único comando SQL no PostgREST: ou grava todas as pastas ou nenhuma.
+            response = requests.post(
                     f"{settings.SUPABASE_URL}/rest/v1/user_module_access",
                     headers=_headers("resolution=merge-duplicates,return=minimal"),
                     params={"on_conflict": "user_id,module"},
-                    json={"user_id": str(user_id), "module": module, "active": active,
-                          "granted_by": actor_id, "revoked_at": None if active else now, "updated_at": now},
+                    json=grants,
                     timeout=15,
                 )
-                response.raise_for_status()
-        except requests.RequestException:
+            response.raise_for_status()
+        except requests.RequestException as exc:
             # Não confirmar sucesso quando as concessões explícitas falharem.
             invalidate_module_access(str(user_id))
+            failed_response = getattr(exc, 'response', None)
+            if failed_response is not None:
+                try:
+                    error = failed_response.json()
+                except ValueError:
+                    error = {}
+                if error.get('code') == '23514' and 'user_module_access_module_check' in str(error.get('message', '')):
+                    return JsonResponse({"error": "O banco ainda não aceita uma das pastas selecionadas. Aplique scripts/migrations/050_gem_module_access.sql no Supabase e tente salvar novamente. Nenhuma pasta foi alterada nesta tentativa."}, status=503)
             return JsonResponse({"error": "Não foi possível salvar todas as pastas. Aplique as migrações de controle de acesso e revise as permissões do usuário antes de confirmar a liberação."}, status=503)
 
+        _update_profile_via_rpc(user_id, {"sector": target_sector})
         invalidate_module_access(str(user_id))
         log_audit(request, "UPDATE_USER_MODULE_ACCESS", "ADMIN", {
             "target_user_id": str(user_id), "before": sorted(before), "after": sorted(requested), "sector": target_sector

@@ -1,0 +1,16 @@
+{
+  "id": "2f956c07-c682-4e74-863f-0414ae03c412",
+  "evento_id": "0c00b334-0ab6-4175-b759-028aef44161f",
+  "comum_chave": "BR-22-1252",
+  "comum_nome": "BR-22-1252 - JARDIM ISAURA",
+  "municipio": "SANTANA DE PARNAÍBA",
+  "situacao": "JUSTIFICOU",
+  "local_id": null,
+  "observacoes": "{\"_justificativa\": 1, \"nome\": \"JORGE AMÂNCIO / OTONIEL LUIZ\", \"motivo\": \"JORGE AMÂNCIO: Idade avançada; primeiro encarregado local | OTONIEL LUIZ: Cuidados com o pai enfermo; falecimento do pai informado na mensagem; segundo encarregado local\", \"origem\": \"Mensagem encaminhada fornecida pelo usuário\", \"lote\": \"mensagem-a1e7a30c7262c3f7bba6f2e724e94a9e6c59c7beee12e5361c13345695ab5c61\", \"data_evento\": \"15/11/2026\", \"cargo\": \"Encarregado Local\", \"pessoas\": [{\"nome\": \"JORGE AMÂNCIO\", \"motivo\": \"Idade avançada; primeiro encarregado local\", \"situacao\": \"JUSTIFICOU\", \"local_id\": null, \"nome_recebido\": \"Jorge\", \"comum_recebida\": \"Jd Isaura\"}, {\"nome\": \"OTONIEL LUIZ\", \"motivo\": \"Cuidados com o pai enfermo; falecimento do pai informado na mensagem; segundo encarregado local\", \"situacao\": \"JUSTIFICOU\", \"local_id\": null, \"nome_recebido\": \"Otoniel\", \"comum_recebida\": \"Jd Isaura\"}]}",
+  "created_at": "2026-11-16T19:47:30.533369+00:00",
+  "updated_at": "2026-11-16T19:47:30.533369+00:00",
+  "created_by_user_id": "codex:importacao-justificativas-mensagem",
+  "created_by_name": "Codex - importação solicitada pelo usuário",
+  "updated_by_user_id": "codex:importacao-justificativas-mensagem",
+  "updated_by_name": "Codex - importação solicitada pelo usuário"
+}

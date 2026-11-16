@@ -96,6 +96,22 @@ class MusicOnlyDashboardTests(SimpleTestCase):
 
 
 class DepartmentAccessMiddlewareTests(SimpleTestCase):
+    @patch('ColorAdminApp.module_access.explicit_modules', return_value=set())
+    @patch('ColorAdminApp.middleware.requests.get')
+    def test_current_database_level_replaces_stale_session_scope(self, get, _modules):
+        from django.http import HttpResponse
+        from ColorAdminApp.middleware import SupabaseAuthMiddleware
+        from ColorAdminApp.modules.access_control import user_scope
+        for role_id, expected in [(2,'regional'), (3,'municipal'), (4,'local')]:
+            get.return_value.status_code = 200
+            get.return_value.json.return_value = [{'user_id':'approved-user','status':'approved',
+                'role_id':role_id,'sector':'Visitas','municipio':'COTIA','comum':'CENTRAL'}]
+            request = RequestFactory().get('/visitas/api/dashboard/')
+            request.session = TestSession({'authenticated':True,'user_id':'approved-user',
+                'user_profile':{'role_id':1,'sector':'Visitas','access_level':'global','nivel_acesso':'municipal'}})
+            response = SupabaseAuthMiddleware(lambda req: HttpResponse(user_scope(req)['level']))(request)
+            self.assertEqual(response.content.decode(), expected)
+
     sectors = {
         "Visitas": (MODULE_VISITAS, "/visitas/api/dashboard/"),
         "Musicalização": (MODULE_MUSICALIZACAO, "/musicalizacao/api/resumo/"),

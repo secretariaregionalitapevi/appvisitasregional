@@ -6,6 +6,22 @@ from ColorAdminApp.modules import music_events as module
 
 
 class MusicEventsPerformanceTests(SimpleTestCase):
+    def test_reimported_event_uses_latest_version_without_combining_attendance(self):
+        original = {'id': 'old', 'titulo': 'Ensaio Regional · 15/11/2026',
+                    'data_evento': '2026-11-15', 'tipo': 'ENSAIO_REGIONAL',
+                    'familia': 'GERAL', 'created_at': '2026-11-15T14:59:00+00:00'}
+        latest = {**original, 'id': 'latest', 'created_at': '2026-11-15T17:00:00+00:00'}
+        technical = {**original, 'id': 'technical', 'tipo': 'REUNIAO_TECNICA'}
+        other_day = {**original, 'id': 'other-day', 'data_evento': '2026-09-20'}
+        other_family = {**technical, 'id': 'strings', 'familia': 'CORDAS'}
+        request = RequestFactory().get('/')
+        with patch.object(module, '_read', return_value=[original, latest, technical, other_day, other_family]), \
+                patch.object(module, 'user_scope', return_value={'level': 'regional'}):
+            visible = module._visible_events(request)
+        self.assertEqual([event['id'] for event in visible],
+                         ['latest', 'technical', 'other-day', 'strings'])
+        self.assertEqual(module._latest_event_versions([latest, original]), [latest])
+
     def setUp(self):
         self.events = [
             {'id': key, 'titulo': key, 'tipo': 'ENSAIO_REGIONAL', 'familia': 'GERAL',
@@ -45,11 +61,36 @@ class MusicEventsPerformanceTests(SimpleTestCase):
         self.assertTrue(self.calls)
         self.assertTrue(all(params['evento_id'] == 'in.(current)' for _, params in self.calls))
 
-    def test_selected_rehearsal_limits_commons_and_leader_catalog_to_cycle(self):
+    def test_selected_rehearsal_keeps_leader_origins_outside_destination_cycle(self):
         self.catalog.append({'comum': 'BR-22-2 - Cotia', 'cidade': 'COTIA'})
         result, _, _ = self.data(include_history=False)
         self.assertEqual(set(result['filters']['municipios']), {'ITAPEVI', 'PIRAPORA DO BOM JESUS'})
-        self.assertEqual([row['city'] for row in result['conductors']['catalog']], ['ITAPEVI'])
+        self.assertEqual([row['city'] for row in result['conductors']['catalog']], ['ITAPEVI', 'COTIA'])
+
+    def test_pirapora_leader_attending_santana_is_in_origin_summary(self):
+        self.events[1]['data_evento'] = '2026-11-15'
+        self.catalog = [{'comum': 'BR-22-1 - Central', 'cidade': 'PIRAPORA DO BOM JESUS'}]
+        original_read = self.read
+        def read(table, **params):
+            rows = original_read(table, **params)
+            for row in rows:
+                if table == 'musica_evento_presencas':
+                    row.update(municipio_informado='PIRAPORA DO BOM JESUS',
+                               nome='Encarregado de Pirapora', cargo='ENCARREGADO LOCAL')
+                elif table == 'musica_evento_locais':
+                    row['nome'] = 'SANTANA DE PARNAÍBA'
+            return rows
+        with patch.object(self, 'read', side_effect=read):
+            result, _, _ = self.data(include_history=False)
+        row = result['conductors']['rows'][0]
+        self.assertEqual(row['municipio'], 'PIRAPORA DO BOM JESUS')
+        self.assertEqual(row['situacao'], 'PRESENTE')
+        self.assertEqual(row['locais_validos'], ['SANTANA DE PARNAÍBA'])
+        self.assertEqual(result['conductors']['totals']['PRESENTE'], 1)
+        self.request = RequestFactory().get('/', {'evento': 'current', 'municipio': 'COTIA'})
+        with patch.object(self, 'read', side_effect=read):
+            filtered, _, _ = self.data(include_history=False)
+        self.assertEqual(filtered['conductors']['rows'], [])
 
     def test_explicit_municipality_selection_is_preserved(self):
         self.request = RequestFactory().get('/', {'evento': 'current', 'municipio': ['ITAPEVI', 'PIRAPORA DO BOM JESUS']})

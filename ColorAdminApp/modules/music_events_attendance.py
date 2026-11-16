@@ -3,7 +3,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .music_events_dashboard import aggregate
+from .music_events_dashboard import aggregate, candidate_level
 from .music_events_closing import physical_closings
 from .music_events_identity import normalized_city
 
@@ -44,10 +44,15 @@ def attendance_overview(events, records, locations, filters, catalog):
         nominal_rows = [row for row in scoped_records if event_days.get(row['evento_id'])==closing['date']
             and site_cities.get(row['local_id'])==closing['city']
             and row.get('situacao','PRESENTE')=='PRESENTE']
-        counts = Counter(row['categoria'] for row in nominal_rows)
+        counts = Counter(row['categoria'] for row in nominal_rows
+                         if not (candidate_level(row.get('nivel')) and row['categoria'] in {'MUSICO', 'ORGANISTA'}))
         replacements = {'total': original['total'], 'MUSICO': original['musicians'],
-            'ORGANISTA': original['organists'], 'IRMANDADE': original.get('support',{}).get('IRMANDADE',0),
-            'APOIO': sum(value for key,value in original.get('support',{}).items() if key!='IRMANDADE')}
+                        'ORGANISTA': original['organists']}
+        support = original.get('support', {})
+        if 'IRMANDADE' in support:
+            replacements['IRMANDADE'] = support['IRMANDADE']
+        if any(key != 'IRMANDADE' for key in support):
+            replacements['APOIO'] = sum(value for key,value in support.items() if key != 'IRMANDADE')
         for key,value in replacements.items():
             display_totals[key] = display_totals.get(key,0) + value - (len(nominal_rows) if key=='total' else counts[key])
     general_filters['municipios_locais'] = list(filters.get('municipios', []))

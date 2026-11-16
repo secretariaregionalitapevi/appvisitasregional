@@ -67,6 +67,10 @@ class SupabaseAuthMiddleware:
                         # valer na sessao ativa sem exigir novo login.
                         current_profile = request.session.get('user_profile') or {}
                         merged = {**current_profile, **profiles[0]}
+                        # O nível vigente vem de profiles.role_id; metadados antigos
+                        # do login não podem manter outro escopo na sessão ativa.
+                        merged.pop('access_level', None)
+                        merged.pop('nivel_acesso', None)
                         if not merged.get('role'):
                             merged['role'] = merged.get('role_name') or merged.get('cargo') or 'Membro'
                         if not merged.get('cargo'):

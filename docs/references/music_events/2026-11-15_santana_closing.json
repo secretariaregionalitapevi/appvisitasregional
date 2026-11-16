@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-15",
+  "city": "SANTANA DE PARNAIBA",
+  "use_as_official_closing": true,
+  "approval_note": "Fechamento oficial informado pelo usuário e comprovado na imagem do relatório de Fazendinha. Valores por local, todas as origens; não distribuir o saldo pelas comuns nem alterar registros nominais para coincidir com o fechamento.",
+  "source": "Imagem do relatório oficial de Fazendinha fornecida pelo usuário",
+  "source_label": "RELATÓRIO OFICIAL DO ENSAIO - FAZENDINHA - IMAGEM FORNECIDA PELO USUÁRIO",
+  "source_report_date": "2026-11-16",
+  "musicians": 201,
+  "organists": 59,
+  "total": 406,
+  "instruments": {},
+  "roles": {
+    "ANCIÃO": 3,
+    "DIÁCONO": 1,
+    "COOPERADOR DO OFÍCIO": 2,
+    "COOPERADOR DE JOVENS": 0,
+    "ENCARREGADO REGIONAL": 4,
+    "ENCARREGADO LOCAL": 21,
+    "EXAMINADORA": 2,
+    "SECRETÁRIAS DA MÚSICA": 2,
+    "SECRETÁRIOS DA MÚSICA": 4,
+    "INSTRUTORES": 23,
+    "INSTRUTORAS": 7
+  },
+  "support": {
+    "PORTEIROS (AS)": 9,
+    "BOMBEIROS (AS)": 2,
+    "MÉDICOS (AS) / ENFERMEIROS (AS)": 0,
+    "IRMANDADE": 109
+  },
+  "notes": "Fechamento musical: 201 músicos + 59 organistas = 260. Total geral: 406. A imagem apresenta data 16/11/2026; o usuário a identifica como o fechamento do ensaio de 15/11/2026. Detalhamento integral dos instrumentos não transcrito por não estar completamente visível. Apoio e irmandade conferidos na imagem complementar fornecida pelo usuário: 9 porteiros, 2 bombeiros, 0 médicos/enfermeiros e 109 de irmandade. Divergências da lista nominal devem permanecer identificadas para conciliação."
+}

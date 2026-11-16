@@ -48,6 +48,50 @@ def fixture():
 
 
 class AnnualMonitoringTests(SimpleTestCase):
+    def test_santana_joint_scope_keeps_pirapora_origin_and_same_city_breakdown(self):
+        from ColorAdminApp.modules.music_events_annual import annual_comparison
+        from ColorAdminApp.modules.music_events_annual_reports import session_report
+        from ColorAdminApp.modules.music_events_closing import closing_for
+        from ColorAdminApp.modules.music_events_summary import dashboard
+        events = [{'id': 'nov', 'titulo': 'Ensaio Regional', 'tipo': 'ENSAIO_REGIONAL',
+                   'familia': 'GERAL', 'data_evento': '2026-11-15', 'status': 'ABERTO'}]
+        sites = [{'id': 's', 'evento_id': 'nov', 'nome': 'FAZENDINHA'}]
+        catalog = [{'comum': 'BR-22-1 - A', 'cidade': 'SANTANA DE PARNAÍBA'},
+                   {'comum': 'BR-22-2 - B', 'cidade': 'PIRAPORA DO BOM JESUS'}]
+        records = [{'id': str(i), 'evento_id': 'nov', 'local_id': 's', 'categoria': 'MUSICO',
+                    'comum_codigo': 'BR-22-' + str(i), 'municipio_informado': c['cidade']}
+                   for i, c in enumerate(catalog, 1)]
+        data = annual_data(events, records, sites, [], catalog, [], [], [], 2026, {'level': 'global'},
+                           ['SANTANA DE PARNAÍBA', 'PIRAPORA DO BOM JESUS'])
+        comparison = annual_comparison(data, '2026-11-15')
+        self.assertEqual(comparison['current']['commons'], 2)
+        by_city = {row['municipio']: row for row in comparison['current']['by_municipality']}
+        self.assertEqual(by_city['SANTANA DE PARNAÍBA']['musicians_in'], 1)
+        self.assertEqual(by_city['PIRAPORA DO BOM JESUS']['musicians_out'], 1)
+        report = session_report(data, data['sessions'][0])
+        self.assertEqual(sum(row['musicos_orquestra'] for row in report['rows']), 2)
+        self.assertEqual(sum(row['MUSICO'] for row in report['rows']), 2)
+        original = closing_for(report)
+        self.assertEqual((original['musicians'], original['organists'], original['total']), (201, 59, 406))
+        self.assertEqual(report['comparison']['current']['musicians'], 2)
+        drawing = dashboard(report, 785)
+        def strings_from(item):
+            if hasattr(item, 'text'):
+                return [item.text]
+            return [text for child in getattr(item, 'contents', []) for text in strings_from(child)]
+        strings = strings_from(drawing)
+        self.assertTrue(all(str(n) in strings for n in [201, 59, 406]))
+        self.assertIn('COMPARATIVO COM O ENSAIO ANTERIOR', strings)
+        self.assertIn('PARTICIPANTES DAS COMUNS', strings)
+        self.assertIn('NÚMEROS GERAIS DO LOCAL - FECHAMENTO OFICIAL, TODAS AS ORIGENS', strings)
+        self.assertLess(strings.index('NÚMEROS GERAIS DO LOCAL - FECHAMENTO OFICIAL, TODAS AS ORIGENS'),
+                        strings.index('COMPARATIVO COM O ENSAIO ANTERIOR'))
+        self.assertTrue(any('DADOS LOCAIS:' in text for text in strings))
+        self.assertLess(strings.index('2'), strings.index('201'))
+        self.assertTrue(all(label in strings for label in ['APOIO', 'IRMANDADE', '11', '109']))
+        report['filters']['comuns'] = ['BR-22-1']
+        self.assertIsNone(closing_for(report))
+
     def test_partial_invitations_do_not_remove_calendar_sessions(self):
         e, r, s, registry, catalog = fixture()
         invitations = [{'evento_id': event['id'], 'comum_codigo': 'BR-22-1'} for event in e[:3]]

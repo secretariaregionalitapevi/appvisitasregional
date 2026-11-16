@@ -2,8 +2,9 @@
 from collections import Counter
 from datetime import date
 from reportlab.lib import colors
-from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
+from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle, Group
 from .music_events_conductors import attendance_status
+from .music_events_closing import closing_for
 
 
 def dashboard(data, width):
@@ -21,7 +22,9 @@ def dashboard(data, width):
                    'commons': len(rows), 'represented': represented, 'without_participation': len(rows) - represented, 'states': dict(states)}
         comparison = {'current': current, 'previous': None, 'series': [current]}
     previous = comparison.get('previous')
-    d = Drawing(width, 410)
+    closing = closing_for(data)
+    official = closing if closing and closing.get('use_as_official_closing') else None
+    d = Drawing(width, 455 if official else 410)
     navy, muted, border = '#1E4B7A', '#62788A', '#DAE4EC'
 
     def text(x, y, value, size=9, color=navy, bold=False, anchor='start'):
@@ -53,7 +56,8 @@ def dashboard(data, width):
     cities = data.get('filters', {}).get('municipios', [])
     scope = ' / '.join(cities) if cities else 'MUNICÍPIOS SELECIONADOS'
     text(0, 394, 'PAINEL DE PARTICIPAÇÃO', 15, bold=True)
-    text(0, 378, f'COMUNS DE ORIGEM: {scope}', 8, muted)
+    text(0, 378, 'DADOS LOCAIS: NÚMEROS DOS PARTICIPANTES DAS COMUNS DOS MUNICÍPIOS SELECIONADOS.', 7.5, muted)
+    text(0, 367, f'COMUNS DE ORIGEM: {scope}', 7, muted)
     text(width, 394, f'ATUAL: {day(current["date"])}', 9, bold=True, anchor='end')
     text(width, 378, f'ANTERIOR: {day(previous["date"])} | MESMAS COMUNS' if previous else 'PRIMEIRO ENSAIO DISPONÍVEL NO ANO',
          8, muted, anchor='end')
@@ -91,18 +95,19 @@ def dashboard(data, width):
                 box(bar_x, y - offset, max(2, amount), 10, fill, None, 3)
             text(bar_x + amount + 6, y - offset + 1, number(point[key]), 9, color if point is current else muted, True)
 
-    text(right_x + 14, 254, 'PRESENÇA ENCARREGADOS', 9, bold=True)
-    statuses = [('PRESENTE', 'PRESENTE', '#159981'), ('JUSTIFICOU', 'JUSTIFICOU', '#65AA67'),
+    text(right_x + 14, 254, 'SITUAÇÃO DOS ENCARREGADOS' if official else 'PRESENÇA ENCARREGADOS', 9, bold=True)
+    statuses = [('PRESENTE', 'PRESENTE', '#159981'), ('JUSTIFICOU', 'JUSTIFICOU', '#2165AD'),
                 ('NAO_JUSTIFICOU', 'NJ - NÃO JUSTIFICOU', '#CD6476'),
                 ('SEM_ENCARREGADO', 'SEM ENCARREGADO', '#85A4DC'), ('ENFERMO', 'ENFERMO', '#D69743')]
     for index, (status, label, color) in enumerate(statuses):
         y = 231 - index * 26
         count = current['states'].get(status, 0)
         text(right_x + 14, y, label, 8, color, True)
-        text(width - 14, y, f'{count} / {current["commons"]}', 8, color, True, 'end')
+        denominator = current.get('leader_records', current['commons'])
+        text(width - 14, y, f'{count} / {denominator}', 8, color, True, 'end')
         box(right_x + 14, y - 9, right_width - 28, 4, '#EEF3F7', None, 2)
-        if count and current['commons']:
-            box(right_x + 14, y - 9, (right_width - 28) * count / current['commons'], 4, color, None, 2)
+        if count and denominator:
+            box(right_x + 14, y - 9, (right_width - 28) * count / denominator, 4, color, None, 2)
 
     box(0, 12, width, 78, '#F6F9FC')
     third = width / 3
@@ -129,4 +134,26 @@ def dashboard(data, width):
         d.add(Circle(x, y, 3, fillColor=colors.HexColor(navy), strokeColor=None))
         text(x, y + 7, number(point['total']), 7, navy, True, 'middle')
         text(x, 22, day(point['date'], True), 7, muted, anchor='middle')
+    if official:
+        upper = Group(*[item for item in d.contents if getattr(item, 'y', -1) >= 287])
+        lower = Group(*[item for item in d.contents if getattr(item, 'y', -1) < 287])
+        upper.translate(0, 45)
+        lower.translate(0, -24)
+        d.contents = []
+        d.add(upper)
+        text(0, 318, 'NÚMEROS GERAIS DO LOCAL - FECHAMENTO OFICIAL, TODAS AS ORIGENS', 8, bold=True)
+        support = official.get('support', {})
+        general = [('MÚSICOS', official['musicians'], '#2F80CF'),
+                   ('ORGANISTAS', official['organists'], '#CB5685'),
+                   ('TOTAL MUSICAL', official['musicians'] + official['organists'], '#7764D8'),
+                   ('APOIO', sum(value for key, value in support.items() if key != 'IRMANDADE'), '#B67D35'),
+                   ('IRMANDADE', support.get('IRMANDADE', 0), '#218557'),
+                   ('TOTAL GERAL', official['total'], navy)]
+        general_width = (width - 40) / 6
+        for index, (label, value, color) in enumerate(general):
+            x = index * (general_width + 8)
+            box(x, 267, general_width, 39, '#F6F9FC')
+            text(x + 9, 298, label, 7, muted, True)
+            text(x + 9, 277, number(value), 21, color, True)
+        d.add(lower)
     return d

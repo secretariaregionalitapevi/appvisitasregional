@@ -27,6 +27,7 @@ from .access_control import common_catalog, service_headers, user_scope
 from .gem import can_open_module
 from .sam_audit_enrichment import enrich_events, search_event_reference_ids
 from .sam_audit_parser import parse_references
+from .audit_generic import canonical_operator_name
 
 
 def _url(table):
@@ -90,6 +91,8 @@ def api_events(request):
             )
             events_response.raise_for_status()
             rows = [_hydrate_event_refs(row) for row in events_response.json()]
+            for row in rows:
+                row["actor_display_name"] = canonical_operator_name(row.get("actor_name_snapshot"))
             content_range = events_response.headers.get("Content-Range", "")
             try:
                 total = int(content_range.rsplit("/", 1)[1])
