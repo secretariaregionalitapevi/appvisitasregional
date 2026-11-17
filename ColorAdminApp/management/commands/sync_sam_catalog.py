@@ -35,7 +35,7 @@ class Command(BaseCommand):
         def fetch(offset):
             response = requests.get(
                 url, headers=service_headers(),
-                params={"select": select, "offset": offset, "limit": 1000}, timeout=30,
+                params={"select": select, "order": "id.asc", "offset": offset, "limit": 1000}, timeout=30,
             )
             response.raise_for_status()
             return offset, response.json()
@@ -116,7 +116,9 @@ class Command(BaseCommand):
                 "musica_acompanhamento_aluno",
                 "id,nome_aluno,comum_congregacao,municipio,instrumento,nivel,cargo_ministerio,status,registro_msa",
             )
-            states = self._all("sam_student_sync_state")
+            states = self._all("sam_student_sync_state",
+                "id,source_key,aluno_id,source_fingerprint,source_name,source_instrument,"
+                "source_level,sync_status,last_history_sync_at,last_changed_at,missing_since")
             commons = common_catalog()
         except requests.RequestException as exc:
             raise CommandError(

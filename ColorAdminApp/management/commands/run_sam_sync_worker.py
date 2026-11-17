@@ -16,16 +16,35 @@ from ColorAdminApp.access_control import service_headers
 from ColorAdminApp.sam_live_session import SamLiveSession
 from ColorAdminApp.sam_portal_history import portal_report_to_export
 
-DEFAULT_IDLE_INTERVAL_SECONDS = 120
+DEFAULT_IDLE_INTERVAL_SECONDS = 86400
 DEFAULT_HISTORY_LIMIT = 250
-MIN_IDLE_INTERVAL_SECONDS = 60
-DEFAULT_CLASSES_INTERVAL_SECONDS = 300
+MIN_IDLE_INTERVAL_SECONDS = 86400
+DEFAULT_CLASSES_INTERVAL_SECONDS = 86400
 DEFAULT_HISTORY_REFRESH_HOURS = 24 * 30
-MIN_CLASSES_INTERVAL_SECONDS = 120
+MIN_CLASSES_INTERVAL_SECONDS = 86400
 
 
 class Command(BaseCommand):
     help = "Executa a sincronização SAM em processo separado, com ciclos periódicos e atualização de históricos."
+
+    @staticmethod
+    def _daily_wait(path, interval, now):
+        if not path.exists():
+            return 0
+        try:
+            last_started = float(json.loads(path.read_text(encoding="utf-8"))["started_at"])
+            if not 0 <= last_started < float('inf'):
+                raise ValueError("Invalid timestamp")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise CommandError("Controle diario SAM invalido; verifique o arquivo antes de consultar novamente.") from exc
+        return max(0, last_started + max(86400, interval) - now)
+
+    @staticmethod
+    def _claim_daily_cycle(path, now):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"started_at": now}), encoding="utf-8")
+        os.replace(temporary, path)
 
     def add_arguments(self, parser):
         parser.add_argument("--scraper-dir", type=Path, default=os.getenv("SAM_SCRAPER_DIR"))
@@ -33,7 +52,7 @@ class Command(BaseCommand):
             "--interval",
             type=int,
             default=int(os.getenv("SAM_SYNC_INTERVAL_SECONDS", str(DEFAULT_IDLE_INTERVAL_SECONDS))),
-            help="Intervalo ocioso entre consultas do catálogo; padrão: 120 segundos.",
+            help="Intervalo ocioso entre consultas do catálogo; padrão: 86400 segundos.",
         )
         parser.add_argument("--history-limit", type=int, default=int(os.getenv("SAM_SYNC_HISTORY_LIMIT", str(DEFAULT_HISTORY_LIMIT))))
         parser.add_argument("--history-refresh-hours", type=int, default=int(os.getenv("SAM_HISTORY_REFRESH_HOURS", str(DEFAULT_HISTORY_REFRESH_HOURS))), help="Prazo para auditoria completa de um histórico já sincronizado; padrão: 30 dias.")
@@ -257,6 +276,7 @@ class Command(BaseCommand):
         interval = max(MIN_IDLE_INTERVAL_SECONDS, options["interval"])
         self.catalog_refresh_seconds = interval
         classes_interval = max(MIN_CLASSES_INTERVAL_SECONDS, options["classes_interval"])
+        daily_path = Path(settings.BASE_DIR) / "relatorios" / "sam-sync" / "worker-daily.json"
         lock_path = Path(tempfile.gettempdir()) / "app_visitas_sam_sync.lock"
         if lock_path.exists():
             try:
@@ -300,6 +320,15 @@ class Command(BaseCommand):
                         break
                     time.sleep(10)
                     continue
+                daily_wait = self._daily_wait(daily_path, interval, time.time())
+                if daily_wait:
+                    if options["once"]:
+                        self.stdout.write("SAM ja consultado; aguardando o proximo ciclo diario.")
+                        break
+                    time.sleep(min(10, daily_wait))
+                    continue
+                # Persiste antes de acessar o portal: reinicios e falhas nao repetem o ciclo.
+                self._claim_daily_cycle(daily_path, time.time())
                 if last_classes_sync is None or time.monotonic() - last_classes_sync >= classes_interval:
                     if session:
                         session.close()
@@ -341,11 +370,10 @@ class Command(BaseCommand):
                     continue
                 if options["once"]:
                     break
-                if processed >= max(1, options["history_limit"]):
-                    self.stdout.write("Há mais históricos pendentes; continuando na mesma sessão SAM.")
-                    refresh_catalog = True
-                    continue
                 refresh_catalog = True
+                if session:
+                    session.close()
+                    session = None
                 wait = max(1, interval - int(time.monotonic() - started))
                 self.stdout.write(f"Próximo ciclo SAM em {wait} segundos.")
                 remaining = wait

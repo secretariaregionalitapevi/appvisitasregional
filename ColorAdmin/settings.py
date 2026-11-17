@@ -208,3 +208,22 @@ SAM_BACKUP_DIR = os.getenv("SAM_BACKUP_DIR") or None
 
 # Optional redirect for approved accounts restricted to the Cartas application.
 CARTAS_APP_URL = os.getenv("CARTAS_APP_URL", "").strip()
+
+# Cache em memoria do proprio processo, sem servico externo.
+# Na Vercel cada instancia possui seu cache; nao usar o Supabase como cache.
+CACHES = {"default": {
+    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    "LOCATION": "ccb-app",
+    "KEY_PREFIX": "ccb",
+}}
+
+# Diagnostico temporario, sem filtros, tokens ou conteudo das respostas.
+if os.getenv("SUPABASE_EGRESS_LOG") == "1":
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {"egress_console": {"class": "logging.StreamHandler"}},
+        "loggers": {"ColorAdminApp.utils.supabase_http": {
+            "handlers": ["egress_console"], "level": "INFO", "propagate": False,
+        }},
+    }

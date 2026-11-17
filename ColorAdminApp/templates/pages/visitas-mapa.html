@@ -367,7 +367,7 @@
                     autoSyncRunning = false;
                 }
             };
-            autoSyncInterval = setInterval(syncAgenda, 60000);
+            autoSyncInterval = setInterval(syncAgenda, 300000);
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) syncAgenda();
             });

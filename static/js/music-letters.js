@@ -134,5 +134,5 @@
     }catch(error){notice?.close();$('#letters-delete-error').textContent=error.message;window.AppFeedback?.show({type:'error',flow:'delete',toast:true,title:'Não foi possível excluir',message:error.message});}
     finally{button.disabled=false;button.innerHTML=original;$('#letters-delete-cancel').disabled=false;}
   });
-  setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load();},300000);load();
+  setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load();},3600000);load();
 })();

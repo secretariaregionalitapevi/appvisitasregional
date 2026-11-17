@@ -30,7 +30,7 @@ class Command(BaseCommand):
         for offset in range(0, 100000, 1000):
             response = requests.get(
                 f"{settings.SUPABASE_URL}/rest/v1/{table}", headers=service_headers(),
-                params={"select": select, "offset": offset, "limit": 1000, **filters}, timeout=30,
+                params={"select": select, "order": "id.asc", "offset": offset, "limit": 1000, **filters}, timeout=30,
             )
             response.raise_for_status()
             batch = response.json()
@@ -50,6 +50,12 @@ class Command(BaseCommand):
         if not response.ok:
             raise CommandError(f"Falha ao gravar {table}: HTTP {response.status_code} - {response.text[:1000]}")
         return response.json()
+
+    def _completed_class_ids(self, full):
+        # A retomada da carga completa precisa desta lista; o delta nao a usa.
+        if not full:
+            return set()
+        return {str(row.get("aula_id")) for row in self._get_all("sam_gem_attendance", "aula_id")}
 
     def handle(self, *args, **options):
         scraper_dir = Path(options["scraper_dir"]).resolve() if options.get("scraper_dir") else None
@@ -110,9 +116,7 @@ class Command(BaseCommand):
                     if buckets[key]:
                         active_keys.append(key)
                 candidates = diversified
-            completed_class_ids = {
-                str(row.get("aula_id")) for row in self._get_all("sam_gem_attendance", "aula_id")
-            }
+            completed_class_ids = self._completed_class_ids(full)
             student_states = self._get_all("sam_student_sync_state", "source_key,source_name,source_common,source_instrument,aluno_id", aluno_id="not.is.null")
             by_source_key = {str(row.get("source_key")): row for row in student_states}
             by_key = {key: row.get("aluno_id") for key, row in by_source_key.items()}

@@ -26,18 +26,21 @@
         if (!container) return;
         const el = id => document.getElementById(id);
         let running = false;
+        let refreshedAt = 0;
+        const refreshInterval = 15 * 60 * 1000;
         async function count(url) {
             if (!url) return 0;
             const response = await fetch(url, {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}});
             if (!response.ok || response.redirected) return 0;
             return Number((await response.json()).pending_count) || 0;
         }
-        async function refresh() {
-            if (running || document.hidden) return;
+        async function refresh(force = false) {
+            if (running || document.hidden || (!force && Date.now() - refreshedAt < refreshInterval)) return;
             running = true;
             try {
                 const results = await Promise.allSettled([count(container.dataset.pendingUrl), count(container.dataset.lettersUrl)]);
                 const [access, letters] = results.map(r => r.status === 'fulfilled' ? r.value : 0);
+                refreshedAt = Date.now();
                 const total = access + letters;
                 el('pending-access-badge').textContent = total;
                 el('pending-access-header-count').textContent = total;
@@ -67,9 +70,9 @@
         el('pending-access-toast-close').addEventListener('click', () => el('pending-access-toast').classList.add('d-none'));
         container.addEventListener('click', e => { if (e.target.closest('[data-bs-toggle=dropdown]')) el('pending-access-toast').classList.add('d-none'); });
         refresh();
-        window.setInterval(refresh, 300000);
-        window.addEventListener('visibilitychange', refresh);
-        window.addEventListener('letters-updated', refresh);
+        window.setInterval(() => refresh(), refreshInterval);
+        document.addEventListener('visibilitychange', () => refresh());
+        window.addEventListener('letters-updated', () => refresh(true));
     }
 
     document.addEventListener('DOMContentLoaded', function () {

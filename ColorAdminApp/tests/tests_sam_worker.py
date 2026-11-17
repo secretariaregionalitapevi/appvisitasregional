@@ -53,13 +53,13 @@ class SamWorkerValidationTests(SimpleTestCase):
 
         self.assertEqual(get.call_args.kwargs["params"]["missing_since"], "is.null")
 
-    def test_idle_discovery_interval_is_fast_but_rate_limited(self):
-        self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 120)
+    def test_idle_discovery_defaults_to_daily_to_limit_egress(self):
+        self.assertEqual(DEFAULT_IDLE_INTERVAL_SECONDS, 86400)
         self.assertEqual(DEFAULT_HISTORY_LIMIT, 250)
         self.assertEqual(DEFAULT_HISTORY_REFRESH_HOURS, 720)
-        self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 60)
-        self.assertEqual(DEFAULT_CLASSES_INTERVAL_SECONDS, 300)
-        self.assertEqual(MIN_CLASSES_INTERVAL_SECONDS, 120)
+        self.assertEqual(MIN_IDLE_INTERVAL_SECONDS, 86400)
+        self.assertEqual(DEFAULT_CLASSES_INTERVAL_SECONDS, 86400)
+        self.assertEqual(MIN_CLASSES_INTERVAL_SECONDS, 86400)
 
     @patch("ColorAdminApp.management.commands.run_sam_sync_worker.call_command")
     def test_worker_runs_incremental_classes_with_short_lookback(self, call_command):
