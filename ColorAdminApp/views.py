@@ -515,6 +515,8 @@ def apiAuth(request):
                     request.session['user_id'] = user_id
                     profile = update_profile_activity(profile, 'login')
                     profile['email'] = data.get('email')
+                    if str(profile.get('avatar_url') or '').startswith('data:image/'):
+                        profile['avatar_url'] = '/extra/profile/avatar'
                     request.session['user_profile'] = profile
                     start_access_session(request, profile)
 
@@ -3059,10 +3061,8 @@ def extraError(request):
 	return render(request, "pages/extra-error.html", context)
 
 def extraProfile(request):
-	context = {
-		"appContentClass": "p-0"
-	}
-	return render(request, "pages/extra-profile.html", context)
+	from .modules.account_views import profile
+	return profile(request)
 
 def extraScrumBoard(request):
 	context = {
@@ -3117,7 +3117,8 @@ def extraDataManagement(request):
 	return render(request, "pages/extra-data-management.html", context)
 
 def extraSettings(request):
-	return render(request, "pages/extra-settings.html")
+	from .modules.account_views import account_settings
+	return account_settings(request)
 
 def userLoginV1(request):
 	context = {

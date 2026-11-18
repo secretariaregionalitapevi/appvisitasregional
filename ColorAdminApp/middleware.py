@@ -49,7 +49,7 @@ class SupabaseAuthMiddleware:
                             'apikey': settings.SUPABASE_SERVICE_ROLE_KEY,
                             'Authorization': f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
                         },
-                        params={'user_id': f'eq.{user_id}', 'select': 'user_id,status,role_id,role,sector,comum,municipio,cidade', 'limit': '1'},
+                        params={'user_id': f'eq.{user_id}', 'select': 'user_id,status,role_id,role,sector,comum,municipio,cidade,full_name,telefone,celular,whatsapp,cep,logradouro_numero,bairro,complemento', 'limit': '1'},
                         timeout=(3.05, 5),
                     )
                     profile_response.raise_for_status()
@@ -67,6 +67,8 @@ class SupabaseAuthMiddleware:
                         # valer na sessao ativa sem exigir novo login.
                         current_profile = request.session.get('user_profile') or {}
                         merged = {**current_profile, **profiles[0]}
+                        if str(merged.get('avatar_url') or '').startswith('data:image/'):
+                            merged['avatar_url'] = '/extra/profile/avatar'
                         # O nível vigente vem de profiles.role_id; metadados antigos
                         # do login não podem manter outro escopo na sessão ativa.
                         merged.pop('access_level', None)
@@ -146,7 +148,7 @@ class SupabaseAuthMiddleware:
 
         # Registra utilização real sem gerar ruído para APIs e arquivos estáticos.
         if request.method == 'GET' and request.session.get('user_id') and not any(
-            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/atendimentos/api/', '/darpe/mobile/api/', '/darpe/biblioteca/', '/administracao/api/', '/static/')
+            path.startswith(prefix) for prefix in ('/api/', '/visitas/api/', '/musicalizacao/api/', '/darpe/api/', '/darpe/atendimentos/api/', '/darpe/mobile/api/', '/darpe/biblioteca/', '/administracao/api/', '/static/', '/extra/profile/avatar')
         ):
             try:
                 from .views import log_audit

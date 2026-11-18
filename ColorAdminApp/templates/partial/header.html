@@ -122,7 +122,7 @@
 				{% if request.session.user_profile.avatar_url %}
 				<img src="{{ request.session.user_profile.avatar_url }}" alt="" />
 				{% else %}
-				<img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png" alt="" />
+				<img src="{% static 'img/account-avatar.svg' %}" alt="" />
 				{% endif %}
 				<span>
 					<span class="d-none d-md-inline fw-bold">{{ request.session.user_profile.full_name|default:"Usuário" }}</span>
@@ -130,15 +130,15 @@
 				</span>
 			</a>
 			<div class="dropdown-menu dropdown-menu-end me-1">
-				<a href="/extra/profile" class="dropdown-item">Editar Perfil</a>
+				<a href="{% url 'ColorAdminApp:extraProfile' %}" class="dropdown-item"><i class="fa fa-user-pen fa-fw me-2" aria-hidden="true"></i>Editar Perfil</a>
 				<a href="/email/inbox" class="dropdown-item d-flex align-items-center">
-					Mensagens
+					<i class="fa fa-envelope fa-fw me-2" aria-hidden="true"></i>Mensagens
 					<span class="badge bg-danger rounded-pill ms-auto pb-4px">0</span>
 				</a>
-				<a href="/calendar" class="dropdown-item">Calendário</a>
-				<a href="/extra/settings" class="dropdown-item">Configurações</a>
+				<a href="/calendar" class="dropdown-item"><i class="fa fa-calendar-days fa-fw me-2" aria-hidden="true"></i>Calendário</a>
+				<a href="{% url 'ColorAdminApp:extraSettings' %}" class="dropdown-item"><i class="fa fa-gear fa-fw me-2" aria-hidden="true"></i>Configurações</a>
 				<div class="dropdown-divider"></div>
-				<a href="/logout/" class="dropdown-item">Sair do Sistema</a>
+				<a href="{% url 'ColorAdminApp:logout' %}" class="dropdown-item"><i class="fa fa-right-from-bracket fa-fw me-2" aria-hidden="true"></i>Sair do Sistema</a>
 			</div>
 		</div>
 

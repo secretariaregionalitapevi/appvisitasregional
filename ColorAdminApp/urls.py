@@ -3,6 +3,7 @@ from django.urls import path
 
 from . import views
 from .modules import regional_route_views
+from .modules import account_views
 from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
@@ -283,6 +284,8 @@ urlpatterns = [
     path('extra/invoice', views.extraInvoice, name='extraInvoice'),
     path('extra/error', views.extraError, name='extraError'),
     path('extra/profile', views.extraProfile, name='extraProfile'),
+    path('extra/profile/avatar', account_views.avatar, name='accountAvatar'),
+    path('extra/profile/cep', account_views.postcode, name='accountPostcode'),
     path('extra/scrum-board', views.extraScrumBoard, name='extraScrumBoard'),
     path('extra/cookie-acceptance-banner', views.extraCookieAcceptanceBanner, name='extraCookieAcceptanceBanner'),
     path('extra/orders', views.extraOrders, name='extraOrders'),

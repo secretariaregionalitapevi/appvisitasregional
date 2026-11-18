@@ -114,7 +114,6 @@ const init=() => {
     regionalMembers=registry.integrantes||[];
     regionalTitulares=registry.titulares||{};
     groups=result.groups.filter(g=>g.ativo);groupsLoaded=true;agendaSummary=result.agenda_summary||null;dirty=groups.some(g=>!g.participacao_salva);renderGroups();
-    el('team-panel').open=!groups.some(g=>g.confirmado&&g.coordenador_nome.trim());
     if(result.warning){el('load-error').hidden=false;el('load-error').textContent=result.warning;}
     if(result.plans?.length){
       el('saved-plans').innerHTML=result.plans.map(p=>`<option value="${esc(p.print_url)}">Visitas em ${esc((p.date||context().data).split('-').reverse().join('/'))} · ${p.historical?'Histórico substituído':'Salvo em'} ${esc(timestamp(p.created_at))}</option>`).join('');
@@ -123,8 +122,8 @@ const init=() => {
     updateButtons();
   }
   el('load').onclick=()=>busy(el('load'),load);
-  el('city').onchange=()=>{generation++;groups=[];groupsLoaded=false;agendaSummary=null;dirty=true;invalidate();renderCommons();el('team-panel').open=true;updateButtons();reload();};
-  el('date').onchange=()=>{generation++;groups=[];groupsLoaded=false;agendaSummary=null;dirty=true;invalidate();el('team-panel').open=true;updateButtons();reload();};
+  el('city').onchange=()=>{generation++;groups=[];groupsLoaded=false;agendaSummary=null;dirty=true;invalidate();renderCommons();updateButtons();reload();};
+  el('date').onchange=()=>{generation++;groups=[];groupsLoaded=false;agendaSummary=null;dirty=true;invalidate();updateButtons();reload();};
   el('groups').addEventListener('input',event=>{
     const row=event.target.closest('[data-group]');if(!row)return;
     const group=groups.find(g=>g.id===row.dataset.group),checkbox=row.querySelector('[type=checkbox]'),input=row.querySelector('input:not([type=checkbox])');
