@@ -27,6 +27,34 @@ def sample():
 
 
 class AdminAttendanceTests(SimpleTestCase):
+    @patch.object(reports, 'build_papeleta_pdf')
+    @patch.object(attendance, 'rows', return_value=[sample()])
+    @patch.object(attendance, 'user_scope', return_value={'level':'local','municipio':'JANDIRA','comum':'OUTRA'})
+    def test_individual_pdf_does_not_export_record_outside_user_scope(self, scope, rows, build):
+        req=request_for('/darpe/atendimentos/api/papeleta/record/pdf/')
+        self.assertEqual(reports.export_papeleta_pdf(req,'record').status_code,404)
+        self.assertEqual(reports.export_papeleta_pdf(req,'record',printable=True).status_code,404)
+        build.assert_not_called()
+
+    @patch.object(attendance, 'rows', return_value=[sample()])
+    @patch.object(attendance, 'user_scope', return_value={'level':'global'})
+    def test_print_document_preserves_pdf_page_and_uses_selected_paper(self, scope, rows):
+        import base64
+        from PIL import Image
+        import re
+        req=request_for('/darpe/atendimentos/api/papeleta/record/imprimir/')
+        response=reports.export_papeleta_pdf(req,'record',printable=True)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response['X-Papeleta-Print'],'1')
+        html=response.content.decode()
+        self.assertIn('size: auto',html)
+        self.assertIn('width: 100%',html)
+        images=re.findall(r'src="data:image/png;base64,([^"]+)"',html)
+        self.assertEqual(len(images),1)
+        image=Image.open(BytesIO(base64.b64decode(images[0])))
+        self.assertGreater(image.width,1700)
+        self.assertAlmostEqual(image.width/image.height,210/297,places=2)
+
     @patch.object(attendance.requests,'get',side_effect=AssertionError('Render não deve consultar Supabase'))
     def test_authenticated_admin_page_renders_without_fetching_records(self, get):
         req=request_for('/darpe/atendimentos/')
@@ -130,8 +158,10 @@ class AdminAttendanceTests(SimpleTestCase):
             'ATENDIMENTO D.A.R.P.E.', 'Orações', 'Colaboradores',
             'Irmão da palavra', 'PEDIDOS DE ORAÇÃO', 'Enfermidade(s)',
             'Acidentado(s)', 'Tribulação(ões)', 'Testemunhado(s)',
+            'Secretária Regional do DARPE',
         ]:
             self.assertIn(value,text)
+        self.assertNotIn('Secretaria Regional da Música',text)
         self.assertLess(text.index('Hinos'),text.index('Palavra'))
         self.assertLess(text.index('Palavra'),text.index('Irmão da palavra'))
         self.assertLess(text.index('Obs.'),text.index('PEDIDOS DE ORAÇÃO'))

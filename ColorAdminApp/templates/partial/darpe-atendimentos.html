@@ -10,5 +10,12 @@
   <fieldset><legend>Pedidos de oração</legend><div id="da-prayers" class="da-grid"></div><label class="da-check"><input type="checkbox" id="da-all-families"> Todas as famílias</label></fieldset>
   <div class="da-save"><p class="da-muted">Confira os dados antes de registrar. O lançamento ficará disponível no sistema regional.</p><button type="submit" id="da-save" class="btn btn-primary"><span class="da-spinner" hidden></span> Registrar atendimento</button></div>
  </form></section>
- <section id="da-detail" class="da-editor" hidden aria-label="Papeleta registrada"><button type="button" id="da-detail-close" class="btn btn-outline-primary">Voltar aos atendimentos</button><div id="da-detail-content"></div></section>
+
 </main>
+<div class="modal fade da-detail-modal" id="da-detail" tabindex="-1" aria-labelledby="da-detail-title" aria-hidden="true">
+ <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+  <div class="modal-header da-detail-header"><span class="da-detail-symbol"><i class="fa fa-clipboard-list" aria-hidden="true"></i></span><div><p>Papeleta de atendimento · D.A.R.P.E.</p><h2 id="da-detail-title" class="modal-title"></h2><span id="da-detail-subtitle"></span></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar visualização"></button></div>
+  <div class="modal-body" id="da-detail-content"></div>
+  <div class="modal-footer da-detail-footer"><span><i class="fa fa-shield-halved me-1" aria-hidden="true"></i>Registro do atendimento</span><div><button type="button" id="da-detail-close" class="btn btn-danger app-btn-cancel" data-bs-dismiss="modal"><i class="fa fa-xmark me-2" aria-hidden="true"></i>Fechar</button><a id="da-detail-pdf" class="btn btn-outline-danger da-detail-action" data-app-export title="Baixar papeleta em PDF" aria-label="Baixar papeleta em PDF"><i class="fa fa-file-pdf" aria-hidden="true"></i></a><button type="button" id="da-detail-print" class="btn btn-outline-secondary da-detail-action" title="Imprimir papeleta" aria-label="Imprimir papeleta"><i class="fa fa-print" aria-hidden="true"></i></button></div></div>
+ </div></div>
+</div>

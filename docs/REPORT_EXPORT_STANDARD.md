@@ -33,6 +33,10 @@ O rodapé deve informar o módulo/recorte e repetir a paginação ou identifica�
 
 ## Aproveitamento da página
 
+Exceção solicitada para a papeleta de atendimento do D.A.R.P.E.: usar **Responsável:** e, abaixo, `Secretária Regional do DARPE` em uma única linha, sem quebra. Preservar o cabeçalho em três colunas simétricas e o usuário logado apenas em **Impresso por:** no rodapé.
+
+Na impressão da papeleta, ajustar automaticamente a composição à área útil do papel A5 ou A4 escolhido no navegador. Não enviar uma página fixa A4 diretamente ao leitor PDF para imprimir em A5. Preservar todas as páginas, o cabeçalho e o rodapé, sem cortes nem folhas extras.
+
 Exceção solicitada para os PDFs de roteiros de visitas regionais: o valor de **Responsável:** é `Grupo de Visitas Regional`. Preservar a composição institucional e identificar o usuário no rodapé com **Impresso por:**.
 
 - Tabelas devem ocupar a largura útil da página.

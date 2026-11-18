@@ -1,4 +1,5 @@
 from .report_identity import printed_by, workbook_identity
+import base64
 """Relatórios de atendimentos com a composição institucional canônica."""
 from datetime import datetime
 from io import BytesIO
@@ -9,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 from openpyxl import Workbook
@@ -240,29 +242,30 @@ def build_papeleta_pdf(record, actor, now):
             for state in self.states:
                 self.__dict__.update(state)
                 self.saveState()
-                center = page_width / 2
-                for y, text, font, size, color in (
-                    (page_height - 29, 'CONGREGAÇÃO CRISTÃ NO BRASIL',
-                     'Helvetica-Bold', 15, '#263238'),
-                    (page_height - 43, 'Regional Itapevi - São Paulo',
-                     'Helvetica', 9, '#263238'),
-                    (page_height - 60, 'D.A.R.P.E', 'Helvetica-Bold', 12, '#1e4b7a'),
-                    (page_height - 74, 'Papeleta de atendimento',
-                     'Helvetica', 9, '#263238'),
-                ):
-                    self.setFont(font, size)
-                    self.setFillColor(colors.HexColor(color))
-                    self.drawCentredString(center, y, text)
                 details = Paragraph(
                     f'<b>Página:</b> {self._pageNumber} de {total}<br/>'
                     f'<b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/>'
                     f'<b>Data:</b> {datetime.strptime(row_data, "%Y-%m-%d"):%d/%m/%Y}<br/>'
-                    f'<b>Responsável:</b> Secretaria Regional da Música',
+                    f'<b>Localidade:</b> {escape(record["municipio"])}<br/>'
+                    '<b>Responsável:</b><br/>Secretária&nbsp;Regional&nbsp;do&nbsp;DARPE',
                     metadata_style,
                 )
-                _, metadata_height = details.wrap(165, 80)
-                details.drawOn(self, page_width - 28 - 165,
-                               page_height - 16 - metadata_height)
+                institution = Paragraph(
+                    '<b>CONGREGAÇÃO CRISTÃ NO BRASIL</b><br/>'
+                    '<font size="9">Regional Itapevi - São Paulo</font><br/>'
+                    '<font size="12" color="#1e4b7a"><b>D.A.R.P.E</b></font><br/>'
+                    '<font size="9">Papeleta de atendimento</font>',
+                    ParagraphStyle('PapeletaInstitution', fontName='Helvetica', fontSize=15,
+                                   leading=17, alignment=TA_CENTER, textColor='#263238'),
+                )
+                header = Table([['', institution, details]], colWidths=[112, usable - 224, 112])
+                header.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                    ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ]))
+                _, header_height = header.wrap(usable, 100)
+                header.drawOn(self, 28, page_height - 20 - header_height)
                 self.setFont('Helvetica', 7)
                 self.setFillColor(colors.HexColor('#6b7280'))
                 self.drawString(28, 19, 'D.A.R.P.E · Papeleta de atendimento')
@@ -338,7 +341,7 @@ def build_papeleta_pdf(record, actor, now):
         prayers.append(cells)
 
     def detail_table(data, widths, header_rows=0):
-        table = Table(data, colWidths=widths, repeatRows=header_rows, hAlign='LEFT')
+        table = Table(data, colWidths=widths, repeatRows=header_rows, hAlign='CENTER')
         styles = [
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LINEBELOW', (0, 0), (-1, -1), .6, colors.HexColor('#8b9aaa')),
@@ -369,7 +372,7 @@ def build_papeleta_pdf(record, actor, now):
     stream = BytesIO()
     doc = SimpleDocTemplate(
         stream, pagesize=A4, leftMargin=28, rightMargin=28,
-        topMargin=94, bottomMargin=34, title='Papeleta de atendimento',
+        topMargin=108, bottomMargin=34, title='Papeleta de atendimento',
         author=actor,
     )
     doc.build([
@@ -381,7 +384,9 @@ def build_papeleta_pdf(record, actor, now):
     return stream.getvalue()
 
 
-def export_papeleta_pdf(request, record_id):
+@never_cache
+@require_GET
+def export_papeleta_pdf(request, record_id, printable=False):
     if not request.session.get('user_id') or not can_access_module(request, MODULE_DARPE):
         return JsonResponse({'error': 'Acesso DARPE não autorizado.'}, status=403)
     try:
@@ -389,10 +394,15 @@ def export_papeleta_pdf(request, record_id):
         if not rows or not attendance.in_scope(attendance.user_scope(request), rows[0]):
             return JsonResponse({'error': 'Atendimento não encontrado no seu escopo.'}, status=404)
         now = datetime.now(ZoneInfo('America/Sao_Paulo'))
-        response = HttpResponse(
-            build_papeleta_pdf(rows[0], _actor(request)['name'], now),
-            content_type='application/pdf',
-        )
+        pdf = build_papeleta_pdf(rows[0], _actor(request)['name'], now)
+        if printable:
+            response = render(request, 'pages/darpe_papeleta_print.html',
+                              {'pages': papeleta_print_pages(pdf)})
+            response['X-Papeleta-Print'] = '1'
+            response['Cache-Control'] = 'no-store'
+            response['X-Content-Type-Options'] = 'nosniff'
+            return response
+        response = HttpResponse(pdf, content_type='application/pdf')
         filename = f"Papeleta_DARPE_{datetime.strptime(rows[0]['data'], '%Y-%m-%d').strftime('%d_%m_%Y')}.pdf"
         response['Content-Disposition'] = "attachment; filename*=UTF-8''" + quote(filename)
         response['Cache-Control'] = 'no-store'
@@ -400,6 +410,26 @@ def export_papeleta_pdf(request, record_id):
         return response
     except requests.RequestException as exc:
         return attendance.database_error(exc)
+
+
+def papeleta_print_pages(pdf):
+    """Preserve the PDF composition in a fluid print document, without the PDF viewer's fixed A4 canvas."""
+    import pypdfium2 as pdfium
+    pages = []
+    with pdfium.PdfDocument(pdf) as document:
+        for index in range(len(document)):
+            page = document[index]
+            try:
+                bitmap = page.render(scale=3)  # 216 dpi at A4; higher effective resolution at A5.
+                try:
+                    stream = BytesIO()
+                    bitmap.to_pil().save(stream, format='PNG')
+                    pages.append('data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii'))
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
+    return pages
 
 
 @never_cache

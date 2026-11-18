@@ -5,3 +5,4 @@
 .daa-record-panel .daa-table th,.daa-record-panel .daa-table td{vertical-align:middle}
 .daa-record-panel .daa-table th:nth-child(6),.daa-record-panel .daa-table td:nth-child(6),.daa-record-panel .daa-table th:nth-child(7),.daa-record-panel .daa-table td:nth-child(7){text-align:center}
 .daa-record-panel .daa-row-actions .btn{vertical-align:middle}
+.daa-row-actions .btn{min-width:34px;height:30px;display:inline-flex;align-items:center;justify-content:center;padding:5px 8px}

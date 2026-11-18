@@ -89,6 +89,7 @@ urlpatterns = [
     path('darpe/atendimentos/api/exportar-excel/', darpe_atendimentos_exports.export, {'format': 'excel'}, name='darpeAtendimentosExcel'),
     path('darpe/atendimentos/api/exportar-pdf/', darpe_atendimentos_exports.export, {'format': 'pdf'}, name='darpeAtendimentosPdf'),
     path('darpe/atendimentos/api/papeleta/<uuid:record_id>/pdf/', darpe_atendimentos_exports.export_papeleta_pdf, name='darpePapeletaPdf'),
+    path('darpe/atendimentos/api/papeleta/<uuid:record_id>/imprimir/', darpe_atendimentos_exports.export_papeleta_pdf, {'printable': True}, name='darpePapeletaPrint'),
     path('darpe/atendimentos/api/<str:action>/', darpe_atendimentos.api, name='darpeAtendimentosApi'),
     path('darpe/mobile/api/<str:action>/', darpe_atendimentos.mobile_api, name='darpeMobileApi'),
     path('darpe/documentos/', darpe_library.page, {'section': 'documentos'}, name='darpeDocumentos'),

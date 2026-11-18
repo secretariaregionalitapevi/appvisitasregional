@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Papeleta de atendimento · D.A.R.P.E.</title>
+ <style>
+  /* The selected printer paper controls the page. A5 and A4 share the same aspect ratio. */
+  @page { size: auto; margin: 6mm; }
+  html,body { margin: 0; padding: 0; background: #fff; }
+  .papeleta-sheet { width: 100%; margin: 0 auto; padding: 0; break-inside: avoid; break-after: page; }
+  .papeleta-sheet:last-child { break-after: auto; }
+  .papeleta-sheet img { display: block; width: 100%; height: auto; margin: 0; }
+  @media screen { body { max-width: 210mm; margin: auto; } }
+  @media print { html,body { width: auto; max-width: none; } }
+ </style>
+</head>
+<body data-papeleta-print>
+{% for page in pages %}<section class="papeleta-sheet"><img src="{{ page }}" alt="Papeleta de atendimento — página {{ forloop.counter }}" /></section>{% endfor %}
+</body>
+</html>

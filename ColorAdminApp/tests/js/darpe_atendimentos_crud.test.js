@@ -1,6 +1,38 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {JSDOM}=require('jsdom');
 const root=path.resolve(__dirname,'../../..');
+
+test('visualizar abre modal sem trocar a página e expõe PDF da papeleta selecionada',async()=>{
+ const dom=new JSDOM(fs.readFileSync(path.join(root,'ColorAdminApp/templates/partial/darpe-atendimentos.html'),'utf8'),{url:'https://project.test/',runScripts:'outside-only'}),w=dom.window;
+ const item={id:'record-id',data:'2026-11-18',hora_inicio:'05:30',hora_fim:'06:30',setor:2,local:'Cantinho <teste>',municipio:'Itapevi',comum:'VILA DOUTOR CARDOSO',equipe:[{cadastro_id:'p1',funcao:'atendente',nome:'Responsável de teste'}],hinos:[374,7],palavra:'Atos 3',participacao:'40 participantes',observacoes:'Observação',pedidos_oracao:{familias:'todas',viagens:0},created_by_name:'Operador',created_at:'2026-11-18T12:00:00Z'};
+ let shown=0,viewChanges=0;
+ w.Headers=Headers;w.AppFeedback={show:()=>({close(){}})};
+ w.bootstrap={Modal:{getOrCreateInstance:()=>({show(){shown++;},hide(){w.document.getElementById('da-detail').dispatchEvent(new w.Event('hidden.bs.modal'));}})}};
+ w.fetch=async url=>new Response(JSON.stringify(url.includes('contexto')?{setores:[{id:2,nome:'Clínicas e albergues'}],escopo:{level:'global'}}:{items:[item]}));
+ try{
+  w.eval(fs.readFileSync(path.join(root,'static/js/darpe-atendimentos.js'),'utf8'));
+  await new Promise(r=>setTimeout(r,30));
+  const doc=w.document,host=doc.getElementById('darpe-attendance');host.addEventListener('darpe:view',()=>viewChanges++);
+  host.dispatchEvent(new w.CustomEvent('darpe:open',{detail:{record:item}}));
+  assert.equal(shown,1);assert.equal(viewChanges,0);assert.equal(doc.getElementById('da-detail').parentNode,doc.body);
+  assert.equal(doc.getElementById('da-detail-title').textContent,item.local);assert(!doc.getElementById('da-detail-title').querySelector('teste'));
+  assert.match(doc.getElementById('da-detail-content').textContent,/Responsável de teste/);
+  assert.match(doc.getElementById('da-detail-content').textContent,/Todas/);
+  assert(doc.getElementById('da-detail-pdf').hasAttribute('data-app-export'));
+  assert.equal(doc.getElementById('da-detail-pdf').getAttribute('href'),'/darpe/atendimentos/api/papeleta/record-id/pdf/');
+  let printed=0;
+  w.AppExport={run:async(button,produce)=>produce()};
+  w.URL.createObjectURL=()=> 'blob:print-test';w.URL.revokeObjectURL=()=>{};
+  w.fetch=async url=>{assert.match(url,/\/imprimir\/$/);return new Response('<html><body data-papeleta-print></body></html>',{headers:{'Content-Type':'text/html','X-Papeleta-Print':'1'}});};
+  const create=doc.createElement.bind(doc),append=doc.body.append.bind(doc.body);
+  doc.createElement=tag=>{const element=create(tag);if(tag==='iframe')Object.defineProperty(element,'contentWindow',{value:{focus(){},print(){printed++;},close(){}}});return element;};
+  doc.body.append=(...elements)=>{append(...elements);for(const element of elements)if(element.tagName==='IFRAME')setTimeout(()=>element.dispatchEvent(new w.Event('load')),0);};
+  await doc.getElementById('da-detail-print').onclick();
+  assert.equal(printed,1);assert.equal(doc.querySelectorAll('.da-print-frame').length,1);
+  assert(doc.getElementById('da-detail-pdf').classList.contains('btn-outline-danger'));
+  assert.equal(doc.getElementById('da-detail-edit'),null);assert.equal(doc.getElementById('da-detail-delete'),null);
+ }finally{w.close();}
+});
 test('edição preenche papeleta, usa PATCH e exclusão exige confirmação',async()=>{
  const dom=new JSDOM(fs.readFileSync(path.join(root,'ColorAdminApp/templates/partial/darpe-atendimentos.html'),'utf8'),{url:'http://project.test/',runScripts:'outside-only'}),w=dom.window,calls=[];
  const item={id:'123',data:'2026-01-01',hora_inicio:'09:00',hora_fim:'10:00',setor:2,local:'Unidade',whatsapp:'(11) 99999-1234',telefone:'(11) 4141-1234',municipio:'ITAPEVI',comum:'CENTRAL',equipe:[{cadastro_id:'p1',funcao:'atendente',nome:'Pessoa'}],hinos:[7,374],palavra:'Atos 3',participacao:'40',observacoes:'Observação',pedidos_oracao:{familias:'todas',viagens:2}};
