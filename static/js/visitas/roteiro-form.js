@@ -60,7 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = await response.json();
       if (selectedCommon !== comum.value || selectedDate !== data.value || selectedCity !== municipio.value) return;
       if (!response.ok) throw new Error(payload.error || 'Falha ao carregar equipes.');
-      const ativas = payload.filter((item) => item.ativo && (item.tipo === 'REGIONAL' || item.comum === comum.value));
+      const ativas = payload.filter((item) => item.ativo &&
+        !(item.tipo === 'REGIONAL' && /^Grupo [A-Z]$/i.test(item.nome)) &&
+        (item.tipo === 'REGIONAL' || item.comum === comum.value));
       equipe.replaceChildren(option('', ativas.length ? 'Selecione a equipe...' : 'Nenhuma equipe ativa cadastrada'));
       ativas.forEach((item) => {
         const integrantes = (item.integrantes || []).map(primeiroNome).filter(Boolean).join(', ');

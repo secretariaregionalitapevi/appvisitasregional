@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Planejamento regional de visitas{% endblock %}
+{% block css %}
+<link href="{% static 'plugins/select2/dist/css/select2.min.css' %}" rel="stylesheet">
+<link href="{% static 'css/visitas-roteiro-regional.css' %}?v=20261117-group-badges-v13" rel="stylesheet">
+{% endblock %}
+{% block content %}
+<main class="regional-planner" id="regional-planner" data-api="{% url 'ColorAdminApp:regionalRouteApi' %}" data-date="{{ data_padrao }}">
+  <header class="rr-hero">
+    <div><div class="rr-hero-kicker">ADMINISTRAÇÃO DE VISITAS REGIONAIS</div><h1>Planejamento de visitas</h1><p>Organize os grupos, reúna as famílias e acompanhe a distribuição dos roteiros para cada data.</p></div>
+    <div class="rr-hero-scope"><small>Escopo desta visão</small><strong>{{ scope_level|default:'Regional' }} · <span id="regional-hero-city" style="display:inline">{{ municipio_padrao }}</span></strong><span id="regional-hero-date">Selecione a data das visitas</span></div>
+  </header>
+  {% csrf_token %}
+  <div class="rr-toolbar" aria-label="Filtros do planejamento">
+    <div><label for="regional-city">Município</label><select id="regional-city" class="form-select">{% for city in municipios %}<option {% if city == municipio_padrao %}selected{% endif %}>{{ city }}</option>{% endfor %}</select></div>
+    <div><label for="regional-date">Data das visitas</label><input id="regional-date" type="date" class="form-control" required></div>
+    <button id="regional-load" class="btn btn-primary"><i class="fa fa-arrows-rotate me-2" aria-hidden="true"></i>Carregar planejamento</button>
+    <button type="button" id="regional-clear" class="btn btn-white border"><i class="fa fa-eraser me-2" aria-hidden="true"></i>Limpar seleção</button>
+  </div>
+  <p id="regional-load-error" class="alert alert-danger mt-3" role="alert" hidden></p>
+  <div class="rr-overview-heading"><div><h2>Visão geral da visitação</h2><p id="regional-dashboard-context">Carregue o município e a data para começar.</p></div><span class="rr-context-chip" id="regional-dashboard-state">Aguardando carregamento</span></div>
+  <section class="rr-metrics" aria-label="Indicadores do planejamento" aria-live="polite">
+    <article class="rr-metric" style="--metric-accent:#0ba99c;--metric-tint:#e7f8f4"><span class="rr-metric-icon"><i class="fa fa-people-group" aria-hidden="true"></i></span><h3>Grupos disponíveis</h3><strong class="rr-metric-value" id="regional-metric-groups">—</strong><p id="regional-metric-groups-note">Coordenadores e participação na data</p><progress id="regional-metric-groups-progress" max="1" value="0" aria-label="Grupos disponíveis entre os grupos ativos"></progress></article>
+    <article class="rr-metric" style="--metric-accent:#348fe2;--metric-tint:#eaf4ff"><span class="rr-metric-icon"><i class="fa fa-house-user" aria-hidden="true"></i></span><h3>Famílias no planejamento</h3><strong class="rr-metric-value" id="regional-metric-families">—</strong><p id="regional-metric-families-note">Selecione as comuns e calcule a distribuição</p></article>
+    <article class="rr-metric" style="--metric-accent:#8a6bd9;--metric-tint:#f0ecfb"><span class="rr-metric-icon"><i class="fa fa-route" aria-hidden="true"></i></span><h3>Visitas por grupo</h3><strong class="rr-metric-value" id="regional-metric-distribution">—</strong><p id="regional-metric-distribution-note">Divisão automática de todas as famílias elegíveis</p></article>
+    <article class="rr-metric" style="--metric-accent:#e2a037;--metric-tint:#fff4df"><span class="rr-metric-icon"><i class="fa fa-calendar-check" aria-hidden="true"></i></span><h3>Famílias agendadas na data</h3><strong class="rr-metric-value" id="regional-metric-scheduled">—</strong><p id="regional-metric-scheduled-note">Roteiros regionais já gravados na agenda</p></article>
+  </section>
+  <details class="rr-panel rr-team-panel" id="regional-team-panel" open>
+    <summary><span class="rr-section-icon"><i class="fa fa-user-check" aria-hidden="true"></i></span><div class="rr-heading-copy"><h2>Grupos e coordenadores</h2><p id="regional-team-state">Disponibilidade e responsáveis pela data selecionada</p></div><span class="rr-team-toggle"><span class="rr-team-toggle-closed">Gerenciar</span><span class="rr-team-toggle-open">Recolher</span></span><i class="fa fa-chevron-down rr-team-chevron" aria-hidden="true"></i></summary>
+    <div class="rr-panel-body">
+      <p class="rr-team-note">Pesquise um integrante pelo nome para assumir o grupo nesta data. A substituição preserva o coordenador titular. Sem substituto, desmarque o grupo ausente.</p>
+      <div id="regional-groups" class="table-responsive"><p class="p-3 mb-0 text-muted">Carregue o planejamento para conferir os grupos.</p></div>
+      <div class="rr-team-actions"><small id="regional-team-save-note">Disponibilidade e substituições valem somente para a data selecionada.</small><button id="regional-save" class="btn btn-outline-primary" disabled><i class="fa fa-check me-2" aria-hidden="true"></i>Salvar coordenadores</button></div>
+    </div>
+  </details>
+  <details class="rr-panel rr-team-panel" id="regional-common-panel" open aria-labelledby="regional-commons-title">
+    <summary><span class="rr-section-icon"><i class="fa fa-location-dot" aria-hidden="true"></i></span><div class="rr-heading-copy"><h2 id="regional-commons-title">Comuns a atender</h2><p id="regional-common-state">Selecione as comuns que entram na distribuição.</p></div><i class="fa fa-chevron-down rr-team-chevron" aria-hidden="true"></i></summary>
+    <div class="rr-panel-body">
+      <div class="rr-common-selection"><label class="rr-field-label" for="regional-commons">Comuns a atender</label><select class="form-select" id="regional-commons" multiple aria-label="Pesquisar e selecionar comuns"></select><div class="rr-common-meta"><span>Pesquise pelo código ou nome. A pesquisa é limpa após cada seleção.</span><strong id="regional-common-count">Nenhuma comum selecionada</strong></div></div>
+      <div class="rr-common-actions"><p>Todas as famílias elegíveis são distribuídas igualmente entre os grupos disponíveis. Para reduzir as visitas por grupo, confirme mais grupos ou selecione menos comuns.</p><button id="regional-preview" class="btn btn-primary" disabled><i class="fa fa-shuffle me-2" aria-hidden="true"></i>Calcular distribuição equilibrada</button></div>
+    </div>
+  </details>
+  <section class="rr-panel" id="regional-preview-panel" hidden aria-labelledby="regional-preview-title">
+    <div class="rr-panel-heading"><span class="rr-section-icon"><i class="fa fa-list-check" aria-hidden="true"></i></span><div class="rr-heading-copy"><h2 id="regional-preview-title">Distribuição dos roteiros</h2><p>Confira o atendimento de cada grupo e ajuste uma família quando necessário.</p></div><span class="rr-context-chip" id="regional-preview-state">Prévia não gravada</span></div>
+    <div class="rr-panel-body">
+      <div id="regional-summary" class="planning-summary" aria-live="polite"></div>
+      <p id="regional-road-order-note" class="rr-preview-note" hidden></p>
+      <div class="rr-confirm-actions"><button id="regional-confirm" class="btn btn-primary"><i class="fa fa-calendar-check me-2" aria-hidden="true"></i>Confirmar distribuição</button><button id="regional-cancel" class="btn btn-danger app-btn-cancel"><i class="fa fa-xmark me-2" aria-hidden="true"></i>Cancelar</button></div>
+      <details id="regional-families-panel" class="rr-family-detail">
+        <summary><i class="fa fa-list me-2" aria-hidden="true"></i>Conferir ou ajustar famílias <span id="regional-family-total"></span><i class="fa fa-chevron-down ms-auto" aria-hidden="true"></i></summary>
+        <div class="rr-family-filters"><div><label for="regional-family-search">Pesquisar família ou endereço</label><input id="regional-family-search" type="search" class="form-control" placeholder="Nome, rua ou comum..."></div><div><label for="regional-family-group">Grupo</label><select id="regional-family-group" class="form-select"><option value="">Todos os grupos</option></select></div></div>
+        <div id="regional-houses" class="table-responsive"></div>
+        <nav class="rr-family-pagination" aria-label="Páginas das famílias"><span id="regional-family-page-info" aria-live="polite"></span><div><button type="button" id="regional-family-prev" class="btn btn-sm btn-outline-primary"><i class="fa fa-chevron-left me-1" aria-hidden="true"></i>Anterior</button><button type="button" id="regional-family-next" class="btn btn-sm btn-outline-primary">Próxima<i class="fa fa-chevron-right ms-1" aria-hidden="true"></i></button></div></nav>
+      </details>
+      <div id="regional-coverage" class="rr-coverage"></div><div id="regional-result" class="mt-3" aria-live="polite"></div>
+    </div>
+  </section>
+  <section class="rr-panel" id="regional-exports" hidden aria-labelledby="regional-export-title">
+    <div class="rr-panel-heading"><span class="rr-section-icon"><i class="fa fa-file-arrow-down" aria-hidden="true"></i></span><div class="rr-heading-copy"><h2 id="regional-export-title">Painel de exportação dos roteiros</h2><p>Arquivos individuais por grupo, com coordenador, famílias e comum do cadastro.</p></div></div>
+    <div class="rr-panel-body">
+      <div class="rr-export-toolbar"><div><label class="rr-field-label" for="regional-map-mode">Mapa no PDF</label><select id="regional-map-mode" class="form-select"><option value="google">Google Maps: ruas e percurso</option><option value="none">Somente cartões das visitas</option></select></div><div><label class="rr-field-label" for="regional-saved-plans">Distribuição salva nesta data</label><div class="d-flex gap-2"><select id="regional-saved-plans" class="form-select"></select><button type="button" id="regional-delete-plan" class="btn btn-outline-danger" title="Excluir os agendamentos da distribuição selecionada" aria-label="Excluir os agendamentos da distribuição selecionada" aria-describedby="regional-delete-note" disabled><i class="fa fa-trash" aria-hidden="true"></i></button></div></div><a id="regional-export-excel" class="btn btn-white border" data-app-export><i class="fa fa-file-excel text-success me-2"></i>Excel</a><a id="regional-export-pdf" class="btn btn-white border" data-app-export><i class="fa fa-file-pdf text-danger me-2"></i>PDFs ZIP</a></div>
+      <p id="regional-delete-note" class="small text-muted mb-3" hidden></p>
+      <div class="d-flex flex-wrap align-items-center gap-3 mb-3"><button type="button" id="regional-refresh-route" class="btn btn-outline-primary"><i class="fa fa-route me-2" aria-hidden="true"></i>Recalcular sequência com GPS</button><p id="regional-route-refresh-note" class="mb-0 small text-muted"></p></div>
+      <div id="regional-export-coverage" class="rr-coverage"></div><div id="regional-export-groups" class="rr-export-groups"></div>
+    </div>
+  </section>
+  <div class="modal fade rr-remove-modal" id="regional-remove-modal" tabindex="-1" aria-labelledby="regional-remove-title" aria-describedby="regional-remove-description" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><form class="modal-content">
+      <div class="modal-header"><div class="rr-remove-heading"><span class="rr-remove-icon" aria-hidden="true"><i class="fa fa-trash-can"></i></span><div><h3 class="modal-title" id="regional-remove-title">Excluir comuns do roteiro</h3><p>Escolha o que deseja remover em cada comum.</p></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body">
+        <p id="regional-remove-description" class="rr-remove-description">Marque as comuns que deseja retirar do roteiro. A exclusão da agenda é opcional.</p>
+        <p class="rr-remove-context" id="regional-remove-context"></p>
+        <div class="table-responsive rr-remove-table-wrap"><table class="table align-middle rr-remove-table"><colgroup><col class="rr-remove-common-col"><col><col></colgroup><thead><tr><th scope="col">Comum</th><th scope="col">Remover do roteiro</th><th scope="col">Excluir também da agenda</th></tr></thead><tbody id="regional-remove-rows"></tbody></table></div>
+        <div class="rr-remove-note"><i class="fa fa-circle-info" aria-hidden="true"></i><p>Somente visitas <strong>Marcadas</strong> deste roteiro e desta data serão excluídas da agenda. Visitas realizadas e outros agendamentos serão preservados.</p></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-danger app-btn-cancel" data-bs-dismiss="modal"><i class="fa fa-xmark me-1" aria-hidden="true"></i>Cancelar</button><button type="submit" id="regional-remove-submit" class="btn btn-danger" disabled><i class="fa fa-trash me-1" aria-hidden="true"></i>Revisar exclusão</button></div>
+    </form></div>
+  </div>
+</main>
+{{ comuns|json_script:"regional-common-data" }}
+{% endblock %}
+{% block js %}
+<script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
+<script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
+<script src="{% static 'js/visitas/roteiro-regional.js' %}?v=20261117-road-order-v14"></script>
+{% endblock %}

@@ -1,5 +1,7 @@
 {
   "date": "2026-09-20", "city": "ITAPEVI", "source": "2026-09-20_itapevi_original.pdf",
+  "use_as_official_closing": true,
+  "approval_note": "Fechamento oficial conforme relatorio original conferido para a correcao solicitada de 20/09/2026. Preservar a lista nominal para participacao por origem e conciliacao.",
   "source_label": "RELATÓRIO ORIGINAL DO ENSAIO - ITAPEVI - 20/09/2026",
   "musicians": 436, "organists": 95, "total": 842,
   "instruments": {"ACORDEON": 4, "VIOLINO": 109, "VIOLA": 11, "VIOLONCELO": 12,

@@ -82,7 +82,7 @@
 					{% for children in menu.children %}
 					<div
 						class="menu-item {% if children.children %} has-sub {% endif %} {% if children.is_active %} active {% endif %}">
-						<a href="{{ children.url }}" class="menu-link">
+						<a href="{{ children.url }}" class="menu-link"{% if children.is_active %} aria-current="page"{% endif %}>
 							<span class="menu-text">
 								{{ children.title }}
 								{% if children.highlight %} <i class="fa fa-paper-plane text-theme"></i>{% endif %}

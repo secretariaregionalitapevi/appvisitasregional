@@ -59,8 +59,8 @@ class RouteQuantityTests(SimpleTestCase):
     @patch('ColorAdminApp.utils.routing.auto_dispatch_visits',return_value=[])
     @patch('ColorAdminApp.utils.routing.get_common_coordinates',return_value=(-23.54,-46.98))
     def test_form_quantity_reaches_dispatch_and_print_context(self,origin,dispatch,get,commons,scope,render):
-        get.side_effect=[Mock(status_code=200,json=lambda:[]),Mock(status_code=200,json=lambda:[{'id':'a','tipo':'REGIONAL','ativo':True}])]
-        req=RequestFactory().get('/visitas/roteiro/',{'comum':'COMUM','equipe':'Grupo A','data':'2026-10-24','casas':'7'})
+        get.side_effect=[Mock(status_code=200,json=lambda:[]),Mock(status_code=200,json=lambda:[{'id':'a','tipo':'LOCAL','ativo':True,'comum':'COMUM'}])]
+        req=RequestFactory().get('/visitas/roteiro/',{'comum':'COMUM','equipe':'Equipe 1','data':'2026-10-24','casas':'7'})
         context=visitasRoteiro(req)
         self.assertEqual(dispatch.call_args.kwargs['target_houses'],7)
         self.assertEqual((context['meta_casas'],context['meta_manha'],context['meta_tarde']),(7,4,3))

@@ -158,6 +158,8 @@
         padding: 3px 6px !important;
         font-size: 9px !important;
     }
+    .regional-route-footer{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #d8dee5;margin-top:14px;padding-top:7px;font-size:8pt;color:#526371}
+    @media print{.regional-route-footer{position:fixed;bottom:-6mm;left:0;right:0;margin:0;background:#fff}}
 
     .route-map-page { page-break-before: always; padding-top: 4px; }
     .route-map-canvas { width: 100%; height: 620px; border: 1px solid #c8d1da; border-radius: 6px; background: #f8fafc; }
@@ -186,6 +188,7 @@
                 <div class="institutional-meta-item"><span class="institutional-meta-label">Emissão</span><span class="institutional-meta-value institutional-meta-date">{{ emissao_roteiro }}</span></div>
                 <div class="institutional-meta-item"><span class="institutional-meta-label">Localidade</span><span class="institutional-meta-value institutional-meta-location">{{ comum }}</span></div>
                 <div class="institutional-meta-item"><span class="institutional-meta-label">Data das visitas</span><span class="institutional-meta-value institutional-meta-date">{{ data }}</span></div>
+                {% if regional_snapshot %}<div class="institutional-meta-item"><strong>Responsável:</strong><br>Grupo de Visitas Regional</div>{% endif %}
             </div>
         </div>
         <h5 class="text-muted mb-0">Partida: {% firstof comum request.session.user_profile.comum 'Regional Itapevi' %}</h5>
@@ -195,11 +198,16 @@
             {% if bairro %}<span class="badge bg-warning text-dark fs-14px py-2 px-3"><i class="fa fa-location-dot me-1"></i> {{ bairro }}</span>{% endif %}
         </div>
         <p class="small text-muted mt-3 mb-0">
+            {% if regional_snapshot %}
+            <strong>Coordenador:</strong> {{ regional_coordenador }}<br><strong>Comuns atendidas:</strong> {{ regional_common_names }}<br>{{ total_visitas_roteiro }} famílias distribuídas. Distâncias aproximadas em linha reta; confirme o percurso pelo GPS.
+            {% else %}
             <i class="fa fa-clock me-1"></i>
             Meta: {{ meta_casas|default:10 }} casas por grupo ({{ meta_manha|default:5 }} pela manhã e {{ meta_tarde|default_if_none:5 }} à tarde).
             Todas as visitas programadas são exibidas, mesmo quando a referência for excedida.
+            {% endif %}
         </p>
     </div>
+    {% if regional_historical %}<div class="alert alert-danger"><strong>Roteiro histórico substituído. Não utilizar para novas visitas.</strong></div>{% endif %}
 
     {% if error %}
         <div class="alert alert-danger">
@@ -234,6 +242,7 @@
                 </div>
                 <div class="visit-info">
                     <h6 class="fw-bold mb-0 text-dark" style="font-size: 14px;">{{ visit.titulo }}</h6>
+                    {% if visit.comum %}<p class="text-compact" style="color:#1e4b7a"><strong>Comum do cadastro:</strong> {{ visit.comum }}</p>{% endif %}
                     <p class="text-compact text-muted"><i class="fa fa-map-marker-alt me-1 text-danger"></i> {{ visit.endereco_exibicao|default:"Endereço não cadastrado" }}</p>
 
                     <div class="d-flex flex-wrap gap-2 mt-1">
@@ -244,8 +253,12 @@
                         <span class="badge badge-compact bg-primary text-white"><i class="fa fa-tag me-1"></i> {{ visit.categoria|default:"GVI" }}</span>
                         {% if visit.preferencia_periodo_visita %}
                             <span class="badge badge-compact bg-warning text-dark"><i class="fa fa-sun me-1"></i> Prefere {{ visit.preferencia_periodo_visita|lower }}</span>
+                        {% elif regional_snapshot %}
+                            <span class="badge badge-compact bg-warning-transparent-2 text-dark border"><i class="fa fa-sun me-1"></i> Sem preferência informada</span>
                         {% endif %}
-                        {% if visit.distance_meters %}
+                        {% if regional_snapshot %}
+                            <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_label }}</span>
+                        {% elif visit.distance_meters %}
                             <span class="badge badge-compact bg-info-transparent-2 text-info border border-info"><i class="fa fa-route me-1"></i> {{ visit.distance_meters|floatformat:0 }}m {% if visit.route_number == 1 %}da Congregação{% else %}do último ponto{% endif %}</span>
                         {% endif %}
                     </div>
@@ -308,6 +321,7 @@
     {% endif %}
 
 </div>
+{% if regional_snapshot %}<footer class="regional-route-footer"><span>Visitas · {{ regional_city }} · {{ data }}</span><span><strong>Impresso por:</strong> {{ regional_printed_by }}</span></footer>{% endif %}
 {% endblock %}
 
 

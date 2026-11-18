@@ -1,15 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const state = { teams: [], members: [], commons: [] };
+  const state = { teams: [], members: [], commons: [], dayGroups: {} };
   const byId = id => document.getElementById(id);
   const teamModal = new bootstrap.Modal(byId('team-modal'));
   const memberModal = new bootstrap.Modal(byId('member-modal'));
   const csrf = () => document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const normalizeKey = value => String(value || '').trim().toLocaleUpperCase('pt-BR');
-  const isCoordinator = (member, team) => team?.tipo === 'REGIONAL' && (
-    /coordenador(?:a)?/i.test(String(member?.cargo_outros || '')) ||
-    (String(member?.grupo_regional_id || '') === String(team.id) && !member?.equipe_id)
-  );
+  const isCoordinator = (member, team) => {
+    if(team?.tipo!=='REGIONAL')return false;
+    if(team.coordenador_nome!=null)return normalizeKey(team.coordenador_nome).split(' / ').includes(normalizeKey(member.nome));
+    const linked=state.members.filter(m=>String(m.grupo_regional_id||'')===String(team.id)&&!/inativ/i.test(m.status||''));
+    const explicit=linked.filter(m=>/coordenador(?:a)?/i.test(m.cargo_outros||''));
+    return (explicit.length?explicit:linked.filter(m=>!m.equipe_id)).some(m=>m.id===member.id);
+  };
   state.commons = Array.from(byId('member-common').options).slice(1).map(option => ({ common: option.value, city: option.dataset.city }));
 
   function alertMessage(message, type='danger') { byId('teams-alert').innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`; }
@@ -39,6 +42,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if(initialized)$select.trigger('change.select2');
   }
   function availableTeams(city, common) { return state.teams.filter(team => team.ativo !== false && team.municipio === city && (team.tipo === 'REGIONAL' || team.comum === common)); }
+  let dayGeneration=0;
+  async function loadDailyGroups(){
+    const control=byId('team-day-control');if(!control)return;
+    const city=byId('filter-city').value,day=byId('team-day-date').value,generation=++dayGeneration;
+    const button=byId('team-day-load');
+    state.dayGroups={};
+    if(!city||!day){button.disabled=false;button.textContent='Consultar data';byId('team-day-status').textContent='Selecione o município e a data para consultar os grupos.';return;}
+    button.disabled=true;button.innerHTML='<i class="fa fa-spinner fa-spin me-2"></i>Consultando...';
+    try{
+      const result=await jsonFetch(control.dataset.api+'?'+new URLSearchParams({municipio:city,data:day,somente_grupos:'1'}));
+      if(generation!==dayGeneration||city!==byId('filter-city').value||day!==byId('team-day-date').value)return;
+      state.dayGroups=Object.fromEntries(result.groups.map(g=>[String(g.id),g]));
+      byId('team-day-status').textContent='Ajustes de '+day.split('-').reverse().join('/')+'. O coordenador cadastrado é o responsável atual do grupo; a disponibilidade continua separada por data.';
+    }catch(error){if(generation===dayGeneration)byId('team-day-status').textContent=error.message;}
+    finally{if(generation===dayGeneration){button.disabled=false;button.textContent='Consultar data';}}
+  }
 
   function render() {
     const city=byId('filter-city').value, common=byId('filter-common').value, type=byId('filter-type').value;
@@ -46,19 +65,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const teams=state.teams.filter(team => (!city||team.municipio===city)&&(!common||team.tipo==='REGIONAL'||team.comum===common)&&(!type||team.tipo===type));
     const visibleTeams=teams.filter(team => {
       const members=state.members.filter(member => String(team.tipo==='REGIONAL'?member.grupo_regional_id||'':member.equipe_id||'')===String(team.id));
-      return !search || `${team.nome} ${team.municipio} ${team.comum||''} ${members.map(member=>member.nome).join(' ')}`.toLocaleLowerCase('pt-BR').includes(search);
+      return !search || `${team.nome} ${team.municipio} ${team.comum||''} ${state.dayGroups[String(team.id)]?.coordenador_nome||''} ${members.map(member=>member.nome).join(' ')}`.toLocaleLowerCase('pt-BR').includes(search);
     });
     const renderTeam=team => {
+      const daily=state.dayGroups[String(team.id)], day=byId('team-day-date')?.value||'';
+      const dailyInfo=daily?`<div class="px-3 py-2 border-bottom" style="background:#f3f7fb;color:#1e4b7a"><strong>${escapeHtml(day.split('-').reverse().join('/'))}:</strong> ${daily.participacao_salva?(daily.confirmado?'Habilitado para visitas':'Desabilitado nesta data'):'Cadastro carregado; confirmação da data ainda não salva'} · <strong>Coordenador:</strong> ${escapeHtml(daily.coordenador_nome||'Não definido')}${daily.coordenador_cadastrado&&daily.coordenador_cadastrado!==daily.coordenador_nome?`<br><small>Coordenador cadastrado: ${escapeHtml(daily.coordenador_cadastrado)} · Substituição registrada para esta data.</small>`:''}<a class="btn btn-sm btn-outline-primary ms-2" href="${escapeHtml(byId('team-day-control').dataset.planner+'?'+new URLSearchParams({municipio:team.municipio,data:day}))}">Ajustar nesta data</a></div>`:'';
       const members=state.members.filter(member => String(team.tipo==='REGIONAL'?member.grupo_regional_id||'':member.equipe_id||'')===String(team.id));
       const rows=members.map(member => `<tr>
-        <td><div class="member-profile"><span class="member-avatar">${escapeHtml((member.nome||'?').trim().charAt(0).toUpperCase())}</span><div><div class="member-name">${escapeHtml(member.nome)}${isCoordinator(member,team)?'<span class="coordinator-badge"><i class="fa fa-star"></i> Coordenador</span>':''}</div><div class="member-status">${escapeHtml(member.status||'Ativo')}</div></div></div></td>
+        <td><div class="member-profile"><span class="member-avatar">${escapeHtml((member.nome||'?').trim().charAt(0).toUpperCase())}</span><div><div class="member-name">${escapeHtml(member.nome)}${isCoordinator(member,team)?'<span class="coordinator-badge"><i class="fa fa-star"></i> Coordenador cadastrado</span>':daily?.participacao_salva&&daily.confirmado&&String(daily.coordenador_nome).split(' / ').some(name=>normalizeKey(name)===normalizeKey(member.nome))?'<span class="coordinator-badge"><i class="fa fa-star"></i> Coordenador nesta data</span>':''}</div><div class="member-status">${escapeHtml(member.status||'Ativo')}</div></div></div></td>
         <td><span class="team-pill">${escapeHtml(team.nome)}</span></td>
         <td><span class="text-muted">${escapeHtml(member.municipio||team.municipio)}</span><br><span class="small">${escapeHtml(member.comum||team.comum||'Abrangência municipal')}</span></td>
         <td><div class="member-actions"><button type="button" class="btn btn-outline-primary edit-member" data-id="${escapeHtml(member.id)}" data-team-id="${escapeHtml(team.id)}" title="Alterar equipe"><i class="fa fa-pen"></i></button><button type="button" class="btn btn-outline-danger unlink-member" data-id="${escapeHtml(member.id)}" data-type="${team.tipo}" title="Desvincular da equipe"><i class="fa fa-unlink"></i></button></div></td>
       </tr>`).join('');
       return `<section class="team-section ${team.tipo==='REGIONAL'?'regional':''}">
         <header class="team-section-header"><div class="team-heading"><span class="team-icon"><i class="fa ${team.tipo==='REGIONAL'?'fa-earth-americas':'fa-people-group'}"></i></span><div><div class="mb-1"><span class="badge ${team.tipo==='REGIONAL'?'bg-purple':'bg-primary'} team-type">${team.tipo==='REGIONAL'?'Grupo regional':'Equipe local'}</span></div><h3 class="team-title">${escapeHtml(team.nome)}</h3><div class="team-location"><i class="fa fa-location-dot me-1"></i>${escapeHtml(team.municipio)}${team.comum?` / ${escapeHtml(team.comum)}`:''}</div></div></div><div class="team-header-actions"><span class="team-count"><i class="fa fa-users me-1"></i>${members.length} participante${members.length===1?'':'s'}</span><button type="button" class="btn btn-outline-danger delete-team" data-id="${escapeHtml(team.id)}" data-name="${escapeHtml(team.nome)}" data-members="${members.length}" title="Excluir equipe ou grupo"><i class="fa fa-trash"></i></button></div></header>
-        ${members.length?`<div class="table-responsive"><table class="table table-hover team-table"><thead><tr><th>Participante</th><th>Equipe atribuída</th><th>Município / comum</th><th class="text-end">Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-team"><i class="fa fa-user-plus me-2"></i>Nenhum participante atribuído a esta equipe.</div>'}
+        ${team.tipo==='REGIONAL'&&team.coordenador_nome!=null?`<div class="px-3 py-2 border-bottom team-coordinator"><i class="fa fa-user-check me-2"></i><strong>Coordenador cadastrado:</strong> ${escapeHtml(team.coordenador_nome||'Não definido')}</div>`:''}${dailyInfo}${members.length?`<div class="table-responsive"><table class="table table-hover team-table"><thead><tr><th>Participante</th><th>Equipe atribuída</th><th>Município / comum</th><th class="text-end">Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-team"><i class="fa fa-user-plus me-2"></i>Nenhum participante atribuído a esta equipe.</div>'}
       </section>`;
     };
     const local=visibleTeams.filter(team=>team.tipo==='LOCAL').map(renderTeam);
@@ -90,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(common && type!=='REGIONAL')teamQuery.set('comum',common);
       }
       [state.teams,state.members]=await Promise.all([jsonFetch(`/visitas/api/equipes/?${teamQuery}`),jsonFetch(`/visitas/api/equipes/?${memberQuery}`)]);
+      await loadDailyGroups();
       render();
     } catch(error) { alertMessage(error.message); byId('teams-list').innerHTML='<div class="text-center text-danger py-5">Não foi possível carregar as equipes.</div>'; }
   }
@@ -191,5 +213,10 @@ document.addEventListener('DOMContentLoaded', () => {
   jQuery('#team-common').select2({width:'100%',language:'pt-BR',placeholder:'Pesquise a comum...',dropdownParent:jQuery('#team-modal')});
   byId('filter-type').onchange=load; byId('filter-search').oninput=render;
   byId('filter-city').onchange=()=>{const keep=byId('filter-common').value;rebuildFilterCommons(keep);load();};
+  if(byId('team-day-date')){
+    const now=new Date();if(!byId('team-day-date').value)byId('team-day-date').value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+    byId('team-day-load').onclick=async()=>{await loadDailyGroups();render();};
+    byId('team-day-date').onchange=async()=>{await loadDailyGroups();render();};
+  }
   load();
 });

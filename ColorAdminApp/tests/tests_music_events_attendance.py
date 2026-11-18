@@ -1,4 +1,5 @@
 import io
+from copy import deepcopy
 from datetime import datetime
 
 from django.test import SimpleTestCase
@@ -12,6 +13,53 @@ from ColorAdminApp.modules.music_events_reports import build_excel, build_pdf, s
 
 
 class AttendanceOverviewTests(SimpleTestCase):
+    def september_fixture(self):
+        events = [{'id': 'sep', 'titulo': 'Ensaio Regional', 'data_evento': '2026-09-20',
+                   'tipo': 'ENSAIO_REGIONAL', 'familia': 'GERAL', 'status': 'ABERTO'}]
+        sites = [{'id': 'itapevi', 'evento_id': 'sep', 'nome': 'ITAPEVI'}]
+        catalog = [{'comum': 'BR-22-0673 - VILA DOUTOR CARDOSO', 'cidade': 'ITAPEVI'}]
+        rows = []
+        for category, count, candidates in [('MUSICO',443,15), ('ORGANISTA',105,1),
+                                            ('MINISTERIO',14,0), ('APOIO',26,0), ('IRMANDADE',258,0)]:
+            for index in range(count):
+                rows.append({'id': f'{category}-{index}', 'evento_id': 'sep', 'local_id': 'itapevi',
+                             'categoria': category, 'nivel': 'CANDIDATO' if index < candidates else '',
+                             'comum_informada': catalog[0]['comum'], 'municipio_informado': 'ITAPEVI'})
+        return events, sites, catalog, rows, {'evento': 'sep', 'municipios': ['ITAPEVI']}
+
+    def test_september_closing_preserves_official_and_nominal_counts(self):
+        events, sites, catalog, rows, filters = self.september_fixture()
+        before = deepcopy(rows)
+        overview = attendance_overview(events, rows, sites, filters, catalog)
+        self.assertTrue(overview['official_only'])
+        self.assertEqual([overview['display_totals'][key] for key in ['MUSICO','ORGANISTA','total','APOIO','IRMANDADE']],
+                         [436,95,842,26,258])
+        self.assertEqual([overview['totals'][key] for key in ['MUSICO','ORGANISTA','total']], [428,104,846])
+        closing = overview['closings'][0]
+        self.assertEqual([closing[key] for key in ['musicians','organists','total']], [443,105,846])
+        self.assertEqual(closing['nominal_reconciliation'], {'total':846, 'musicians':428, 'organists':104,
+                                                            'candidate_musicians':15, 'candidate_organists':1})
+        self.assertEqual(rows, before)
+
+    def test_september_general_exports_use_official_closing(self):
+        events, sites, catalog, rows, filters = self.september_fixture()
+        data = aggregate(events, rows, sites, [], filters, catalog)
+        data['attendance_overview'] = attendance_overview(events, rows, sites, filters, catalog)
+        report = general_report(data)
+        now = datetime(2026,11,17,12,0)
+        book = load_workbook(io.BytesIO(build_excel(report, 'Operador de teste', now)))
+        first = book.worksheets[0]
+        self.assertEqual([first.cell(10, col).value for col in range(3,7)], [436,95,531,842])
+        for sheet in book:
+            self.assertEqual(sheet['A1'].value, 'CONGREGAÇÃO CRISTÃ NO BRASIL')
+            self.assertEqual(sheet['A1'].fill.fgColor.rgb[-6:], '1E4B7A')
+            self.assertEqual(sheet.page_setup.fitToWidth, 1)
+        content = build_pdf(report, 'Operador de teste', now)
+        text = '\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(content)).pages)
+        for expected in ['436','95','531','842','20/09/2026','Relatório oficial',
+                         'CONGREGAÇÃO CRISTÃ NO BRASIL','Responsável:','Impresso por:']:
+            self.assertIn(expected, text)
+
     def test_official_counts_are_not_reduced_by_nominal_candidates_and_keep_support(self):
         events = [{'id':'nov','titulo':'Ensaio','data_evento':'2026-11-15','tipo':'ENSAIO_REGIONAL','familia':'GERAL','status':'ABERTO'}]
         sites = [{'id':'s','evento_id':'nov','nome':'FAZENDINHA'}]

@@ -33,6 +33,8 @@ O rodapé deve informar o módulo/recorte e repetir a paginação ou identifica�
 
 ## Aproveitamento da página
 
+Exceção solicitada para os PDFs de roteiros de visitas regionais: o valor de **Responsável:** é `Grupo de Visitas Regional`. Preservar a composição institucional e identificar o usuário no rodapé com **Impresso por:**.
+
 - Tabelas devem ocupar a largura útil da página.
 - Usar ao menos uma coluna com largura `*` quando a soma de larguras fixas deixar espaço ocioso.
 - Não aceitar tabela concentrada à esquerda com grande vazio à direita.

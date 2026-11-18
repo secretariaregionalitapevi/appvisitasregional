@@ -18,6 +18,10 @@
 {% endblock %}
 
 {% block content %}
+<div class="d-flex flex-wrap gap-2 mb-3" aria-label="Tipo de planejamento">
+    <span class="btn btn-primary" aria-current="page"><i class="fa fa-users me-2"></i>Equipes locais e específicas</span>
+    {% if can_plan_regional %}<a class="btn btn-outline-primary" href="{% url 'ColorAdminApp:regionalRoutePlanner' %}"><i class="fa fa-globe me-2"></i>Planejamento regional e coordenadores por data</a>{% endif %}
+</div>
 <ol class="breadcrumb float-xl-end">
     <li class="breadcrumb-item"><a href="javascript:;">Visitas</a></li>
     <li class="breadcrumb-item active">Roteiro Inteligente</li>
@@ -62,7 +66,7 @@
                         <select name="equipe" id="roteiro-equipe" class="form-select form-select-lg" required disabled>
                             <option value="">Selecione primeiro a comum e a data...</option>
                         </select>
-                        <div class="form-text">Escolha a data para carregar as equipes. Quando houver enquete registrada, somente os grupos regionais confirmados poderão receber visitas.</div>
+                        <div class="form-text">Escolha a data para carregar as equipes locais e os grupos específicos, como RF/RE. Para grupos por letras, utilize o planejamento regional e confirme o coordenador da data.</div>
                     </div>
 
                     <div class="mb-4">

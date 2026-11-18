@@ -41,7 +41,7 @@ def sidebar_menu(request):
 			{ 'url': '/visitas/agenda/', 'title': 'Calendário Visitas', 'name': 'visitasAgenda' },
 			{ 'url': '/visitas/equipes/', 'title': 'Equipes de Visita', 'name': 'visitasEquipes' },
 			{ 'url': '/visitas/relatorios-equipes/', 'title': 'Relatórios de Equipes', 'name': 'visitasRelatoriosEquipes' },
-			{ 'url': '/visitas/roteiro-inteligente/', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true' },
+			{ 'url': '/visitas/roteiro-inteligente/', 'title': 'Roteiro Inteligente', 'name': 'visitasRoteiroForm', 'highlight': 'true', 'active_prefixes': ['/visitas/roteiro-inteligente/','/visitas/roteiro-regional/'] },
 			{ 'url': '/visitas/mapa/', 'title': 'Mapa', 'name': 'visitasMapa' }
 		]
 	},
@@ -286,6 +286,16 @@ def sidebar_menu(request):
 		MODULE_VISITAS, allowed_modules, is_global,
 	)
 	user_profile = request.session.get('user_profile', {})
+	# O planejamento regional e a entrada do roteiro para a gestao. O link
+	# aponta diretamente para a pagina, mantendo a entrada local para equipes.
+	from ..modules.access_control import user_scope
+	if user_scope(request)['level'] in {'global', 'regional', 'municipal'}:
+		for item in sidebar_menu:
+			if item.get('title') == 'Visitas':
+				for child in item.get('children', []):
+					if child.get('name') == 'visitasRoteiroForm':
+						child['url'] = '/visitas/roteiro-inteligente/regional/'
+						child['name'] = 'regionalRoutePlanner'
 	is_global_user = is_global(user_profile)
 	try:
 		is_admin_user = int(user_profile.get('role_id') or 99) in {1, 2}

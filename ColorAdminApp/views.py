@@ -1246,10 +1246,12 @@ def visitasEquipes(request):
     comum_padrao = scope.get('comum') or ''
     comum_row = next((row for row in comuns if row.get('comum') == comum_padrao), {})
     return render(request, 'pages/visitas-equipes.html', {
+        'can_plan_regional': scope.get('level') in {'global','regional','municipal'},
         'comuns': comuns,
         'municipios': sorted({row.get('cidade') for row in comuns if row.get('cidade')}),
         'comum_padrao': comum_padrao,
-        'municipio_padrao': comum_row.get('cidade') or scope.get('municipio') or '',
+        'municipio_padrao': (request.GET.get('municipio') if request.GET.get('municipio') in {c.get('cidade') for c in comuns}
+                             else comum_row.get('cidade') or scope.get('municipio') or ''),
     })
 
 
@@ -1660,10 +1662,17 @@ def visitasMapa(request):
 
 def visitasRoteiroForm(request):
     scope = user_scope(request)
+    if scope.get('level') in {'global','regional','municipal'} and request.GET.get('modo') != 'local':
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        from urllib.parse import urlencode
+        params={k:request.GET[k] for k in ('municipio','data') if request.GET.get(k)}
+        return redirect(reverse('ColorAdminApp:regionalRoutePlanner')+('?' + urlencode(params) if params else ''))
     comuns = visible_commons(scope)
     comum_padrao = scope.get("comum") or ""
     comum_row = next((item for item in comuns if item.get('comum') == comum_padrao), {})
     return render(request, "pages/visitas-roteiro-form.html", {
+        "can_plan_regional": scope.get('level') in {'global','regional','municipal'},
         "comuns": comuns,
         "municipios": sorted({item.get('cidade') for item in comuns if item.get('cidade')}),
         "comum_padrao": comum_padrao,
@@ -1842,7 +1851,11 @@ def visitasRoteiro(request):
         # 2. Despacho Automático: a meta operacional é de 10 casas, não de
         # 10 pessoas. Moradores do mesmo endereço contam como uma única parada.
         total_casas = len(group_route_visits_by_address(visitas_do_grupo))
-        if total_casas < target_houses and equipe and data_filtro:
+        # Grupos por letra sao distribuidos conjuntamente no planejador regional.
+        # Reimprimir um grupo isolado nunca deve completar dez casas e desfazer
+        # o equilibrio confirmado entre os grupos.
+        regional_letter_group = bool(re.fullmatch(r'Grupo [A-Z]', equipe or '', flags=re.IGNORECASE))
+        if total_casas < target_houses and equipe and data_filtro and not regional_letter_group:
             team_response = requests.get(
                 f"{settings.SUPABASE_URL}/rest/v1/{settings.SUPABASE_TABLE_VISITAS_EQUIPES}",
                 headers=headers, params={'select': 'id,tipo,ativo,comum', 'nome': f'eq.{equipe}',
@@ -1921,7 +1934,7 @@ def visitasRoteiro(request):
         for visit in visitas_validas:
             visit['_route_origin'] = ponto_comum
         from .utils.routing import get_visit_coordinates, plan_linear_schedule
-        can_replan = bool(equipe and data_filtro and ponto_comum and visitas_validas
+        can_replan = bool(equipe and data_filtro and ponto_comum and visitas_validas and not regional_letter_group
                           and data_filtro >= datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()
                           and all(v.get('status') == 'Marcada' and v.get('id') and v.get('data_inicio') and v.get('data_fim')
                                   for v in original_scheduled_visits)

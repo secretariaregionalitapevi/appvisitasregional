@@ -2,6 +2,8 @@ import math
 import re
 import requests
 import unicodedata
+import json
+from pathlib import Path
 from functools import lru_cache
 from django.conf import settings
 
@@ -144,11 +146,27 @@ def geocode_address_fallback(address, city='', neighborhood=''):
     return None
 
 
+@lru_cache(maxsize=1)
+def church_origin_references():
+    return json.loads((Path(settings.BASE_DIR)/'ColorAdminApp/data/visit_church_origins.json').read_text(encoding='utf-8'))
+
+
+def church_origin_reference(comum, cidade=''):
+    code=re.search(r'BR-\d{2}-\d{4}',str(comum or '').upper())
+    reference=church_origin_references().get(code[0]) if code else None
+    if reference and (not cidade or normalize_text(cidade)==normalize_text(reference['city'])):
+        return reference
+    return None
+
+
 @lru_cache(maxsize=256)
 def get_common_coordinates(comum, cidade=''):
     """Geocodifica a própria comum, que é sempre o ponto inicial do roteiro."""
     if not comum:
         return None
+    reference=church_origin_reference(comum,cidade)
+    if reference:
+        return geocode_address_fallback(reference['address'],city=reference['city'])
     nome = re.sub(r'^BR-\d+(?:-\d+)?\s*-\s*', '', str(comum)).strip()
     consultas = [
         f"Congregação Cristã no Brasil {nome}, {cidade}, SP, Brasil",
@@ -259,6 +277,14 @@ def get_visit_coordinates(visit):
     """
     Tenta obter coordenadas de uma visita.
     """
+    # O planejador regional ja localizou e validou estes pontos. Reutiliza o
+    # otimizador existente sem repetir geocodificacao em cada comparacao.
+    if '_route_coords' in visit:
+        coords=visit['_route_coords']
+        if (isinstance(coords,(tuple,list)) and len(coords)==2 and
+                all(isinstance(n,(int,float)) and math.isfinite(n) for n in coords)
+                and -90<=coords[0]<=90 and -180<=coords[1]<=180):return coords
+        return None
     addr = visit.get('endereco_visitado') or ''
     return resolve_visit_coordinates(addr, visit.get('municipio') or '',
                                      visit.get('setor') or '', visit.get('_route_origin'))

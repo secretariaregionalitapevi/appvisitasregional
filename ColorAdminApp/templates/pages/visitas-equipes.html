@@ -21,6 +21,7 @@
 <div class="teams-page-heading d-flex flex-wrap align-items-center justify-content-between mb-4 gap-3">
   <h1 class="page-header mb-0"><i class="fa fa-people-group me-2 text-teal"></i>Equipes de Visita <small>Locais e regionais</small></h1>
   <div class="d-flex flex-wrap page-actions">
+    {% if can_plan_regional %}<a class="btn btn-outline-primary" href="{% url 'ColorAdminApp:regionalRoutePlanner' %}"><i class="fa fa-calendar-check me-2"></i>Confirmar grupos por data</a>{% endif %}
     <a class="btn btn-white" href="{% url 'ColorAdminApp:visitasRelatoriosEquipes' %}"><i class="fa fa-chart-column me-2"></i>Relatórios</a>
     <button class="btn btn-outline-primary" id="assign-member"><i class="fa fa-user-plus me-2"></i>Atribuir participante</button>
     <button class="btn btn-teal" id="create-team"><i class="fa fa-plus me-2"></i>Criar equipe ou grupo</button>
@@ -37,6 +38,11 @@
       <div class="col-lg-2"><label class="form-label">Tipo</label><select id="filter-type" class="form-select"><option value="">Todos</option><option value="LOCAL">Local</option><option value="REGIONAL">Regional</option></select></div>
       <div class="col-lg-3"><label class="form-label">Pesquisar</label><input id="filter-search" class="form-control" placeholder="Equipe ou participante"></div>
     </div>
+    {% if can_plan_regional %}<div id="team-day-control" class="border rounded p-3 mb-3" data-api="{% url 'ColorAdminApp:regionalRouteApi' %}" data-planner="{% url 'ColorAdminApp:regionalRoutePlanner' %}">
+      <label for="team-day-date" class="form-label fw-bold">Coordenadores e disponibilidade dos grupos por data</label>
+      <div class="d-flex flex-wrap gap-2"><input id="team-day-date" class="form-control" type="date" value="{{ request.GET.data }}" style="max-width:200px"><button type="button" id="team-day-load" class="btn btn-outline-primary">Consultar data</button></div>
+      <p id="team-day-status" class="small text-muted mb-0 mt-2">Selecione o município e a data para conferir as alterações dos grupos regionais.</p>
+    </div>{% endif %}
     <div id="teams-list" class="team-directory"><div class="text-center py-5"><i class="fa fa-spinner fa-spin me-2"></i>Carregando...</div></div>
   </div>
 </div>
@@ -68,5 +74,5 @@
 <script src="{% static 'plugins/select2/dist/js/select2.min.js' %}"></script>
 <script src="{% static 'plugins/select2/dist/js/i18n/pt-BR.js' %}"></script>
 <script src="{% static 'plugins/sweetalert/dist/sweetalert.min.js' %}"></script>
-<script src="{% static 'js/visitas/equipes.js' %}?v=20260820-17"></script>
+<script src="{% static 'js/visitas/equipes.js' %}?v=20261117-daily-coordinators"></script>
 {% endblock %}

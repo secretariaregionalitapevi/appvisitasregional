@@ -51,10 +51,14 @@ class LinearRouteTests(SimpleTestCase):
     @patch('ColorAdminApp.utils.route_schedule.persist_suggested_schedule')
     def test_view_keeps_same_order_in_route_map_and_saved_schedule(self,persist,origin,get,commons,scope,render):
         visits=[visit(1,-46.987),visit(4,-46.92,'2026-10-24T09:15:00-03:00','2026-10-24T09:30:00-03:00'),visit(5,-46.98,'2026-10-24T14:00:00-03:00','2026-10-24T14:15:00-03:00')]
-        for v in visits:v.update({'irmandade_id':v['id'],'equipe_responsavel':'Grupo A'})
+        for v in visits:
+            v.update({'irmandade_id':v['id'],'equipe_responsavel':'Equipe 1'})
+            # O cenario testa reorganizacao futura; nao pode envelhecer para historico.
+            v['data_inicio']=v['data_inicio'].replace('2026-10-24','2099-10-24')
+            v['data_fim']=v['data_fim'].replace('2026-10-24','2099-10-24')
         members=[{'id':v['id'],'comum':'COMUM'} for v in visits]
         get.side_effect=[Mock(status_code=200,json=lambda:visits),Mock(status_code=200,json=lambda:members),Mock(status_code=200,json=lambda:members),Mock(status_code=200,json=lambda:[])]
-        context=visitasRoteiro(RequestFactory().get('/visitas/roteiro/',{'comum':'COMUM','equipe':'Grupo A','data':'2026-10-24','casas':'3','mapa':'demo'}))
+        context=visitasRoteiro(RequestFactory().get('/visitas/roteiro/',{'comum':'COMUM','equipe':'Equipe 1','data':'2099-10-24','casas':'3','mapa':'demo'}))
         self.assertEqual([v['id'] for v in context['roteiro']],['1','5','4'])
         self.assertEqual([v['title'] for v in context['route_map_points']],['1','5','4'])
         self.assertEqual([v['id'] for v in persist.call_args.args[0]],['1','5','4'])

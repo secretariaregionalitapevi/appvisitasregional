@@ -46,6 +46,12 @@ def attendance_overview(events, records, locations, filters, catalog):
             and row.get('situacao','PRESENTE')=='PRESENTE']
         counts = Counter(row['categoria'] for row in nominal_rows
                          if not (candidate_level(row.get('nivel')) and row['categoria'] in {'MUSICO', 'ORGANISTA'}))
+        closing['nominal_reconciliation'] = {
+            'total': len(nominal_rows), 'musicians': counts['MUSICO'],
+            'organists': counts['ORGANISTA'],
+            'candidate_musicians': closing['musicians'] - counts['MUSICO'],
+            'candidate_organists': closing['organists'] - counts['ORGANISTA'],
+        }
         replacements = {'total': original['total'], 'MUSICO': original['musicians'],
                         'ORGANISTA': original['organists']}
         support = original.get('support', {})

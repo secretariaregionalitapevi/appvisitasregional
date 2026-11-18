@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ROTEIRO_VISITAS_{% if groups|length == 1 %}{{ groups.0.nome }}{% else %}REGIONAL{% endif %}_{{ file_date }}</title>
+<link rel="stylesheet" href="{% static 'css/visitas-roteiro-print.css' %}?v=20261117-restored">
+<link rel="stylesheet" href="{% static 'css/app-feedback.css' %}?v=20261106-centered">
+</head><body>
+<nav class="print-actions"><a data-app-export href="?{% if groups|length == 1 %}grupo={{ groups.0.id|urlencode }}&amp;{% endif %}formato={% if groups|length == 1 %}pdf{% else %}zip{% endif %}">Baixar {% if groups|length == 1 %}PDF do grupo{% else %}PDFs individuais{% endif %}</a><button onclick="window.print()">Imprimir</button><a href="{% url 'ColorAdminApp:regionalRoutePlanner' %}?municipio={{ plan.city|urlencode }}&amp;data={{ plan.date }}">Voltar ao planejamento</a></nav>
+{% for group in groups %}
+<section class="route-sheet"><table class="route-print-table"><thead><tr><td>
+<header class="route-header"><div aria-hidden="true"></div><div class="institution"><h1>CONGREGAÇÃO CRISTÃ NO BRASIL</h1><p>Regional Itapevi - São Paulo</p><h2>VISITAS</h2><p>Roteiro Otimizado de Visitas</p></div><div class="metadata">Emissão: {{ plan.issued_at }}<br>Localidade: {{ plan.city }}<br>Data das visitas: {{ visit_date }}<br><strong>Responsável:</strong><br>Secretaria Regional da Música</div></header>
+<div class="route-context"><span class="route-badge">{{ group.nome }}</span><span class="route-badge date">{{ visit_date }}</span><br><strong>Coordenador:</strong> {{ group.coordenador_nome }}<br><strong>Comuns atendidas:</strong> {{ group.commons|join:' / ' }}<br>{{ group.houses|length }} famílias neste roteiro.</div>
+{% if historical %}<p class="historical"><strong>Histórico substituído. Não utilizar para novas visitas.</strong></p>{% endif %}
+</td></tr></thead><tbody>
+{% for house in group.houses %}<tr><td>
+{% ifchanged house.period %}<div class="shift-divider">Período da {{ house.period }}</div>{% endifchanged %}
+<article class="house"><div class="house-number">#{{ house.number }}</div><div class="house-info">
+{% for member in house.members %}<div class="family-name">{{ member.nome }}</div><span class="family-common"><strong>Comum do cadastro:</strong> {{ member.comum }}</span>{% endfor %}
+<p class="address"><svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>{{ house.address }}</p>
+<div class="badges"><span class="tag">{{ house.time }}</span>{% if house.bairro %}<span class="tag">Setor: {{ house.bairro }}</span>{% endif %}{% for category in house.categories %}<span class="tag blue">{{ category }}</span>{% endfor %}{% for pref in house.preferences %}<span class="tag orange">Prefere {{ pref|lower }}</span>{% endfor %}{% if house.distance_meters %}<span class="tag distance">{{ house.distance_meters|floatformat:0 }} m do último ponto (linha reta)</span>{% endif %}</div>
+{% if house.period_conflict %}<p class="special"><strong>Confirmar horário:</strong> preferências diferentes neste endereço.</p>{% endif %}
+{% for member in house.members %}{% if member.apontamentos_restritos %}<p class="special"><strong>Apontamento especial:</strong> {{ member.apontamentos_restritos }}</p>{% endif %}{% endfor %}
+</div><div class="qr"><a href="{{ house.navigation_url }}" target="_blank" rel="noopener"><img src="{{ house.qr_data }}" alt="QR para escolher o aplicativo GPS"></a><small>ESCANEAR E<br>ESCOLHER GPS</small></div></article></td></tr>
+{% empty %}<tr><td><p>Nenhuma família atribuída a este grupo nesta distribuição.</p></td></tr>{% endfor %}
+</tbody><tfoot><tr><td><footer class="route-footer"><span>Visitas · {{ plan.city }} · {{ visit_date }}</span><span><strong>Impresso por:</strong> {% firstof request.session.user_profile.full_name request.session.user_profile.nome request.session.user_profile.name 'Usuário' %}</span></footer></td></tr></tfoot></table></section>
+{% endfor %}
+<script src="{% static 'js/app-feedback.js' %}"></script><script src="{% static 'js/app-export.js' %}"></script>
+</body></html>

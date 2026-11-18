@@ -2,6 +2,7 @@ from .modules import music_letters_roster_api, music_events_justifications
 from django.urls import path
 
 from . import views
+from .modules import regional_route_views
 from . import admin_views
 from . import admin_module_views
 from . import musicalizacao
@@ -61,6 +62,9 @@ urlpatterns = [
     path('visitas/relatorios-equipes/', views.visitasRelatoriosEquipes, name='visitasRelatoriosEquipes'),
     path('visitas/api/relatorios-equipes/', views.apiVisitasRelatoriosEquipes, name='apiVisitasRelatoriosEquipes'),
     path('visitas/roteiro-inteligente/', views.visitasRoteiroForm, name='visitasRoteiroForm'),
+    path('visitas/roteiro-inteligente/regional/', regional_route_views.page, name='regionalRoutePlanner'),
+    path('visitas/api/roteiro-regional/', regional_route_views.api, name='regionalRouteApi'),
+    path('visitas/roteiro-regional/<uuid:plan_id>/', regional_route_views.print_plan, name='regionalRoutePrint'),
     path('visitas/api/roteiro-bairros/', views.apiRoteiroBairros, name='apiRoteiroBairros'),
     path('visitas/mapa/', views.visitasMapa, name='visitasMapa'),
     path('visitas/roteiro/', views.visitasRoteiro, name='visitasRoteiro'),
