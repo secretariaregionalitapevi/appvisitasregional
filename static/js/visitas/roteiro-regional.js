@@ -117,7 +117,7 @@ const init=() => {
     el('team-panel').open=!groups.some(g=>g.confirmado&&g.coordenador_nome.trim());
     if(result.warning){el('load-error').hidden=false;el('load-error').textContent=result.warning;}
     if(result.plans?.length){
-      el('saved-plans').innerHTML=result.plans.map(p=>`<option value="${esc(p.print_url)}">${p.historical?'Histórico substituído':'Roteiro salvo'} · ${esc(timestamp(p.created_at))}</option>`).join('');
+      el('saved-plans').innerHTML=result.plans.map(p=>`<option value="${esc(p.print_url)}">Visitas em ${esc((p.date||context().data).split('-').reverse().join('/'))} · ${p.historical?'Histórico substituído':'Salvo em'} ${esc(timestamp(p.created_at))}</option>`).join('');
       await showExports(result.plans[0].print_url);
     }
     updateButtons();
@@ -198,7 +198,7 @@ const init=() => {
     const result=await request({action:'confirm',token,assignments});
     confirmed=true;agendaSummary=result.agenda_summary||null;
     el('result').innerHTML='<p>Distribuição gravada. Os PDFs individuais estão no painel de exportação abaixo.</p>';
-    el('saved-plans').innerHTML=`<option value="${esc(result.print_url)}">Distribuição salva agora</option>`;
+    el('saved-plans').innerHTML=`<option value="${esc(result.print_url)}">Visitas em ${esc(context().data.split('-').reverse().join('/'))} · Salvo agora</option>`;
     await showExports(result.print_url);
     el('confirm').hidden=true;el('cancel').hidden=true;el('families-panel').open=false;el('preview-panel').hidden=true;
     feedback('Distribuição concluída. Os roteiros identificam a comum de cada família e o coordenador da data.','success');

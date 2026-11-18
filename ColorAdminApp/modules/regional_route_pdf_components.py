@@ -1,7 +1,6 @@
 """Componentes vetoriais do roteiro, com os icones e raios do template original."""
 from pathlib import Path
 
-from django.conf import settings
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -13,7 +12,9 @@ ICONS={'users':'f0c0','calendar':'f073','pin':'f3c5','clock':'f017','map':'f279'
 
 def icon(name,color=None):
     if 'RouteIcons' not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFont(TTFont('RouteIcons',str(Path(settings.BASE_DIR)/'static/webfonts/fa-solid-900.ttf')))
+        # Static is served separately and excluded from the Vercel Python bundle.
+        font_path = Path(__file__).resolve().parent.parent / 'assets/fonts/fa-solid-900.ttf'
+        pdfmetrics.registerFont(TTFont('RouteIcons',str(font_path)))
     tint=f' color="{color}"' if color else ''
     return f'<font name="RouteIcons"{tint}>{chr(int(ICONS[name],16))}</font>'
 

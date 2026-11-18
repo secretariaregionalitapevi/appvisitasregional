@@ -562,6 +562,23 @@ class RegionalRouteExportsTests(SimpleTestCase):
                 self.assertTrue(name.startswith('ROTEIRO_VISITAS_'))
                 self.assertTrue(PdfReader(io.BytesIO(archive.read(name))).pages)
 
+    def test_pdf_and_zip_work_without_static_in_python_bundle(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from reportlab.pdfbase.ttfonts import TTFont
+        from ColorAdminApp.modules import regional_route_pdf_components as components
+        # Force font loading even when another export already registered it.
+        with TemporaryDirectory() as base, self.settings(BASE_DIR=Path(base)), \
+                patch.object(components.pdfmetrics,'getRegisteredFontNames',return_value=[]), \
+                patch.object(components,'TTFont',wraps=TTFont) as load_font:
+            self.assertFalse((Path(base)/'static').exists())
+            for params in ({'formato':'pdf','grupo':'1'},{'formato':'zip'}):
+                response=self.output(**params)
+                self.assertEqual(response.status_code,200)
+                self.assertTrue(response.content)
+            self.assertTrue(load_font.called)
+            self.assertTrue(Path(load_font.call_args.args[1]).is_file())
+
     def test_excel_uses_real_dates_and_fills_entire_report_width(self):
         from openpyxl import load_workbook
         response=self.output(formato='excel')

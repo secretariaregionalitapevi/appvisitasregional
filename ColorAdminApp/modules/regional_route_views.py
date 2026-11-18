@@ -314,7 +314,7 @@ def api(request):
             permitted = {c['comum'] for c in visible_commons(user_scope(request)) if c.get('cidade')==city}
             return JsonResponse({'groups':groups,'warning':warning,
                 **({'agenda_summary':safe_day_summary(day,city,groups)} if raw.get('incluir_indicadores')=='1' else {}), 'plans':[
-                {'id':p['id'],'created_at':p['created_at'],'historical':bool(p.get('substituido_em')),
+                {'id':p['id'],'date':day,'created_at':p['created_at'],'historical':bool(p.get('substituido_em')),
                  'print_url':reverse('ColorAdminApp:regionalRoutePrint',args=[p['id']])}
                 for p in plans if set(p.get('comuns') or []) <= permitted]})
         action = raw.get('action')
