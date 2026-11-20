@@ -1,0 +1,18 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Justificativas | Música{% endblock %}
+{% block css %}<link rel="stylesheet" href="{% static 'plugins/select2/dist/css/select2.min.css' %}"><link rel="stylesheet" href="{% static 'css/music-management.css' %}?v=20261106-group-labels"><link rel="stylesheet" href="{% static 'css/music-justifications-panel.css' %}?v=20261120-technical-link-18">{% endblock %}
+{% block content %}
+<div class="music-management jp-page" id="justifications-panel">
+<section class="management-hero mb-4"><div class="management-heading"><div class="management-eyebrow">PAINEL DE GEST&#195;O &#183; ADMINISTRA&#199;&#195;O MUSICAL</div><h1>Justificativas</h1><p>Acompanhamento dos cargos e ministérios da música.</p></div><div class="management-event"><label for="jp-event">Evento em An&#225;lise</label><select class="form-select" id="jp-event"><option value="">Todos os Eventos</option></select></div>{% include 'partial/music-management-scope.html' %}</section>
+<form class="management-controls mb-4" id="jp-filters"><div class="management-control-row jp-control-row">
+<div><label for="jp-city">Munic&#237;pio</label><select class="form-select" id="jp-city"><option value="">Todos os munic&#237;pios</option></select></div>
+<div><label for="jp-common">Comum</label><select class="form-select" id="jp-common"><option value="">Todas as comuns</option></select></div>
+<div class="management-actions"><button class="btn btn-white border" type="submit" id="jp-refresh"><i class="fa fa-sync-alt text-primary me-1"></i>Atualizar</button><button class="btn btn-white border" type="button" id="jp-excel" disabled><i class="fa fa-file-excel text-success me-1"></i>Excel</button><button class="btn btn-white border" type="button" id="jp-pdf" disabled><i class="fa fa-file-pdf text-danger me-1"></i>PDF</button><button class="btn btn-white border" id="jp-clear" type="button"><i class="fa fa-eraser me-1"></i>Limpar</button><a class="btn btn-primary" href="{% url 'ColorAdminApp:musicJustificationPublic' %}" target="_blank" rel="noopener"><i class="fa fa-arrow-up-right-from-square me-1"></i>Abrir formul&#225;rio</a></div>
+</div></form>
+<div id="jp-status" role="status" aria-live="polite" class="management-reading">Carregando justificativas…</div>
+<div class="management-metrics mb-4" id="jp-metrics"></div>
+<section class="jp-panel mb-4"><div class="jp-heading"><h2><i class="fa fa-map-location-dot text-danger me-2" aria-hidden="true"></i>Controle pelos Quatro Agrupamentos Municipais</h2></div><div class="jp-summary-body"><div class="jp-reading" id="jp-executive-reading"></div><div class="table-responsive"><table class="table table-bordered align-middle jp-summary mb-0"><thead><tr><th>Regi&#227;o</th><th class="jp-ensaios">Ensaios Regionais</th><th class="jp-rt">Reuni&#245;es T&#233;cnicas</th><th class="jp-ministerio">Reuni&#245;es do Minist&#233;rio</th><th class="jp-total">Total Geral</th></tr></thead><tbody id="jp-summary"></tbody></table></div></div></section>
+<section class="jp-panel jp-records"><div class="jp-heading"><div><h2>Justificativas Recebidas</h2><p>Participantes por evento e munic&#237;pio.</p></div><span id="jp-records-count" class="jp-records-count" aria-live="polite"></span></div><div id="jp-rows" class="jp-records-body" aria-live="polite">Carregando registros...</div></section>
+{% csrf_token %}</div>
+{% endblock %}
+{% block js %}<script src="{% static 'plugins/select2/dist/js/select2.full.min.js' %}"></script><script src="{% static 'js/music-justifications-panel.js' %}?v=20261120-technical-link-18"></script>{% endblock %}

@@ -15,8 +15,13 @@ from .music_events_identity import CommonResolver
 from .music_events_import import norm
 
 TITLE = 'Acompanhamento'
-ROLES = {'ENCARREGADO_LOCAL': 'Encarregado local', 'ENCARREGADO_REGIONAL': 'Encarregado regional',
-         'EXAMINADORA': 'Examinadora', 'ANCIAO': 'Ancião', 'COOPERADOR': 'Cooperador'}
+ROLES = {'ENCARREGADO_LOCAL': 'Encarregado Local', 'ENCARREGADO_REGIONAL': 'Encarregado Regional',
+         'EXAMINADORA': 'Examinadora', 'SECRETARIO_MUSICA': 'Secretário da Música',
+         'SECRETARIA_MUSICA': 'Secretária da Música', 'SECRETARIO_GEM': 'Secretário do GEM',
+         'SECRETARIO_A_MUSICA': 'Secretário(a) da Música',
+         'SECRETARIA_GEM': 'Secretária do GEM', 'INSTRUTOR': 'Instrutor', 'INSTRUTORA': 'Instrutora',
+         'ANCIAO': 'Ancião', 'COOPERADOR': 'Cooperador'}
+AUXILIARY_ROLES = {'SECRETARIO_MUSICA', 'SECRETARIA_MUSICA', 'SECRETARIO_A_MUSICA', 'SECRETARIO_GEM', 'SECRETARIA_GEM', 'INSTRUTOR', 'INSTRUTORA'}
 KINDS = {'REUNIAO_MINISTERIO': 'Reunião do Ministério da Música', 'ENSAIO_REGIONAL': 'Ensaio regional',
          'ENSAIO_MUNICIPAL': 'Ensaio municipal', 'REUNIAO_TECNICA': 'Reunião técnica',
          'CAPACITACAO': 'Capacitação técnica'}
@@ -29,19 +34,37 @@ def roles_of(value):
     value = norm(value)
     result = []
     for key, label in ROLES.items():
-        if key == 'COOPERADOR':
+        if key in AUXILIARY_ROLES:
+            if key == 'SECRETARIO_A_MUSICA':
+                match = bool(re.search(r'\bSECRETARIO\s*\(\s*A\s*\)\s+(?:(?:DA|DO|DE)\s+)?MUSICA\b', value))
+            elif key.startswith('SECRETARI'):
+                gender = 'SECRETARIA' if key.startswith('SECRETARIA_') else 'SECRETARIO'
+                area = r'(?:MUSICA|MUSICAL)' if key.endswith('MUSICA') else r'(?:GEM|GRUPO DE ESTUDOS MUSICAIS)'
+                match = bool(re.search(r'\b' + gender + r'\s+(?:(?:DA|DO|DE)\s+)?' + area + r'\b', value))
+            else:
+                match = bool(re.search(r'\b' + key + r'\b', value))
+        elif key == 'COOPERADOR':
             match = 'COOPERADOR' in value
         else:
             match = norm(label) in value
         if match:
             result.append(key)
+    if 'SECRETARIO_MUSICA' in result or 'SECRETARIA_MUSICA' in result:
+        result = [r for r in result if r != 'SECRETARIO_A_MUSICA']
     return result
 
 
 def roster(registry, members, catalog):
     """IDs de origem preservados; conciliação entre cadastros exige chave composta única."""
     from .music_registry_current import current_members
-    members = current_members(registry, members)
+    original_members = {str(m['id']): m for m in members if m.get('id')}
+    mapped_members = []
+    for member in current_members(registry, members):
+        original = original_members.get(str(member.get('id')), {})
+        auxiliary = [ROLES[key] for key in roles_of(original.get('cargo_outros')) if key in AUXILIARY_ROLES
+                     and norm(original.get('status')) not in {'INATIVO', 'EXCLUIR'}]
+        mapped_members.append({**member, 'cargo_outros': ' / '.join(filter(None, [member.get('cargo_outros'), *auxiliary]))})
+    members = mapped_members
     resolver, people = CommonResolver(catalog), []
     for source, rows in [('sam', registry), ('irmandade', members)]:
         for row in rows:
@@ -60,13 +83,16 @@ def roster(registry, members, catalog):
                            'roles': roles, 'source': source, 'families': families})
     by_signature = defaultdict(list)
     for person in people:
-        by_signature[(norm(person['nome']), code(person['comum']), tuple(sorted(person['roles'])))].append(person)
+        by_signature[(norm(person['nome']), code(person['comum']), tuple(sorted(set(person['roles']) - AUXILIARY_ROLES)))].append(person)
     result = []
     for group in by_signature.values():
         if len(group) == 2 and {p['source'] for p in group} == {'sam', 'irmandade'}:
             preferred = next(p for p in group if p['source'] == 'irmandade')
             preferred['aliases'] = [alias for p in group for alias in p['aliases']]
             preferred['families'] = sorted({family for p in group for family in p['families']})
+            preferred['roles'] = sorted({role for p in group for role in p['roles']})
+            if set(preferred['roles']).intersection({'SECRETARIO_MUSICA', 'SECRETARIA_MUSICA'}):
+                preferred['roles'] = [r for r in preferred['roles'] if r != 'SECRETARIO_A_MUSICA']
             result.append(preferred)
         else:
             result.extend(group)
@@ -266,7 +292,7 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
         event = own_events[item['event_id']]
         cells[person['key']][event['id']] = {**item, 'date': str(event['data_evento']), 'titulo': event['titulo'],
                                          'tipo': event['tipo'], 'local': event['local'], 'modalidade': event['modalidade'],
-                                         'editable': True}
+                                         'editable': not item.get('source', {}).get('justificativa_publica')}
     resolver = CommonResolver(catalog)
     legacy_map = {e['id']: e for e in legacy_events if e.get('status') != 'RASCUNHO'}
     loaded = {r['evento_id'] for r in legacy_records if r.get('situacao', 'PRESENTE') == 'PRESENTE'}
@@ -319,7 +345,7 @@ def history(people, events, entries, legacy_events, legacy_records, catalog, sco
                 'tipo': event['tipo'], 'local': ' / '.join(sorted(matched_locations[(person['key'], event['id'])])) or 'Local não informado', 'modalidade': 'PRESENCIAL',
                 'situacao': 'PRESENTE' if present else review['situacao'] if review else 'SEM_REGISTRO' if local_absent else 'CONFERIR' if event['id'] in loaded else 'SEM_DADOS',
                 'observacoes': review['observacoes'] if review else '' if present else 'Não consta na lista de presentes deste encontro.' if local_absent else 'Vínculo e público histórico ainda não conferidos individualmente.',
-                'editable': True, 'legacy': True, 'version': review['version'] if review else 0,
+                'editable': not (review and review.get('source', {}).get('justificativa_publica')), 'legacy': True, 'version': review['version'] if review else 0,
                 'nominal_present': present, 'person_key': review['person_key'] if review else person['key'],
                 'roles': at_event['roles'], 'historical_role_known': at_event['known'],
                 'comum': at_event['comum'] or person['comum'], 'municipio': at_event['municipio'] or person['municipio']}

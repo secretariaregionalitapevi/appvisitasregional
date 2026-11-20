@@ -6,6 +6,9 @@
   const day=v=>String(v||'').slice(0,10).split('-').reverse().join('/');
   const values=select=>[...select.selectedOptions].map(option=>option.value);
   let data=null,preview=null,review=null,version=0,controller=null,targetEvent=null,previewVersion=0;
+  let initialEvent=new URLSearchParams(window.location.search).get('evento');
+  const initialYear=new URLSearchParams(window.location.search).get('ano');
+  if(/^20\d{2}$/.test(initialYear||''))$('#ministry-year').value=initialYear;
   const feedback=(message,tone='danger')=>$('#ministry-feedback').innerHTML=message?`<div class="alert alert-${tone}">${esc(message)}</div>`:'';
   async function request(url,options={}){
     const response=await fetch(url,{cache:'no-store',...options});
@@ -82,7 +85,7 @@
       $('#ministry-pdf').disabled=$('#ministry-excel').disabled=true;
       $('#ministry-body').innerHTML='<tr><td colspan="8" class="events-empty">Carregando acompanhamento…</td></tr>';
       $('#ministry-head').innerHTML='';$('#ministry-metrics').innerHTML='';$('#ministry-events').innerHTML='';
-      const query=params();if(force)query.set('atualizar','1');
+      const query=params();if(initialEvent)query.set('evento',initialEvent);if(force)query.set('atualizar','1');
       const result=await request('/musica/ministerio/api/painel/?'+query,{signal:currentController.signal});
       if(current!==version)return;
       data=result;
@@ -90,7 +93,7 @@
       const selected=multi.values($('#ministry-common'));
       $('#ministry-common').innerHTML=data.options.commons.map(c=>`<option value="${esc(c.key)}">${esc(c.name)}</option>`).join('');
       multi.setValues($('#ministry-common'),selected);multi.refresh($('#ministry-common'));
-      const chosenEvent=$('#ministry-event').value;
+      const chosenEvent=initialEvent||$('#ministry-event').value;initialEvent=null;
       $('#ministry-event').innerHTML='<option value="">Todos os eventos do ano</option>'+data.event_options.map(event=>`<option value="${esc(event.id)}">${esc(event.titulo)} · ${day(event.date)}</option>`).join('');
       if(chosenEvent&&!data.event_options.some(event=>event.id===chosenEvent))$('#ministry-event').add(new Option('Encontro sem pessoas neste recorte',chosenEvent));
       $('#ministry-event').value=chosenEvent;

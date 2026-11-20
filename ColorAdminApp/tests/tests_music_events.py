@@ -15,7 +15,7 @@ class MusicEventsTests(SimpleTestCase):
                            'user_profile': {'full_name': 'Operador regional', 'role_id': 1}}
         return request
 
-    @patch('ColorAdminApp.module_access.allowed_modules', return_value={'musicalizacao'})
+    @patch('ColorAdminApp.module_access.allowed_modules', return_value={'musica'})
     @patch('ColorAdminApp.utils.context_processors.resolve')
     def test_music_menu_is_visible_for_authorized_non_master(self, resolve, modules):
         from ColorAdminApp.utils.context_processors import sidebar_menu

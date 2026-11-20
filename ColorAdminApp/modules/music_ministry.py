@@ -16,6 +16,7 @@ from . import music_events
 from .access_control import can_access, common_catalog, service_headers, user_scope, scope_details
 from .music_ministry_domain import TITLE, ROLES, KINDS, STATES, roster, history, parse_meeting, match_person, event_payload, include_directory, code, regional_city
 from .sam_temporal import temporal_roster
+from .music_participants import member_directory
 
 
 def _people(sources):
@@ -45,7 +46,7 @@ def _read_optional(table, **filters):
 
 
 def _sources(year, refresh=False):
-    key = f'music-ministry:sources:v6:{year}'
+    key = f'music-ministry:sources:v7:{year}'
     cached = None if refresh else cache.get(key)
     if cached is not None:
         return cached
@@ -53,9 +54,7 @@ def _sources(year, refresh=False):
     with ThreadPoolExecutor(max_workers=8) as executor:
         catalog = executor.submit(common_catalog)
         registry = executor.submit(music_events._registry)
-        members = executor.submit(read, settings.SUPABASE_TABLE_VISITAS_IRMANDADE,
-            select='id,nome,cargo_outros,codigo_comum,comum,cidade,status',
-            **{'or': '(cargo_outros.ilike.*encarregado*,cargo_outros.ilike.*examinadora*,cargo_outros.ilike.*ancião*,cargo_outros.ilike.*anciao*,cargo_outros.ilike.*cooperador*)'}, order='id.asc')
+        members = executor.submit(member_directory)
         legacy = executor.submit(read, 'musica_eventos', data_evento=f'gte.{year}-01-01',
                                  **{'and': f'(data_evento.lt.{year + 1}-01-01)'}, order='data_evento.asc,id.asc')
         own = executor.submit(read, 'musica_ministerio_eventos', data_evento=f'gte.{year}-01-01',
@@ -104,6 +103,12 @@ def _sources(year, refresh=False):
         for target, future in pending:
             target.extend(future.result())
         from .music_events_calendar import validated_sites
+        from .music_justification_portal import ministry_projection, merge_ministry_entries
+        public_legacy, public_own = ministry_projection(events, own_events)
+        if public_legacy or public_own:
+            registered = roster(registry.result(), members.result(), catalog.result())
+            entries = merge_ministry_entries(entries, public_own, registered)
+            legacy_reviews = merge_ministry_entries(legacy_reviews, public_legacy, registered)
         result = {'catalog': catalog.result(), 'registry': registry.result(), 'members': members.result(),
                   'events': own_events, 'entries': entries, 'legacy_events': events,
                   'legacy_records': records, 'available': available, 'directory': directory, 'legacy_reviews': legacy_reviews,
@@ -235,7 +240,7 @@ def api_manage(request, action):
                                  'municipio': cell['municipio'], 'roles': cell['roles'],
                                  'situacao': raw['situacao'], 'observacoes': str(raw.get('observacoes') or '').strip()},
                     'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
-                cache.delete(f'music-ministry:sources:v5:{year}')
+                cache.delete(f'music-ministry:sources:v7:{year}')
                 return JsonResponse({'item': result})
             records = music_events._read('musica_ministerio_participacoes', event_id=f'eq.{raw["event_id"]}',
                                         person_key=f'eq.{raw["person_key"]}')
@@ -245,7 +250,7 @@ def api_manage(request, action):
                 'p_situacao': raw['situacao'], 'p_observacoes': str(raw.get('observacoes') or '').strip(),
                 'p_version': int(raw['version']), 'p_usuario_id': identity, 'p_usuario_nome': actor})
             event = music_events._read('musica_ministerio_eventos', id=f'eq.{raw["event_id"]}')[0]
-            cache.delete(f'music-ministry:sources:v5:{str(event["data_evento"])[:4]}')
+            cache.delete(f'music-ministry:sources:v7:{str(event["data_evento"])[:4]}')
             return JsonResponse({'item': result})
         if action != 'salvar':
             return JsonResponse({'error': 'Operação inválida.'}, status=404)
@@ -305,7 +310,7 @@ def api_manage(request, action):
             raise ValueError('Nenhuma pessoa foi encontrada para o público selecionado.')
         result = _rpc('musica_ministerio_salvar', {'p_evento': payload, 'p_hash': preview['sha256'] if preview else None,
             'p_arquivo': preview['filename'] if preview else None, 'p_usuario_id': identity, 'p_usuario_nome': actor})
-        cache.delete(f'music-ministry:sources:v5:{year}')
+        cache.delete(f'music-ministry:sources:v7:{year}')
         return JsonResponse(result)
     except (ValueError, TypeError, KeyError) as exc:
         return JsonResponse({'error': str(exc)}, status=400)

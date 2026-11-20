@@ -14,12 +14,16 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from .access_control import can_access, service_headers, user_scope, common_catalog, scope_details
-from .gem import can_open_module
+from .module_access import MODULE_MUSICA, can_access_module
 from .music_events_import import is_local_conductor_role, parse_workbook, person_names, norm
 from .music_events_dashboard import aggregate, code, REGIONAL, regional_city
 from .music_events_identity import CommonResolver
 from .music_conductor_identity import conductor_name, active_conductor
 from ColorAdminApp.utils.supabase_http import supabase_get
+
+
+def can_open_module(request):
+    return can_access_module(request, MODULE_MUSICA)
 
 
 def _allowed(request):
@@ -109,6 +113,8 @@ def _reviews(events):
         if not review.get('encarregado_nome'):
             review['encarregado_nome']=info.get('nome','')
         review['observacoes'] = display_note(review.get('observacoes'))
+    from .music_justification_portal import public_reviews
+    reviews.extend(public_reviews(events))
     return reviews, True
 
 

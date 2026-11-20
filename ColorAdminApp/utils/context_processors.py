@@ -83,7 +83,8 @@ def sidebar_menu(request):
 			{ 'url': '/musica/cartas-exames/', 'title': 'Cartas de Exames', 'name': 'musicLetters' },
 			{ 'url': '/musica/ensaios-regionais/', 'title': 'Ensaios Regionais', 'name': 'musicEvents', 'active_prefixes': ['/musica/eventos/'] },
 			{ 'url': '/musica/reunioes-tecnicas/', 'title': 'Reuniões Técnicas', 'name': 'musicTechnicalMeetings' },
-			{ 'url': '/musica/ministerio/', 'title': 'Acompanhamento', 'name': 'musicMinistry' }
+			{ 'url': '/musica/ministerio/', 'title': 'Acompanhamento', 'name': 'musicMinistry' },
+			{ 'url': '/musica/justificativas/', 'title': 'Justificativas', 'name': 'musicJustifications' }
 		]
 	},
 	{ 'url': '/administracao/', 'icon': 'fa fa-building-shield', 'title': 'Administração', 'name': 'administration',

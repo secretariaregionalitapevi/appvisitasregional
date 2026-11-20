@@ -120,5 +120,5 @@
   async function selectEvent(id){clearPendingLoads();Object.values(map).forEach(s=>$(s).value='');$('#events-origin').value='regional';multi.clear($('#events-city'));multi.clear($('#events-common'));await initialize(id);}
   window.MusicEventsDashboard={loading,generating,downloadName,load:initialize,refresh:load,download,selectEvent,feedback,request,esc,date};
   $('#events-metrics').innerHTML=['Músicos presentes','Organistas presentes','Presenças totais','Comuns representadas'].map(label=>`<article class="events-metric events-loading"><small>${label}</small><strong>—</strong><p>Carregando indicadores…</p></article>`).join('');
-  initialize();
+  initialize(new URLSearchParams(window.location.search).get('evento') || undefined);
 })();

@@ -1,5 +1,6 @@
-from .modules import music_letters_roster_api, music_events_justifications
+from .modules import music_letters_roster_api, music_events_justifications, music_justification_portal, music_justification_reports
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 from .modules import regional_route_views
@@ -152,6 +153,13 @@ urlpatterns = [
     path('gem/api/lancamentos/<str:source_name>/', gem.api_student_record, name='gemStudentRecordCreate'),
     path('gem/api/lancamentos/<str:source_name>/<uuid:record_id>/', gem.api_student_record, name='gemStudentRecord'),
     path('gem/api/documentos/<uuid:record_id>/', gem.activity_document, name='gemActivityDocument'),
+    path('justificativas/', music_justification_portal.public_page, name='musicJustificationPublic'),
+    path('justificativas/api/', music_justification_portal.public_api, name='musicJustificationPublicApi'),
+    path('justificativas-musicais/', RedirectView.as_view(pattern_name='ColorAdminApp:musicJustificationPublic', permanent=True, query_string=True)),
+    path('justificativas-musicais/api/', music_justification_portal.public_api),
+    path('musica/justificativas/', music_justification_portal.page, name='musicJustifications'),
+    path('musica/justificativas/api/painel/', music_justification_portal.dashboard_api, name='musicJustificationsDashboard'),
+    path('musica/justificativas/exportar-<str:file_format>/', music_justification_reports.export, name='musicJustificationsExport'),
     path('musica/eventos/', music_events.page, name='musicEvents'),
     path('musica/ministerio/', music_ministry.page, name='musicMinistry'),
     path('musica/ministerio/api/painel/', music_ministry.api_dashboard, name='musicMinistryDashboard'),

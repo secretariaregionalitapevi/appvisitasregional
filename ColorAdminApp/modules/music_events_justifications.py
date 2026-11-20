@@ -282,27 +282,7 @@ def api(request, event_id, action):
             return JsonResponse({'error': 'Evento não encontrado.'}, status=404)
         if action == 'listar':
             rows = events._read('musica_evento_encarregados', evento_id=f'eq.{event_id}', situacao='eq.JUSTIFICOU', order='created_at.desc,id.asc')
-            items = []
-            for row in rows:
-                if row.get('evento_id') != str(event_id) or row.get('situacao') != 'JUSTIFICOU':
-                    continue
-                info = metadata(row.get('observacoes'))
-                people = info.get('pessoas')
-                if isinstance(people, list) and len(people) > 1:
-                    for index, person in enumerate(people):
-                        if person.get('excluida') or person.get('situacao', row['situacao']) != 'JUSTIFICOU':
-                            continue
-                        reason = person.get('motivo') or ''
-                        items.append({**row, 'id': f"{row['id']}:{index}", 'nome': person['nome'],
-                                      'motivo': reason, 'motivo_resumido': reason, 'observacoes': reason,
-                                      'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
-                                      'bloco': info.get('bloco', '')})
-                    continue
-                items.append({**row, 'motivo': display_note(row.get('observacoes')),
-                              'motivo_resumido': reason_summary(row.get('observacoes')),
-                              'nome': row.get('encarregado_nome') or info.get('nome', ''),
-                              'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
-                              'bloco': info.get('bloco', ''), 'observacoes': display_note(row.get('observacoes'))})
+            items = individual_items(rows, event_id)
             return JsonResponse({'items': items, 'evento': event})
         if action == 'cadastro':
             catalog = common_catalog()
@@ -571,3 +551,28 @@ def manage_grouped(request, event, action, actor_id, raw):
         changed += count
         events._invalidate_annual()
     return JsonResponse({'alterados': changed})
+
+
+def individual_items(rows, event_id=None):
+    items = []
+    for row in rows:
+        if (event_id is not None and row.get('evento_id') != str(event_id)) or row.get('situacao') != 'JUSTIFICOU':
+            continue
+        info = metadata(row.get('observacoes'))
+        people = info.get('pessoas')
+        if isinstance(people, list) and len(people) > 1:
+            for index, person in enumerate(people):
+                if person.get('excluida') or person.get('situacao', row['situacao']) != 'JUSTIFICOU':
+                    continue
+                reason = person.get('motivo') or ''
+                items.append({**row, 'id': f"{row['id']}:{index}", 'nome': person['nome'],
+                              'motivo': reason, 'motivo_resumido': reason, 'observacoes': reason,
+                              'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
+                              'bloco': info.get('bloco', '')})
+            continue
+        items.append({**row, 'motivo': display_note(row.get('observacoes')),
+                      'motivo_resumido': reason_summary(row.get('observacoes')),
+                      'nome': row.get('encarregado_nome') or info.get('nome', ''),
+                      'lote': info.get('lote', ''), 'origem': info.get('origem', 'Conferência manual / legado'),
+                      'bloco': info.get('bloco', ''), 'observacoes': display_note(row.get('observacoes'))})
+    return items
