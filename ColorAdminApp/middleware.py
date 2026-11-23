@@ -17,6 +17,7 @@ class SupabaseAuthMiddleware:
         # List of paths that don't require authentication
         # Using hardcoded paths to avoid NoReverseMatch errors during template rendering/middleware execution
         exempt_paths = [
+            '/integracoes/agenda-regional/api/',  # Token de serviço validado na própria API.
             '/user/login-v1',
             '/user/cadastro',
             '/api/auth/',

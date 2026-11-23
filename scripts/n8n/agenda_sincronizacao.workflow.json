@@ -1,0 +1,278 @@
+{
+  "name": "Agenda Regional Itapevi — Sincronizar eventos existentes",
+  "nodes": [
+    {
+      "id": "A cada dez segundos",
+      "name": "A cada dez segundos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Configurar aplicação",
+      "name": "Configurar aplicação",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "app_url",
+              "name": "app_url",
+              "type": "string",
+              "value": "https://SEU-SISTEMA.example"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Reservar leitura",
+      "name": "Reservar leitura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/buscar_leitura/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    },
+    {
+      "id": "Há leitura?",
+      "name": "Há leitura?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Há leitura?",
+              "leftValue": "={{ $json.job ? \"sim\" : \"nao\" }}",
+              "rightValue": "sim",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Ler eventos existentes",
+      "name": "Ler eventos existentes",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar leitura').first().json.job.calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar leitura').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar leitura').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Preparar leitura completa",
+      "name": "Preparar leitura completa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaSyncResult($('Reservar leitura').first().json.job,$input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Atualizar espelho no sistema",
+      "name": "Atualizar espelho no sistema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/resultado_leitura/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    },
+    {
+      "id": "Leitura das agendas",
+      "name": "Leitura das agendas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -400
+      ],
+      "parameters": {
+        "content": "## Eventos existentes no Google\n1. Aplique a migração 066.\n2. Configure app_url e Header Auth (mesmo token do sistema).\n3. Selecione Google Calendar OAuth2 no nó nativo Ler eventos existentes.\n4. Publique este fluxo além do fluxo de agendamento.\n5. Abra ou atualize o mês no sistema; ele enfileira as sete leituras.\n\nUma agenda por execução, a cada 10 segundos. Somente leitura do Google: não cria, move ou exclui eventos. Falha conserva o último espelho válido.",
+        "height": 330,
+        "width": 440
+      }
+    }
+  ],
+  "connections": {
+    "A cada dez segundos": {
+      "main": [
+        [
+          {
+            "node": "Configurar aplicação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar aplicação": {
+      "main": [
+        [
+          {
+            "node": "Reservar leitura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar leitura": {
+      "main": [
+        [
+          {
+            "node": "Há leitura?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há leitura?": {
+      "main": [
+        [
+          {
+            "node": "Ler eventos existentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler eventos existentes": {
+      "main": [
+        [
+          {
+            "node": "Preparar leitura completa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar leitura completa": {
+      "main": [
+        [
+          {
+            "node": "Atualizar espelho no sistema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -1,0 +1,1174 @@
+{
+  "name": "Agenda Regional Itapevi — Google Calendar",
+  "nodes": [
+    {
+      "id": "A cada minuto",
+      "name": "A cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Configurar aplicação",
+      "name": "Configurar aplicação",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "app_url",
+              "name": "app_url",
+              "type": "string",
+              "value": "https://SEU-SISTEMA.example"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Reservar trabalho",
+      "name": "Reservar trabalho",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/buscar/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"protocol_version\":2}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    },
+    {
+      "id": "Há trabalho?",
+      "name": "Há trabalho?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Há trabalho?",
+              "leftValue": "={{ $json.job ? 'sim' : 'nao' }}",
+              "rightValue": "sim",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "É cancelamento?",
+      "name": "É cancelamento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "É cancelamento?",
+              "leftValue": "={{ $json.job.status }}",
+              "rightValue": "CANCELANDO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Remover do Google",
+      "name": "Remover do Google",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1100,
+        -300
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.google_calendar_id }}"
+        },
+        "eventId": "={{ $('Reservar trabalho').first().json.job.google_id }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Remoção confirmada?",
+      "name": "Remoção confirmada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        -300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Remoção confirmada?",
+              "leftValue": "={{ $json.success === true ? 'sim' : 'nao' }}",
+              "rightValue": "sim",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Resultado do cancelamento",
+      "name": "Resultado do cancelamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -440
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaResult($('Reservar trabalho').first().json.job,'cancelado')}];"
+      }
+    },
+    {
+      "id": "Conferir remoção após falha",
+      "name": "Conferir remoção após falha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        -180
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($('Reservar trabalho').first().json.job.google_calendar_id) + '/events/' + $('Reservar trabalho').first().json.job.google_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "options": {
+          "timeout": 45000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Conciliar cancelamento",
+      "name": "Conciliar cancelamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaDeleted($('Reservar trabalho').first().json.job,$input.first().json)}];"
+      }
+    },
+    {
+      "id": "Conferir destino do evento",
+      "name": "Conferir destino do evento",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1100,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.google_calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado destino",
+      "name": "Resultado destino",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Cotia",
+      "name": "Consultar Cotia",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1540,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='cotia').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado cotia",
+      "name": "Resultado cotia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Caucaia do Alto",
+      "name": "Consultar Caucaia do Alto",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1980,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='caucaia').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado caucaia",
+      "name": "Resultado caucaia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Vargem Grande Paulista",
+      "name": "Consultar Vargem Grande Paulista",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2420,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='vargem_grande').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado vargem_grande",
+      "name": "Resultado vargem_grande",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Itapevi",
+      "name": "Consultar Itapevi",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2860,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='itapevi').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado itapevi",
+      "name": "Resultado itapevi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Jandira",
+      "name": "Consultar Jandira",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        3300,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='jandira').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado jandira",
+      "name": "Resultado jandira",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Santana de Parnaíba",
+      "name": "Consultar Santana de Parnaíba",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        3740,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='santana').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado santana",
+      "name": "Resultado santana",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consultar Pirapora do Bom Jesus",
+      "name": "Consultar Pirapora do Bom Jesus",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        4180,
+        180
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='pirapora').calendar_id }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "timeMax": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "options": {
+          "recurringEventHandling": "expand",
+          "showDeleted": false,
+          "timeZone": {
+            "__rl": true,
+            "mode": "id",
+            "value": "America/Sao_Paulo"
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado pirapora",
+      "name": "Resultado pirapora",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeList($input.all().map(i=>i.json))}];"
+      }
+    },
+    {
+      "id": "Consolidar conflitos",
+      "name": "Consolidar conflitos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4620,
+        180
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nconst job=$('Reservar trabalho').first().json.job; const sources=[$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='cotia'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='caucaia'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='vargem_grande'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='itapevi'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='jandira'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='santana'),$('Reservar trabalho').first().json.job.calendars.find(c=>c.id==='pirapora')]; const responses=[$('Resultado cotia').first().json,$('Resultado caucaia').first().json,$('Resultado vargem_grande').first().json,$('Resultado itapevi').first().json,$('Resultado jandira').first().json,$('Resultado santana').first().json,$('Resultado pirapora').first().json];\nif(!sources.some(c=>c&&c.calendar_id===job.google_calendar_id)){sources.push({id:'legado',administracao_id:job.administracao_id,municipio:job.municipio,calendar_id:job.google_calendar_id});responses.push($('Resultado destino').first().json);}\nreturn [{json:agendaConflicts(job,sources,responses)}];"
+      }
+    },
+    {
+      "id": "Pode criar?",
+      "name": "Pode criar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4840,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Pode criar?",
+              "leftValue": "={{ $json.resultado }}",
+              "rightValue": "livre",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Criar no Google",
+      "name": "Criar no Google",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        5060,
+        60
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Reservar trabalho').first().json.job.google_calendar_id }}"
+        },
+        "start": "={{ $('Reservar trabalho').first().json.job.inicio }}",
+        "end": "={{ $('Reservar trabalho').first().json.job.fim }}",
+        "useDefaultReminders": true,
+        "additionalFields": {
+          "id": "={{ $('Reservar trabalho').first().json.job.google_id }}",
+          "summary": "={{ $('Reservar trabalho').first().json.job.titulo }}",
+          "location": "={{ $('Reservar trabalho').first().json.job.local }}",
+          "description": "={{ 'Agenda Regional Itapevi | Protocolo: ' + $('Reservar trabalho').first().json.job.id }}",
+          "showMeAs": "opaque"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Agenda Regional"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Resultado da criação",
+      "name": "Resultado da criação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5280,
+        60
+      ],
+      "parameters": {
+        "jsCode": "/* Lógica pura compartilhada pelo workflow n8n e pelos testes locais. */\nfunction agendaResult(job, result, extra = {}) {\n  return {id: job.id, lease_token: job.lease_token, protocol_version:2, resultado: result, ...extra};\n}\nfunction agendaNativeList(items) {\n  if(!Array.isArray(items) || !items.length || items.some(item=>!item || item.error)) {\n    return {statusCode:0,body:{error:'Falha na consulta nativa do Google Calendar'}};\n  }\n  // Always Output Data mantém a execução quando Get Many retorna zero eventos.\n  const events=items.filter(item=>Object.keys(item).length>0);\n  if(events.some(event=>!event.id || !event.start || !event.end)) {\n    return {statusCode:0,body:{error:'Resposta nativa incompleta'}};\n  }\n  return {statusCode:200,body:{kind:'calendar#events',items:events}};\n}\nfunction agendaNativeCreated(job, event) {\n  return agendaCreated(job,event?.error ? {statusCode:0,body:event} : {statusCode:200,body:event});\n}\nfunction agendaSyncResult(job, items) {\n  const response=agendaNativeList(items);\n  if(response.statusCode!==200 || response.body.items.length>3000) {\n    return {id:job.id,lease_token:job.lease_token,resultado:'erro',mensagem:'Leitura incompleta ou acima de 3000 eventos. Confira a execução do nó Google Calendar.'};\n  }\n  return {id:job.id,lease_token:job.lease_token,resultado:'ok',eventos:response.body.items.map(e=>({\n    id:e.id,summary:e.summary,location:e.location,start:e.start,end:e.end,status:e.status,transparency:e.transparency\n  }))};\n}\nfunction agendaMatches(expected, event) {\n  return event.id === (expected.google_id || expected.id.replace(/-/g,'')) && event.status !== 'cancelled'\n    && event.summary === expected.titulo && (event.location || '') === expected.local\n    && Date.parse(event.start?.dateTime) === Date.parse(expected.inicio)\n    && Date.parse(event.end?.dateTime) === Date.parse(expected.fim);\n}\nfunction agendaConflicts(job, sources, responses) {\n  const ids=['cotia','caucaia','vargem_grande','itapevi','jandira','santana','pirapora'];\n  if(!Array.isArray(job.calendars)||job.calendars.length!==7||!ids.every(id=>job.calendars.some(c=>c.id===id))||\n      !Array.isArray(sources)||sources.some(c=>!c||!c.calendar_id||!c.administracao_id)||\n      ![7,8].includes(sources.length)||responses.length!==sources.length||\n      !job.calendars.every(c=>sources.some(s=>s.id===c.id&&s.calendar_id===c.calendar_id))||\n      sources.some(s=>!ids.includes(s.id)&&(s.id!=='legado'||s.calendar_id!==job.google_calendar_id))) {\n    return agendaResult(job, 'erro', {mensagem:'A consulta das sete agendas municipais ficou incompleta.'});\n  }\n  const conflicts=[];\n  for(let i=0;i<responses.length;i++) {\n    const response=responses[i], source=sources[i], body=response.body;\n    const items=body?.items ?? (body?.kind==='calendar#events' ? [] : null);\n    if(Number(response.statusCode)!==200 || !body || !Array.isArray(items) || body.nextPageToken) {\n      return agendaResult(job,'erro',{mensagem:'Não foi possível consultar todos os compromissos. Confira permissões e paginação.'});\n    }\n    for(const event of items) {\n      if(event.status==='cancelled' || event.transparency==='transparent') continue;\n      if(source.calendar_id===job.google_calendar_id && event.id===job.google_id) {\n        return agendaMatches(job,event) ? agendaResult(job,'confirmado',{google_event_id:job.google_id}) :\n          agendaResult(job,'erro',{mensagem:'O evento com este protocolo foi alterado no Google. Concilie antes de continuar.'});\n      }\n      const start=event.start?.dateTime || (event.start?.date ? event.start.date+'T00:00:00-03:00':null);\n      const end=event.end?.dateTime || (event.end?.date ? event.end.date+'T00:00:00-03:00':null);\n      if(!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))) {\n        return agendaResult(job,'erro',{mensagem:'Um compromisso Google está sem intervalo válido.'});\n      }\n      if(Date.parse(start)>=Date.parse(job.fim)||Date.parse(end)<=Date.parse(job.inicio)) continue;\n      const approved=(job.allowed_google_events||[]).some(e=>e.google_calendar_id===source.calendar_id && agendaMatches(e,event));\n      const authorizedExternal=(job.conflitos_externos||[]).some(e=>e.calendar_id===source.calendar_id &&\n        e.google_event_id===event.id && e.etag===event.etag && e.inicio===start && e.fim===end);\n      if(approved || authorizedExternal) continue;\n      conflicts.push({administracao_id:source.administracao_id,agenda_id:source.id,municipio:source.municipio,\n        calendar_id:source.calendar_id,google_event_id:event.id,titulo:String(event.summary||'Compromisso externo').slice(0,180),inicio:start,fim:end,etag:event.etag});\n    }\n  }\n  if(conflicts.length>100) return agendaResult(job,'erro',{mensagem:'Há muitos conflitos nesse período. Reduza o intervalo ou confira as agendas.'});\n  return conflicts.length ? agendaResult(job,'conflito_externo',{conflitos:conflicts}) : agendaResult(job,'livre');\n}\nfunction agendaCreated(job, response) {\n  if([200,201].includes(Number(response.statusCode)) && agendaMatches(job,response.body||{})) {\n    return agendaResult(job,'confirmado',{google_event_id:job.google_id});\n  }\n  return agendaResult(job,'erro',{mensagem:'A criação não foi confirmada. Reprocesse para conciliar pelo identificador único, sem duplicar o evento.'});\n}\nfunction agendaDeleted(job, response) {\n  // Aqui a resposta é de GET após falha do Delete nativo: HTTP 200 significa\n  // que o evento ainda existe, não uma exclusão bem-sucedida.\n  return [404,410].includes(Number(response.statusCode)) || Number(response.statusCode)===200 && response.body?.status==='cancelled' ? agendaResult(job,'cancelado') :\n    agendaResult(job,'erro',{mensagem:'A remoção no Google não foi confirmada. O horário permanece reservado.'});\n}\n\nreturn [{json:agendaNativeCreated($('Reservar trabalho').first().json.job,$input.first().json)}];"
+      }
+    },
+    {
+      "id": "Registrar resultado",
+      "name": "Registrar resultado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5500,
+        340
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/resultado/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    },
+    {
+      "id": "Leia antes de ativar",
+      "name": "Leia antes de ativar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -440
+      ],
+      "parameters": {
+        "content": "## Agenda Regional — 7 municípios, 4 administrações\n1. Configure app_url e as credenciais.\n2. Os sete municípios têm consultas Google Calendar nativas com Return All.\n3. Conferir destino preserva a conciliação de eventos vinculados a agendas anteriores.\n4. Criar no Google usa o ID único; cancelar preserva o destino original.\n5. Aplique as migrações 064 e 065 e configure os sete IDs municipais.\n\nProtocolo 2: substitua o workflow antigo antes de ativar. Responsáveis e aprovações continuam por administração. Consulte docs/AGENDA_REGIONAL_N8N.md.",
+        "height": 370,
+        "width": 440
+      }
+    }
+  ],
+  "connections": {
+    "Conferir destino do evento": {
+      "main": [
+        [
+          {
+            "node": "Resultado destino",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Cotia": {
+      "main": [
+        [
+          {
+            "node": "Resultado cotia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado destino": {
+      "main": [
+        [
+          {
+            "node": "Consultar Cotia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Caucaia do Alto": {
+      "main": [
+        [
+          {
+            "node": "Resultado caucaia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado cotia": {
+      "main": [
+        [
+          {
+            "node": "Consultar Caucaia do Alto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Vargem Grande Paulista": {
+      "main": [
+        [
+          {
+            "node": "Resultado vargem_grande",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado caucaia": {
+      "main": [
+        [
+          {
+            "node": "Consultar Vargem Grande Paulista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Itapevi": {
+      "main": [
+        [
+          {
+            "node": "Resultado itapevi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado vargem_grande": {
+      "main": [
+        [
+          {
+            "node": "Consultar Itapevi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Jandira": {
+      "main": [
+        [
+          {
+            "node": "Resultado jandira",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado itapevi": {
+      "main": [
+        [
+          {
+            "node": "Consultar Jandira",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Santana de Parnaíba": {
+      "main": [
+        [
+          {
+            "node": "Resultado santana",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado jandira": {
+      "main": [
+        [
+          {
+            "node": "Consultar Santana de Parnaíba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Pirapora do Bom Jesus": {
+      "main": [
+        [
+          {
+            "node": "Resultado pirapora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado santana": {
+      "main": [
+        [
+          {
+            "node": "Consultar Pirapora do Bom Jesus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Configurar aplicação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar aplicação": {
+      "main": [
+        [
+          {
+            "node": "Reservar trabalho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar trabalho": {
+      "main": [
+        [
+          {
+            "node": "Há trabalho?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há trabalho?": {
+      "main": [
+        [
+          {
+            "node": "É cancelamento?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É cancelamento?": {
+      "main": [
+        [
+          {
+            "node": "Remover do Google",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Conferir destino do evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover do Google": {
+      "main": [
+        [
+          {
+            "node": "Remoção confirmada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remoção confirmada?": {
+      "main": [
+        [
+          {
+            "node": "Resultado do cancelamento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Conferir remoção após falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado do cancelamento": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir remoção após falha": {
+      "main": [
+        [
+          {
+            "node": "Conciliar cancelamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conciliar cancelamento": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado pirapora": {
+      "main": [
+        [
+          {
+            "node": "Consolidar conflitos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar conflitos": {
+      "main": [
+        [
+          {
+            "node": "Pode criar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode criar?": {
+      "main": [
+        [
+          {
+            "node": "Criar no Google",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar no Google": {
+      "main": [
+        [
+          {
+            "node": "Resultado da criação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado da criação": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {},
+  "tags": []
+}

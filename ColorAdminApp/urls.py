@@ -4,6 +4,7 @@ from django.views.generic import RedirectView
 
 from . import views
 from .modules import regional_route_views
+from .modules import regional_agenda
 from .modules import account_views
 from . import admin_views
 from . import admin_module_views
@@ -30,6 +31,11 @@ from . import gem_projection
 
 app_name = 'ColorAdminApp'
 urlpatterns = [
+    path('musica/agenda-regional/', regional_agenda.page, name='regionalAgenda'),
+    path('musica/agenda-regional/api/eventos/', regional_agenda.events_api, name='regionalAgendaEvents'),
+    path('musica/agenda-regional/api/eventos/<uuid:event_id>/', regional_agenda.event_api, name='regionalAgendaEvent'),
+    path('musica/agenda-regional/api/configuracao/', regional_agenda.configuration_api, name='regionalAgendaConfiguration'),
+    path('integracoes/agenda-regional/api/<slug:action>/', regional_agenda.integration_api, name='regionalAgendaIntegration'),
     path('', views.index, name='index'),
     path('404/', views.error404, name='error404'),
     path('dashboard/v1', views.dashboardv1, name='dashboardv1'),

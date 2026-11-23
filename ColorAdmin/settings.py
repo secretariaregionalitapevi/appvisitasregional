@@ -21,6 +21,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env.local')
 load_dotenv(BASE_DIR / '.env')
 
+# Compartilhado somente entre o servidor Django e a credencial Header Auth do n8n.
+AGENDA_N8N_TOKEN = os.getenv('AGENDA_N8N_TOKEN', '')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/

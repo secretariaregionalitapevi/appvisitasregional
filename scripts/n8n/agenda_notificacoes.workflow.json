@@ -1,0 +1,294 @@
+{
+  "name": "Agenda Regional Itapevi — Notificações (canal a configurar)",
+  "nodes": [
+    {
+      "id": "A cada minuto",
+      "name": "A cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Configurar aplicação",
+      "name": "Configurar aplicação",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "app_url",
+              "name": "app_url",
+              "type": "string",
+              "value": "https://SEU-SISTEMA.example"
+            },
+            {
+              "id": "notification_url",
+              "name": "notification_url",
+              "type": "string",
+              "value": "https://SEU-CANAL.example/notificar"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Buscar notificação",
+      "name": "Buscar notificação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/notificacao/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    },
+    {
+      "id": "Há notificação?",
+      "name": "Há notificação?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Há notificação?",
+              "leftValue": "={{ $json.notification ? 'sim' : 'nao' }}",
+              "rightValue": "sim",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Entregar no canal",
+      "name": "Entregar no canal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.notification_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({...$json.notification,link:$('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/musica/agenda-regional/?evento=' + $json.notification.evento_id}) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Buscar notificação').first().json.notification.id }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Canal Notificações"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "Entregue?",
+      "name": "Entregue?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Entregue?",
+              "leftValue": "={{ Number($json.statusCode)>=200 && Number($json.statusCode)<300 ? 'sim' : 'nao' }}",
+              "rightValue": "sim",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Confirmar entrega",
+      "name": "Confirmar entrega",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configurar aplicação').first().json.app_url.replace(/\\/$/,'') + '/integracoes/agenda-regional/api/notificado/' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 45000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({id:$('Buscar notificação').first().json.notification.id,lease_token:$('Buscar notificação').first().json.notification.lease_token}) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Configurar aplicação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar aplicação": {
+      "main": [
+        [
+          {
+            "node": "Buscar notificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar notificação": {
+      "main": [
+        [
+          {
+            "node": "Há notificação?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há notificação?": {
+      "main": [
+        [
+          {
+            "node": "Entregar no canal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entregar no canal": {
+      "main": [
+        [
+          {
+            "node": "Entregue?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entregue?": {
+      "main": [
+        [
+          {
+            "node": "Confirmar entrega",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {},
+  "tags": []
+}

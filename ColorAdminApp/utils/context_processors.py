@@ -79,6 +79,7 @@ def sidebar_menu(request):
 	},
 	{ 'url': '/musica/', 'icon': 'fa fa-music', 'title': 'Música',
 		'children': [
+			{ 'url': '/musica/agenda-regional/', 'title': 'Agenda Regional', 'name': 'regionalAgenda' },
 			{ 'url': '/musica/exames/', 'title': 'Exames e Testes', 'name': 'musicExams' },
 			{ 'url': '/musica/cartas-exames/', 'title': 'Cartas de Exames', 'name': 'musicLetters' },
 			{ 'url': '/musica/ensaios-regionais/', 'title': 'Ensaios Regionais', 'name': 'musicEvents', 'active_prefixes': ['/musica/eventos/'] },

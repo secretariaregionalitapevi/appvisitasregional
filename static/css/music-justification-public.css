@@ -22,3 +22,5 @@ body{margin:0}.ram-page{min-height:100vh;height:auto}.ram-logo img{object-fit:co
 .ram-manual-toggle{margin:0 0 22px;font-size:12px;line-height:1.6;color:#526c85}.ram-manual-toggle label{display:flex;align-items:center;gap:8px;cursor:pointer}.ram-manual-toggle input{accent-color:#1e4b7a;width:16px;height:16px}#ram-manual-fields .ram-field{margin-bottom:16px}
 
 .ram-form[hidden],.ram-success[hidden]{display:none!important}.ram-success-icon>i{font-size:32px;color:#159c81}.ram-receipt>i{font-size:19px;color:#ed4d70}.ram-success-title:focus-visible,#ram-success-title:focus-visible{outline:2px solid #80b8df;outline-offset:5px;border-radius:5px}
+
+.ram-success .ram-secondary:hover:not(:disabled),.ram-success .ram-secondary:focus-visible,.ram-success .ram-secondary:active:not(:disabled){background:#153e69;color:#fff}
