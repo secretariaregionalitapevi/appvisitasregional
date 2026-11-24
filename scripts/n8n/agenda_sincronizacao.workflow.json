@@ -2,22 +2,26 @@
   "name": "Agenda Regional Itapevi — Sincronizar eventos existentes",
   "nodes": [
     {
-      "id": "A cada dez segundos",
-      "name": "A cada dez segundos",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
+      "id": "Consulta do sistema",
+      "name": "Consulta do sistema",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
       "position": [
         0,
         0
       ],
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "seconds",
-              "secondsInterval": 10
-            }
-          ]
+        "httpMethod": "POST",
+        "path": "agenda-regional-ler",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "agenda-regional-ler",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
         }
       }
     },
@@ -194,14 +198,14 @@
         -400
       ],
       "parameters": {
-        "content": "## Eventos existentes no Google\n1. Aplique a migração 066.\n2. Configure app_url e Header Auth (mesmo token do sistema).\n3. Selecione Google Calendar OAuth2 no nó nativo Ler eventos existentes.\n4. Publique este fluxo além do fluxo de agendamento.\n5. Abra ou atualize o mês no sistema; ele enfileira as sete leituras.\n\nUma agenda por execução, a cada 10 segundos. Somente leitura do Google: não cria, move ou exclui eventos. Falha conserva o último espelho válido.",
-        "height": 330,
+        "content": "## Leitura sob demanda\n1. Aplique a migração 066.\n2. Configure app_url e as credenciais Header Auth e Google Calendar.\n3. Publique o fluxo e configure sua URL de produção no servidor Django.\n4. Desative o fluxo antigo de 10 segundos.\n\nO sistema chama o webhook somente ao solicitar atualização. Cada chamada processa uma agenda.",
+        "height": 300,
         "width": 440
       }
     }
   ],
   "connections": {
-    "A cada dez segundos": {
+    "Consulta do sistema": {
       "main": [
         [
           {

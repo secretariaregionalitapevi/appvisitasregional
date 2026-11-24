@@ -2,22 +2,26 @@
   "name": "Agenda Regional Itapevi — Google Calendar",
   "nodes": [
     {
-      "id": "A cada minuto",
-      "name": "A cada minuto",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
+      "id": "Solicitação do sistema",
+      "name": "Solicitação do sistema",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
       "position": [
         0,
         0
       ],
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 1
-            }
-          ]
+        "httpMethod": "POST",
+        "path": "agenda-regional-processar",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "agenda-regional-processar",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Agenda Regional API"
         }
       }
     },
@@ -805,8 +809,8 @@
         -440
       ],
       "parameters": {
-        "content": "## Agenda Regional — 7 municípios, 4 administrações\n1. Configure app_url e as credenciais.\n2. Os sete municípios têm consultas Google Calendar nativas com Return All.\n3. Conferir destino preserva a conciliação de eventos vinculados a agendas anteriores.\n4. Criar no Google usa o ID único; cancelar preserva o destino original.\n5. Aplique as migrações 064 e 065 e configure os sete IDs municipais.\n\nProtocolo 2: substitua o workflow antigo antes de ativar. Responsáveis e aprovações continuam por administração. Consulte docs/AGENDA_REGIONAL_N8N.md.",
-        "height": 370,
+        "content": "## Agenda Regional — sob demanda\n1. Configure app_url e credenciais.\n2. No webhook, selecione Header Auth usando o token compartilhado.\n3. Configure os nós Google.\n4. Publique e configure a URL de produção do webhook no servidor Django.\n5. Desative o fluxo antigo agendado.\n\nO sistema chama este fluxo quando há agendamento ou decisão. Consulte docs/AGENDA_REGIONAL_N8N.md.",
+        "height": 330,
         "width": 440
       }
     }
@@ -977,7 +981,7 @@
         ]
       ]
     },
-    "A cada minuto": {
+    "Solicitação do sistema": {
       "main": [
         [
           {

@@ -38,5 +38,5 @@ class GoogleMirrorTests(SimpleTestCase):
     @patch.object(api,'rpc',side_effect=api.AgendaError('Aplique 066_agenda_leitura_google.sql',503))
     def test_missing_migration_is_an_explicit_diagnostic(self,_rpc):
         from datetime import date
-        rows,status=api.google_window(date(2026,11,1),date(2026,12,1))
+        rows,status=api.google_window(date(2026,11,1),date(2026,12,1),force=True)
         self.assertEqual(rows,[]);self.assertFalse(status['instalada']);self.assertIn('066',status['mensagem'])

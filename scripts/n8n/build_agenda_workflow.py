@@ -54,7 +54,8 @@ def code(name, source, x, y, logic=True):
     node(name, 'code', {'jsCode': (LOGIC if logic else '') + '\n' + source}, x, y, 2)
 
 
-node('A cada minuto', 'scheduleTrigger', {'rule': {'interval': [{'field': 'minutes', 'minutesInterval': 1}]}}, 0, 0, 1.2)
+node('Solicitação do sistema', 'webhook', {'httpMethod':'POST','path':'agenda-regional-processar','authentication':'headerAuth','responseMode':'lastNode','options':{}}, 0, 0, 2,
+     webhookId='agenda-regional-processar',credentials={'httpHeaderAuth':{'id':'','name':'Agenda Regional API'}})
 node('Configurar aplicação', 'set', {'assignments': {'assignments': [
     {'id': 'app_url', 'name': 'app_url', 'type': 'string', 'value': 'https://SEU-SISTEMA.example'}]}, 'options': {}}, 220, 0, 3.4)
 http('Reservar trabalho', 'POST', '={{ ' + BASE + " + '/integracoes/agenda-regional/api/buscar/' }}", 440, 0, '{"protocol_version":2}')
@@ -106,12 +107,12 @@ calendar('Criar no Google', 'create', {'calendar':locator(JOB+'.google_calendar_
        'showMeAs':'opaque'}},5060,60)
 code('Resultado da criação', f'return [{{json:agendaNativeCreated({JOB},$input.first().json)}}];',5280,60)
 http('Registrar resultado', 'POST', '={{ ' + BASE + " + '/integracoes/agenda-regional/api/resultado/' }}",5500,340,'={{ JSON.stringify($json) }}')
-for a, b in [('A cada minuto','Configurar aplicação'),('Configurar aplicação','Reservar trabalho'),('Reservar trabalho','Há trabalho?'),('Há trabalho?','É cancelamento?'),('É cancelamento?','Remover do Google'),('Remover do Google','Remoção confirmada?'),('Remoção confirmada?','Resultado do cancelamento'),('Resultado do cancelamento','Registrar resultado'),('Conferir remoção após falha','Conciliar cancelamento'),('Conciliar cancelamento','Registrar resultado'),(previous,'Consolidar conflitos'),('Consolidar conflitos','Pode criar?'),('Pode criar?','Criar no Google'),('Criar no Google','Resultado da criação'),('Resultado da criação','Registrar resultado')]:
+for a, b in [('Solicitação do sistema','Configurar aplicação'),('Configurar aplicação','Reservar trabalho'),('Reservar trabalho','Há trabalho?'),('Há trabalho?','É cancelamento?'),('É cancelamento?','Remover do Google'),('Remover do Google','Remoção confirmada?'),('Remoção confirmada?','Resultado do cancelamento'),('Resultado do cancelamento','Registrar resultado'),('Conferir remoção após falha','Conciliar cancelamento'),('Conciliar cancelamento','Registrar resultado'),(previous,'Consolidar conflitos'),('Consolidar conflitos','Pode criar?'),('Pode criar?','Criar no Google'),('Criar no Google','Resultado da criação'),('Resultado da criação','Registrar resultado')]:
     connect(a, b)
 connect('É cancelamento?', 'Conferir destino do evento', 1)
 connect('Remoção confirmada?', 'Conferir remoção após falha', 1)
 connect('Pode criar?', 'Registrar resultado', 1)
-node('Leia antes de ativar', 'stickyNote', {'content': '## Agenda Regional — 7 municípios, 4 administrações\n1. Configure app_url e as credenciais.\n2. Os sete municípios têm consultas Google Calendar nativas com Return All.\n3. Conferir destino preserva a conciliação de eventos vinculados a agendas anteriores.\n4. Criar no Google usa o ID único; cancelar preserva o destino original.\n5. Aplique as migrações 064 e 065 e configure os sete IDs municipais.\n\nProtocolo 2: substitua o workflow antigo antes de ativar. Responsáveis e aprovações continuam por administração. Consulte docs/AGENDA_REGIONAL_N8N.md.', 'height': 370, 'width': 440}, 0, -440)
+node('Leia antes de ativar', 'stickyNote', {'content': '## Agenda Regional — sob demanda\n1. Configure app_url e credenciais.\n2. No webhook, selecione Header Auth usando o token compartilhado.\n3. Configure os nós Google.\n4. Publique e configure a URL de produção do webhook no servidor Django.\n5. Desative o fluxo antigo agendado.\n\nO sistema chama este fluxo quando há agendamento ou decisão. Consulte docs/AGENDA_REGIONAL_N8N.md.', 'height': 330, 'width': 440}, 0, -440)
 workflow = {'name': 'Agenda Regional Itapevi — Google Calendar', 'nodes': nodes, 'connections': connections,
             'active': False, 'settings': {'executionOrder': 'v1', 'timezone': 'America/Sao_Paulo'},
             'pinData': {}, 'tags': []}
@@ -146,7 +147,8 @@ print('Workflow opcional de notificações gerado, inativo e sem canal configura
 
 # Leitura independente: a visualização não depende de existir uma solicitação de agendamento.
 nodes, connections = [], {}
-node('A cada dez segundos', 'scheduleTrigger', {'rule': {'interval': [{'field':'seconds','secondsInterval':10}]}}, 0, 0, 1.2)
+node('Consulta do sistema', 'webhook', {'httpMethod':'POST','path':'agenda-regional-ler','authentication':'headerAuth','responseMode':'lastNode','options':{}},0,0,2,
+     webhookId='agenda-regional-ler',credentials={'httpHeaderAuth':{'id':'','name':'Agenda Regional API'}})
 node('Configurar aplicação', 'set', {'assignments': {'assignments': [
     {'id':'app_url','name':'app_url','type':'string','value':'https://SEU-SISTEMA.example'}]},'options':{}},220,0,3.4)
 http('Reservar leitura','POST','={{ '+BASE+" + '/integracoes/agenda-regional/api/buscar_leitura/' }}",440,0,'{}')
@@ -158,8 +160,8 @@ calendar('Ler eventos existentes','getAll',{'calendar':locator(read_job+'.calend
                'timeZone':{'__rl':True,'mode':'id','value':'America/Sao_Paulo'}}},880,0)
 code('Preparar leitura completa',f'return [{{json:agendaSyncResult({read_job},$input.all().map(i=>i.json))}}];',1100,0)
 http('Atualizar espelho no sistema','POST','={{ '+BASE+" + '/integracoes/agenda-regional/api/resultado_leitura/' }}",1320,0,'={{ JSON.stringify($json) }}')
-for a,b in [('A cada dez segundos','Configurar aplicação'),('Configurar aplicação','Reservar leitura'),('Reservar leitura','Há leitura?'),('Há leitura?','Ler eventos existentes'),('Ler eventos existentes','Preparar leitura completa'),('Preparar leitura completa','Atualizar espelho no sistema')]:connect(a,b)
-node('Leitura das agendas','stickyNote',{'content':'## Eventos existentes no Google\n1. Aplique a migração 066.\n2. Configure app_url e Header Auth (mesmo token do sistema).\n3. Selecione Google Calendar OAuth2 no nó nativo Ler eventos existentes.\n4. Publique este fluxo além do fluxo de agendamento.\n5. Abra ou atualize o mês no sistema; ele enfileira as sete leituras.\n\nUma agenda por execução, a cada 10 segundos. Somente leitura do Google: não cria, move ou exclui eventos. Falha conserva o último espelho válido.','height':330,'width':440},0,-400)
+for a,b in [('Consulta do sistema','Configurar aplicação'),('Configurar aplicação','Reservar leitura'),('Reservar leitura','Há leitura?'),('Há leitura?','Ler eventos existentes'),('Ler eventos existentes','Preparar leitura completa'),('Preparar leitura completa','Atualizar espelho no sistema')]:connect(a,b)
+node('Leitura das agendas','stickyNote',{'content':'## Leitura sob demanda\n1. Aplique a migração 066.\n2. Configure app_url e as credenciais Header Auth e Google Calendar.\n3. Publique o fluxo e configure sua URL de produção no servidor Django.\n4. Desative o fluxo antigo de 10 segundos.\n\nO sistema chama o webhook somente ao solicitar atualização. Cada chamada processa uma agenda.','height':300,'width':440},0,-400)
 workflow={'name':'Agenda Regional Itapevi — Sincronizar eventos existentes','nodes':nodes,'connections':connections,
           'active':False,'settings':{'executionOrder':'v1','timezone':'America/Sao_Paulo'},'pinData':{},'tags':[]}
 (HERE/'agenda_sincronizacao.workflow.json').write_text(json.dumps(workflow,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

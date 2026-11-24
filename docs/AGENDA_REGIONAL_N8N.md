@@ -1,5 +1,32 @@
 # Agenda Regional Itapevi — implantação com n8n
 
+## Atualização: acionamento sob demanda
+
+Os fluxos `agenda_regional.workflow.json` e `agenda_sincronizacao.workflow.json`
+agora iniciam por Webhook autenticado, sem Schedule Trigger. Importe-os novamente,
+configure a credencial Header Auth nos webhooks e nós HTTP e a credencial Google nos
+nós Calendar. Publique os novos fluxos e desative os fluxos antigos agendados.
+
+Configure no ambiente do Django as URLs **de produção** informadas pelos webhooks:
+`AGENDA_N8N_PROCESSAR_URL` para o fluxo de agendamento e `AGENDA_N8N_LEITURA_URL`
+para o de leitura. Os webhooks usam Header Auth `Authorization: Bearer <token>` com
+o mesmo `AGENDA_N8N_TOKEN` da API do sistema. No n8n, `app_url` continua apontando
+para o sistema público, não para o n8n. Reinicie/republique o Django após configurar.
+
+Abrir um mês, mudar de mês ou clicar em Atualizar solicita a leitura; filtros e busca
+usam os dados já carregados. Uma solicitação efetua até sete chamadas sequenciais,
+uma por agenda. A criação, aprovação final, cancelamento ou reprocessamento aciona
+o processamento quando necessário. Se uma chamada falhar, o registro fica pendente;
+o usuário deve tentar Atualizar/reprocessar. Não existe recuperação periódica.
+
+O encaminhamento por prazo e os lembretes da migração 065 são avaliados quando o
+fluxo de processamento é acionado: sem acessos ou outras operações, não ocorre
+encaminhamento automático no horário exato. A sincronização opcional de notificações
+continua sendo um fluxo separado e agendado; mantenha-o desativado se não usar.
+
+Os parágrafos históricos abaixo que mencionam consultas a cada 10 segundos, minuto,
+15 segundos ou cinco minutos descrevem o fluxo anterior e não se aplicam a esta versão.
+
 ## O que foi implementado
 
 Acesso em `/musica/agenda-regional/`, pelo menu Música → Agenda Regional.

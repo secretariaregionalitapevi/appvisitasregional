@@ -11,7 +11,7 @@
   const nowParts = saoDate.formatToParts(new Date());
   const getPart = type => Number(nowParts.find(p => p.type === type).value);
   let month = new Date(Date.UTC(getPart('year'),getPart('month')-1,1));
-  let view = 'calendar', state = null, selected = null, loading = false, opening = false, syncTimer=null;
+  let view = 'calendar', state = null, selected = null, loading = false, opening = false;
   const form = $('agenda-form');
   const dayKey = value => { const p=saoDate.formatToParts(new Date(value)); return ['year','month','day'].map(t=>p.find(x=>x.type===t).value).join('-'); };
   const key = d => d.toISOString().slice(0,10);
@@ -45,10 +45,13 @@
     let title='Conclua a conexão das agendas',footer=state.configurada?'Integração configurada':'Configuração pendente';
     if(c.missing_calendars.length)messages.push('IDs ainda não salvos: '+c.missing_calendars.join(', ')+'.');
     if(!c.token_configurado)messages.push(state.master?'Configure AGENDA_N8N_TOKEN no servidor e o mesmo valor na credencial Header Auth do n8n.':'A autenticação da integração precisa ser concluída pela administração.');
+    if(c.leitura_configurada===false)messages.push(state.master?'Configure AGENDA_N8N_LEITURA_URL no servidor.':'A leitura das agendas precisa ser configurada pela administração.');
+    if(c.processar_configurada===false)messages.push(state.master?'Configure AGENDA_N8N_PROCESSAR_URL no servidor.':'O processamento dos eventos precisa ser configurado pela administração.');
     if(s?.instalada===false){messages.push(state.master?s.mensagem:'A leitura das agendas está sendo preparada pela administração.');footer='Leitura ainda não instalada';}
     if(s?.instalada&&c.token_configurado){
+      if(s.acionada===false){title='Não foi possível iniciar a leitura';messages.push('Confira a URL do webhook de leitura no servidor e se o fluxo está publicado no n8n.');footer='Leitura não iniciada';}
       const errors=s.leituras.filter(j=>j.status==='ERRO');
-      if(s.pending){title='Buscando os eventos existentes no Google';messages.push(`${s.ok||0} de ${c.ids_configurados} agendas consultadas. Mantenha o fluxo de sincronização ativo no n8n; a tela será atualizada automaticamente.`);footer=`Leitura: ${s.ok||0} de ${c.ids_configurados}`;}
+      if(s.pending&&s.acionada!==false){title='Leitura pendente';messages.push(`${s.ok||0} de ${c.ids_configurados} agendas consultadas. Use Atualizar para tentar novamente.`);footer=`Leitura: ${s.ok||0} de ${c.ids_configurados}`;}
       else if(errors.length){title='Algumas agendas não puderam ser consultadas';messages.push('Confira a conexão Google no n8n: '+errors.map(j=>(state.calendars||[]).find(a=>a.id===j.agenda_id)?.nome||j.agenda_id).join(', ')+'. O último resultado válido foi preservado.');footer='Falha na leitura';}
       else if(s.ok){footer='Eventos do Google atualizados';}
     }
@@ -139,7 +142,6 @@
   }
   async function load(force=false) {
     if(loading) return; loading=true;root.setAttribute('aria-busy','true');$('agenda-loading').hidden=false;$('agenda-loading').textContent='Atualizando compromissos…';
-    if(syncTimer)window.clearTimeout(syncTimer);
     try {
       const first=new Date(month);first.setUTCDate(1-first.getUTCDay());const end=new Date(first);
       const days=new Date(Date.UTC(month.getUTCFullYear(),month.getUTCMonth()+1,0)).getUTCDate();
@@ -154,10 +156,6 @@
       $('agenda-connection-dot').classList.toggle('ready',state.configurada);
       renderConnection();
       render();$('agenda-loading').hidden=true;
-      if(state.sync?.instalada&&state.connection?.token_configurado){
-        const poll=()=>{if(document.visibilityState==='hidden'||root.querySelector('dialog[open]'))syncTimer=window.setTimeout(poll,15000);else load();};
-        syncTimer=window.setTimeout(poll,state.sync.pending?15000:300000);
-      }
     } catch(e) {$('agenda-loading').textContent='Não foi possível carregar a agenda. Use Atualizar para tentar novamente.';feedback('error','Agenda indisponível',e.message);}
     finally {loading=false;root.setAttribute('aria-busy','false');}
   }
@@ -185,8 +183,13 @@
     const data=Object.fromEntries(new FormData(form));data.id=form.dataset.id;delete data.csrfmiddlewaretoken;
     data.inicio+=':00-03:00';data.fim+=':00-03:00';
     const result=await api(root.dataset.api,data);$('agenda-form-dialog').close();
-    const pending=result.event.status==='PENDENTE_ADM';
-    feedback(pending?'warning':'success',pending?'Solicitação enviada para autorização':'Solicitação registrada',pending?'Os encarregados das administrações envolvidas vão analisar. O evento ainda não está confirmado.':'O horário foi reservado. A confirmação será exibida após a integração com o Google.');await load();
+    const eventStatus=result.event.status;
+    if(eventStatus==='CONFIRMADO')feedback('success','Evento confirmado','O evento foi registrado no Google Calendar.');
+    else if(eventStatus==='PENDENTE_ADM'||eventStatus==='PENDENTE_REGIONAL')feedback('warning','Solicitação aguardando autorização',eventStatus==='PENDENTE_ADM'?'Os encarregados precisam analisar o conflito. O evento ainda não está confirmado.':'A equipe Regional precisa analisar o conflito. O evento ainda não está confirmado.');
+    else if(eventStatus==='RECUSADO')feedback('error','Horário indisponível','Foi encontrado um compromisso conflitante. O evento não foi confirmado; escolha outro horário.');
+    else if(result.event.acionado===false||eventStatus==='ERRO_INTEGRACAO')feedback('warning','Solicitação salva, sem confirmação','Não foi possível concluir a consulta ao Google. O horário permanece reservado no sistema; procure a Regional para verificar a integração.');
+    else feedback('warning','Solicitação em processamento','A confirmação no Google ainda não foi concluída. Confira a situação antes de considerar o evento agendado.');
+    await load();
   });});
   async function detail(id) {
     if(opening) return;opening=true;
@@ -252,10 +255,10 @@
   $('agenda-calendar-filter').addEventListener('change',()=>state&&render());
   $('agenda-all').addEventListener('click',()=>{if(!state)return;$('agenda-filter').value='';$('agenda-calendar-filter').value='';render();});
   $('agenda-search').addEventListener('input',()=>state&&render());
-  function changeMonth(offset){if(loading)return;month.setUTCMonth(month.getUTCMonth()+offset);selectedDay=key(month);load();}
+  function changeMonth(offset){if(loading)return;month.setUTCMonth(month.getUTCMonth()+offset);selectedDay=key(month);load(true);}
   $('agenda-prev').addEventListener('click',()=>changeMonth(-1));
   $('agenda-next').addEventListener('click',()=>changeMonth(1));
-  $('agenda-today').addEventListener('click',()=>{if(loading)return;selectedDay=dayKey(new Date());const now=shortDate(selectedDay);month=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1));load();});
+  $('agenda-today').addEventListener('click',()=>{if(loading)return;selectedDay=dayKey(new Date());const now=shortDate(selectedDay);month=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1));load(true);});
   $('agenda-refresh').addEventListener('click',event=>busy(event.currentTarget,()=>load(true)));
   root.querySelectorAll('button[data-view]').forEach(button=>button.addEventListener('click',()=>{if(loading)return;view=button.dataset.view;root.querySelectorAll('button[data-view]').forEach(b=>b.setAttribute('aria-pressed',b===button?'true':'false'));load();}));
   async function configuration() {
@@ -273,5 +276,5 @@
   $('agenda-responsible-form')?.elements.papel.addEventListener('change',event=>{const f=event.target.form;f.elements.administracao_id.disabled=event.target.value==='REGIONAL';});
   $('agenda-responsible-form')?.addEventListener('submit',event=>{event.preventDefault();const f=event.currentTarget;busy(f.querySelector('[type=submit]'),async()=>{await api(root.dataset.config,{tipo:'responsavel',...Object.fromEntries(new FormData(f))});feedback('success','Responsável designado','O vínculo foi registrado.');await configuration();await load();});});
   $('agenda-responsibles')?.addEventListener('click',event=>{const b=event.target.closest('[data-remove]');if(b)busy(b,async()=>{await api(root.dataset.config,{tipo:'remover_responsavel',id:b.dataset.remove});feedback('success','Vínculo removido','A autorização para novos pareceres foi revogada.');await configuration();await load();});});
-  load().then(()=>{const id=new URLSearchParams(window.location.search).get('evento');if(state&&id&&/^[0-9a-f-]{36}$/i.test(id))detail(id);});
+  load(true).then(()=>{const id=new URLSearchParams(window.location.search).get('evento');if(state&&id&&/^[0-9a-f-]{36}$/i.test(id))detail(id);});
 })();

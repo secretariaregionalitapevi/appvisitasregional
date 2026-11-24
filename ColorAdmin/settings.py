@@ -23,6 +23,8 @@ load_dotenv(BASE_DIR / '.env')
 
 # Compartilhado somente entre o servidor Django e a credencial Header Auth do n8n.
 AGENDA_N8N_TOKEN = os.getenv('AGENDA_N8N_TOKEN', '')
+AGENDA_N8N_LEITURA_URL = os.getenv('AGENDA_N8N_LEITURA_URL', '')
+AGENDA_N8N_PROCESSAR_URL = os.getenv('AGENDA_N8N_PROCESSAR_URL', '')
 
 
 # Quick-start development settings - unsuitable for production

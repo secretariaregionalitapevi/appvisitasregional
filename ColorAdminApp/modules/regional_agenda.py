@@ -113,8 +113,27 @@ def rpc(name, payload):
     return response.json()
 
 
+def wake_worker(setting, count=1):
+    """Aciona somente por ação do usuário; a fila continua responsável pela exclusividade."""
+    url = getattr(settings, setting, '')
+    secret = getattr(settings, 'AGENDA_N8N_TOKEN', '')
+    if not url or not secret:
+        return False
+    try:
+        for _ in range(count):
+            response = requests.post(url, json={}, headers={'Authorization': 'Bearer ' + secret}, timeout=(3.05, 25))
+            response.raise_for_status()
+        return True
+    except requests.RequestException:
+        logger.warning('Agenda: não foi possível acionar o fluxo %s', setting)
+        return False
+
+
 def operate(action, data, who):
-    return rpc('agenda_operar', {'p_acao': action, 'p_dados': data, **who})
+    result = rpc('agenda_operar', {'p_acao': action, 'p_dados': data, **who})
+    if action in {'criar', 'parecer', 'cancelar', 'reenviar'} and result.get('status') in {'PRONTO', 'CANCELANDO'}:
+        result['acionado'] = wake_worker('AGENDA_N8N_PROCESSAR_URL')
+    return result
 
 
 def clean(event):
@@ -130,7 +149,10 @@ def google_window(start, end, force=False):
     begin = start.isoformat() + 'T00:00:00-03:00'
     finish = end.isoformat() + 'T00:00:00-03:00'
     try:
-        rpc('agenda_google_operar', {'p_acao': 'solicitar', 'p_dados': {'inicio': begin, 'fim': finish, 'force': force}})
+        triggered = None
+        if force:
+            rpc('agenda_google_operar', {'p_acao': 'solicitar', 'p_dados': {'inicio': begin, 'fim': finish, 'force': True}})
+            triggered = wake_worker('AGENDA_N8N_LEITURA_URL', 7)
         rows = read('agenda_google_visiveis', inicio='lt.' + finish, fim='gt.' + begin, order='inicio.asc')
         jobs = read('agenda_google_leituras', inicio='eq.' + begin, fim='eq.' + finish,
                     select='agenda_id,status,concluido_em,mensagem', order='agenda_id.asc')
@@ -138,7 +160,7 @@ def google_window(start, end, force=False):
         if '066_' in str(exc):
             return [], {'instalada': False, 'pending': 0, 'leituras': [], 'mensagem': str(exc)}
         raise
-    return [presentation(row) for row in rows], {'instalada': True, 'leituras': jobs,
+    return [presentation(row) for row in rows], {'instalada': True, 'leituras': jobs, 'acionada': triggered,
         'pending': sum(j['status'] in {'PENDENTE', 'EXECUTANDO'} for j in jobs),
         'ok': sum(j['status'] == 'OK' for j in jobs)}
 
@@ -186,7 +208,14 @@ def events_api(request):
         start, end = (datetime.fromisoformat(data[k]) for k in ('inicio', 'fim'))
         if not start < end <= start + timedelta(days=7):
             raise AgendaError('O término deve ser posterior ao início, com duração máxima de sete dias.')
-        return JsonResponse({'event': clean(operate('criar', data, who))}, status=201)
+        event = operate('criar', data, who)
+        # O webhook responde após o processamento. Leia o estado efetivo que o
+        # n8n gravou; a reserva original pode já ter sido confirmada ou recusada.
+        if event.get('acionado'):
+            actual = read('agenda_eventos', id='eq.' + str(event['id']), limit=1)
+            if actual:
+                event = {**actual[0], 'acionado': True}
+        return JsonResponse({'event': clean(event)}, status=201)
     today = datetime.now(TZ).date()
     start = date.fromisoformat(request.GET.get('start', today.replace(day=1).isoformat()))
     end = date.fromisoformat(request.GET.get('end', (start + timedelta(days=42)).isoformat()))
@@ -234,10 +263,14 @@ def events_api(request):
                         {'configurada': bool(c['calendar_id'])} for c in calendars]
     configured = len(calendars) == 7 and all(c['calendar_id'] for c in calendars)
     token_configured = bool(getattr(settings, 'AGENDA_N8N_TOKEN', ''))
+    leitura_configurada = bool(getattr(settings, 'AGENDA_N8N_LEITURA_URL', ''))
+    processar_configurada = bool(getattr(settings, 'AGENDA_N8N_PROCESSAR_URL', ''))
     return JsonResponse({'events': result, 'administrations': choices, 'calendars': public_calendars, 'roles': assignments,
                          'regional': regional, 'master': who['p_master'], 'user_id': who['p_actor'],
                          'configurada': configured and token_configured, 'sync': sync,
                          'connection': {'token_configurado': token_configured,
+                             'leitura_configurada': leitura_configurada,
+                             'processar_configurada': processar_configurada,
                              'ids_configurados': sum(bool(c['calendar_id']) for c in calendars),
                              'missing_calendars': [c['nome'] for c in calendars if not c['calendar_id']]}})
 

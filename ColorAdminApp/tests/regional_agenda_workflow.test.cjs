@@ -51,7 +51,7 @@ function execute(options={}) {
     outputs.set(name,result);
     for(const edge of workflow.connections[name]?.main[branch]||[])visit(edge.node,result);
   }
-  visit('A cada minuto',[{json:{}}]);return {calls,callbacks};
+  visit('Solicitação do sistema',[{json:{}}]);return {calls,callbacks};
 }
 test('exported workflow checks seven municipalities and the previously bound destination',()=>{
   const {calls,callbacks}=execute();assert.equal(calls.filter(c=>c.operation==='getAll').length,8);
