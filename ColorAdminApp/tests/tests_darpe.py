@@ -22,6 +22,14 @@ def request_for(path, method="get", body=None):
 
 
 class DarpeModuleTests(SimpleTestCase):
+    def test_instrument_is_saved_in_uppercase_preserving_accents(self):
+        from ColorAdminApp.modules.darpe import _normalize_payload
+        for value, expected in [('  Violino  ', 'VIOLINO'), ('Órgão', 'ÓRGÃO'),
+                                ('Clarinete', 'CLARINETE'), ('VIOLONCELO', 'VIOLONCELO')]:
+            with self.subTest(value=value):
+                result = _normalize_payload({'instrumento_oficializado': value}, 'cadastros')
+                self.assertEqual(result['instrumento_oficializado'], expected)
+
     @patch('ColorAdminApp.modules.darpe._with_canonical_commons', side_effect=lambda rows: rows)
     @patch('ColorAdminApp.modules.darpe.requests.patch')
     @patch('ColorAdminApp.modules.darpe.requests.get')

@@ -166,10 +166,11 @@ class AdminAttendanceTests(SimpleTestCase):
             'ATENDIMENTO D.A.R.P.E.', 'Orações', 'Colaboradores',
             'Irmão da palavra', 'PEDIDOS DE ORAÇÃO', 'Enfermidade(s)',
             'Acidentado(s)', 'Tribulação(ões)', 'Testemunhado(s)',
-            'Secretária Regional do DARPE',
+            'Responsável:', 'Secretaria Regional', 'D.A.R.P.E',
         ]:
             self.assertIn(value,text)
         self.assertNotIn('Secretaria Regional da Música',text)
+        self.assertIn('Responsável: Secretaria Regional do D.A.R.P.E', ' '.join(text.split()))
         self.assertLess(text.index('Hinos'),text.index('Palavra'))
         self.assertLess(text.index('Palavra'),text.index('Irmão da palavra'))
         self.assertLess(text.index('Obs.'),text.index('PEDIDOS DE ORAÇÃO'))

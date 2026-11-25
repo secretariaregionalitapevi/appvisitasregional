@@ -804,6 +804,8 @@ def api_student_timeline(request, student_id):
         student.update(_operational_activity(datasets))
         student["programa_minimo_percentual"] = _program_progress(student, datasets.get("msa"))
         student["programa_minimo_informado"] = bool(datasets.get("msa")) or student["programa_minimo_informado"]
+        from .gem_darpe import enrich
+        enrich([student])
         return JsonResponse({
             "student": student,
             "program_assessment": assess_program(student, datasets),

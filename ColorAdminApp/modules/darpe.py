@@ -100,6 +100,8 @@ def _normalize_payload(payload, resource):
             except (ValueError, TypeError):
                 raise ValueError(f'{label}: informe uma data válida.')
     if resource == 'cadastros':
+        if payload.get('instrumento_oficializado'):
+            payload['instrumento_oficializado'] = payload['instrumento_oficializado'].upper()
         for key, size in (('cpf', 11), ('cep', 8)):
             if payload.get(key):
                 digits = re.sub(r'\D', '', str(payload[key]))
@@ -149,6 +151,8 @@ def _with_canonical_commons(rows):
     enriched = []
     for original in rows:
         row = dict(original)
+        if row.get('instrumento_oficializado'):
+            row['instrumento_oficializado'] = row['instrumento_oficializado'].upper()
         canonical = resolver.resolve(row.get("comum_congregacao"), row.get("cidade")) if resolver else None
         row["comum_exibicao"] = (canonical or {}).get("comum") or row.get("comum_congregacao")
         enriched.append(row)

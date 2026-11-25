@@ -1,7 +1,8 @@
-from unittest.mock import patch
+import json
+from unittest.mock import Mock, patch
 
 import requests
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 from ColorAdminApp.modules.gem_darpe import attach_membership, enrich
 
 
@@ -14,6 +15,29 @@ class GemDarpeTests(SimpleTestCase):
         self.member = {'id': 'd', 'nome_completo': 'Edmilson Fernandes Guilherme',
                        'comum_congregacao': 'NHAMBUCA', 'cidade': 'CAUCAIA DO ALTO',
                        'status': 'ATIVO', 'darpe_musico': True}
+
+    @patch('ColorAdminApp.modules.gem.can_open_module', return_value=True)
+    @patch('ColorAdminApp.modules.gem.user_scope', return_value={'level': 'global'})
+    @patch('ColorAdminApp.modules.gem.requests.get')
+    @patch('ColorAdminApp.modules.gem_darpe.common_catalog')
+    @patch('ColorAdminApp.modules.gem_darpe.read_members')
+    def test_student_summary_exposes_only_confirmed_membership(self, members, catalog, get, scope, access):
+        from ColorAdminApp.modules.gem import api_student_timeline
+        catalog.return_value = self.catalog
+        get.side_effect = lambda url, **kwargs: Mock(json=lambda: (
+            [dict(self.student)] if url.endswith('/musica_acompanhamento_aluno') else []))
+        request = RequestFactory().get('/gem/api/alunos/1/linha-do-tempo/')
+        for member, expected in [(self.member, True),
+                                 ({**self.member, 'darpe_musico': False, 'darpe_organista': True}, True),
+                                 ({**self.member, 'status': 'INATIVO'}, False),
+                                 ({**self.member, 'darpe_musico': False}, False)]:
+            with self.subTest(member=member):
+                members.return_value = [member]
+                response = api_student_timeline(request, '1')
+                self.assertEqual(response.status_code, 200, response.content)
+                student = json.loads(response.content)['student']
+                self.assertEqual(student['darpe_cadastrado'], expected)
+                self.assertNotIn('darpe_id', student)
 
     def test_badge_works_for_both_students_and_graduates(self):
         for level in ('CANDIDATO(A)', 'OFICIALIZADO(A)'):

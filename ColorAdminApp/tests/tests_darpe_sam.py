@@ -108,6 +108,31 @@ class DarpeSamTests(SimpleTestCase):
         read.return_value[0]['cargo_ministerio'] = 'ENCARREGADO LOCAL'
         self.assertEqual(enrich_roles([target(darpe_encarregado=True)])[0]['encarregado_tipo'], 'LOCAL')
 
+    @patch('ColorAdminApp.modules.darpe_sam.cache.get', return_value=None)
+    @patch('ColorAdminApp.modules.darpe_sam._read_all_rows')
+    def test_accented_name_matches_full_identity_without_confusing_junior_or_other_common(self, read, _cache):
+        common = 'BR-22-3061 - JARDIM RUTH'
+        read.return_value = [
+            {'nome_aluno': 'RICARDO JOSUÉ DE OLIVEIRA', 'comum_congregacao': common,
+             'cargo_ministerio': 'ENCARREGADO LOCAL'},
+            {'nome_aluno': 'RICARDO JOSUÉ DE OLIVEIRA JUNIOR', 'comum_congregacao': common,
+             'cargo_ministerio': 'MÚSICO'},
+            {'nome_aluno': 'RICARDO JOSUÉ DE OLIVEIRA',
+             'comum_congregacao': 'BR-22-9999 - OUTRA', 'cargo_ministerio': 'ENCARREGADO REGIONAL'},
+        ]
+        row = target(nome_completo='RICARDO JOSUÉ DE OLIVEIRA', comum_congregacao=common,
+                     darpe_encarregado=True, darpe_ministerio=False)
+        result = enrich_roles([row])[0]
+        self.assertEqual(result['encarregado_tipo'], 'LOCAL')
+        self.assertEqual(result['ministerio_descricao'], '')
+        filters = read.call_args.kwargs['filters']
+        self.assertNotIn('nome_aluno', filters)
+        self.assertIn('BR-22-3061', filters['or'])
+        read.return_value.append(dict(read.return_value[0], cargo_ministerio='ENCARREGADO REGIONAL'))
+        ambiguous = enrich_roles([target(nome_completo=row['nome_completo'],
+                                         comum_congregacao=common, darpe_encarregado=True)])[0]
+        self.assertFalse(ambiguous.get('encarregado_tipo'))
+
     def test_missing_from_sam_never_reappears_from_older_local_catalog(self):
         rows = self.compare(sources=[source(missing_since='2026-10-20', aluno_id='local'),
                                      source(id='local', source_kind='sam_gem')])

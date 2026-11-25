@@ -218,7 +218,7 @@ def build_papeleta_pdf(record, actor, now):
         leading=10, textColor=colors.white, alignment=TA_CENTER,
     )
     metadata_style = ParagraphStyle(
-        'PapeletaMetadata', fontName='Helvetica', fontSize=6.5, leading=8,
+        'PapeletaMetadata', fontName='Helvetica', fontSize=7, leading=11,
         alignment=TA_RIGHT, textColor='#263238',
     )
 
@@ -247,7 +247,7 @@ def build_papeleta_pdf(record, actor, now):
                     f'<b>Emissão:</b> {now:%d/%m/%Y %H:%M}<br/>'
                     f'<b>Data:</b> {datetime.strptime(row_data, "%Y-%m-%d"):%d/%m/%Y}<br/>'
                     f'<b>Localidade:</b> {escape(record["municipio"])}<br/>'
-                    '<b>Responsável:</b><br/>Secretária&nbsp;Regional&nbsp;do&nbsp;DARPE',
+                    '<b>Responsável:</b> Secretaria Regional do D.A.R.P.E',
                     metadata_style,
                 )
                 institution = Paragraph(
@@ -258,7 +258,8 @@ def build_papeleta_pdf(record, actor, now):
                     ParagraphStyle('PapeletaInstitution', fontName='Helvetica', fontSize=15,
                                    leading=17, alignment=TA_CENTER, textColor='#263238'),
                 )
-                header = Table([['', institution, details]], colWidths=[112, usable - 224, 112])
+                header = Table([['', institution, details]],
+                               colWidths=[112, usable - 224, 112])
                 header.setStyle(TableStyle([
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
@@ -275,13 +276,11 @@ def build_papeleta_pdf(record, actor, now):
             super().save()
 
     row_data = record['data']
-    content = [[paragraph('ATENDIMENTO D.A.R.P.E.', header_style),
-                paragraph(datetime.strptime(row_data, '%Y-%m-%d').strftime('%d/%m/%Y'),
-                          ParagraphStyle(
-                              'PapeletaDate', fontName='Helvetica-Bold', fontSize=9,
-                              leading=12, textColor=colors.white, alignment=TA_RIGHT,
-                          ))]]
-    banner = Table(content, colWidths=[usable - 90, 90])
+    banner_style = ParagraphStyle(
+        'PapeletaBanner', parent=header_style, fontSize=9, leading=12,
+    )
+    content = [[paragraph('ATENDIMENTO D.A.R.P.E.', banner_style)]]
+    banner = Table(content, colWidths=[usable])
     banner.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#1e4b7a')),
         ('BOX', (0, 0), (-1, -1), .6, colors.HexColor('#1e4b7a')),
@@ -373,7 +372,7 @@ def build_papeleta_pdf(record, actor, now):
     stream = BytesIO()
     doc = SimpleDocTemplate(
         stream, pagesize=A4, leftMargin=28, rightMargin=28,
-        topMargin=108, bottomMargin=34, title='Papeleta de atendimento',
+        topMargin=130, bottomMargin=34, title='Papeleta de atendimento',
         author=actor,
     )
     doc.build([

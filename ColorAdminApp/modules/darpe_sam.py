@@ -206,20 +206,27 @@ def read_sam_sources(refresh=False):
 def enrich_roles(rows):
     """Diferencia o cargo SAM sem transformar cargo musical em tipo ministerial."""
     wanted = set()
+    common_codes = set()
     for row in rows:
         code = re.match(r'^(BR-\d+-\d+)', row.get('comum_exibicao') or row.get('comum_congregacao') or '')
         key = (_norm(row.get('nome_completo')), code.group(1) if code else None)
         if row.get('darpe_encarregado') or key in CONFIRMED_NAMES:
             wanted.add(CONFIRMED_NAMES.get(key, key[0]))
+            if key[1]:
+                common_codes.add(key[1])
         row['ministerio_descricao'] = CONFIRMED_MINISTRIES.get(key, 'Ministério') if row.get('darpe_ministerio') else ''
-    if not wanted:
+    if not wanted or not common_codes:
         return rows
-    cache_key = 'darpe:musical-roles:v1:' + sha256('|'.join(sorted(wanted)).encode('utf-8')).hexdigest()
+    cache_key = 'darpe:musical-roles:v2:' + sha256(
+        json.dumps([sorted(wanted), sorted(common_codes)]).encode('utf-8')).hexdigest()
     sources = cache.get(cache_key)
     if sources is None:
         sources = _read_all_rows({'table': 'musica_acompanhamento_aluno'},
             select='id,nome_aluno,comum_congregacao,cargo_ministerio',
-            filters={'nome_aluno': 'in.(' + ','.join(json.dumps(name) for name in sorted(wanted)) + ')'})
+            # PostgreSQL's exact name filter is accent-sensitive. Read the relevant
+            # congregations, then compare complete normalized names AND BR codes below.
+            filters={'or': '(' + ','.join('comum_congregacao.ilike.' + code + '*'
+                                         for code in sorted(common_codes)) + ')'})
         cache.set(cache_key, sources, 300)
     for row in rows:
         code = re.match(r'^(BR-\d+-\d+)', row.get('comum_exibicao') or row.get('comum_congregacao') or '')
