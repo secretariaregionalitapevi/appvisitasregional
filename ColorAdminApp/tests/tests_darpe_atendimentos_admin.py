@@ -144,10 +144,18 @@ class AdminAttendanceTests(SimpleTestCase):
 
     def test_single_papeleta_pdf_contains_all_fields_and_standard_header(self):
         now=datetime(2026,11,7,18,30,tzinfo=ZoneInfo('America/Sao_Paulo'))
-        output=reports.build_papeleta_pdf(sample(),'Operador de teste',now)
+        record = sample()
+        record['equipe'].append({'cadastro_id': 'organ', 'funcao': 'organista',
+                                 'nome': 'Organista de teste'})
+        output=reports.build_papeleta_pdf(record,'Operador de teste',now)
         reader=PdfReader(BytesIO(output))
         self.assertEqual(len(reader.pages),1)
         text=reader.pages[0].extract_text()
+        musical_section = text.split('Músicos\n', 1)[1].split('Colaboradores', 1)[0]
+        musicians, organist = musical_section.split('Organista\n', 1)
+        self.assertIn('Músico de teste', musicians)
+        self.assertNotIn('Organista de teste', musicians)
+        self.assertIn('Organista de teste', organist)
         for value in [
             'CONGREGAÇÃO CRISTÃ NO BRASIL', 'Regional Itapevi - São Paulo',
             'Papeleta de atendimento', '07/11/2026 18:30', 'Impresso por:',

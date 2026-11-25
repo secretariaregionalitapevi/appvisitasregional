@@ -93,6 +93,31 @@ class AttendanceTests(SimpleTestCase):
         self.assertTrue(att.in_scope(scope,{'municipio':'ITAPEVI','comum':'CENTRAL'}))
 
     @patch.object(att, 'rows')
+    def test_single_record_query_filters_database_and_checks_scope(self, rows):
+        rows.return_value = [self.payload]
+        req = request_for('/darpe/atendimentos/api/atendimentos/?id=' + self.payload['id'])
+        req.session['user_profile'].update(access_level='municipal', municipio='ITAPEVI')
+        self.assertEqual(json.loads(att.api(req).content)['items'], [self.payload])
+        rows.assert_called_once_with(att.TABLE, {'id': 'eq.' + self.payload['id']})
+        rows.return_value = [{**self.payload, 'municipio': 'JANDIRA'}]
+        self.assertEqual(json.loads(att.api(req).content)['items'], [])
+
+    @patch.object(att, 'rows')
+    def test_day_filter_is_sent_to_database(self, rows):
+        rows.return_value = [self.payload]
+        req = request_for('/darpe/atendimentos/api/atendimentos/?data=' + self.payload['data'])
+        self.assertEqual(len(json.loads(att.api(req).content)['items']), 1)
+        rows.assert_called_once_with(att.TABLE, {'data': 'eq.' + self.payload['data']})
+
+    @patch.object(att, 'localities')
+    def test_login_context_skips_catalog_but_still_requires_module_access(self, localities):
+        req = request_for('/darpe/atendimentos/api/contexto/?resumo=1')
+        self.assertEqual(att.api(req, 'contexto').status_code, 200)
+        localities.assert_not_called()
+        with patch.object(att, 'can_access_module', return_value=False):
+            self.assertEqual(att.api(req, 'contexto').status_code, 403)
+
+    @patch.object(att, 'rows')
     def test_listing_applies_scope(self, rows):
         rows.return_value = [{**self.payload, 'created_at':'2026-01-01T12:00:00Z'},
                              {**self.payload, 'municipio':'JANDIRA'}]
@@ -177,6 +202,20 @@ class AttendanceTests(SimpleTestCase):
         self.assertTrue(post.call_args.args[0].endswith('/rest/v1/darpe_papeletas'))
         self.assertEqual(saved['created_by'], 'user-1')
         self.assertEqual(saved['equipe'][0]['nome'], self.person['nome_completo'])
+
+    @patch.object(att, 'rows')
+    @patch.object(att.requests, 'patch')
+    def test_update_missing_database_permission_returns_actionable_error(self, update, rows):
+        rows.return_value = [self.payload]
+        response = Mock(json=lambda: {'code': '42501'})
+        update.return_value.raise_for_status.side_effect = requests.HTTPError(response=response)
+        req = request_for('/darpe/atendimentos/api/atendimentos/', 'post', self.payload)
+        req.method = 'PATCH'
+        result = att.api(req)
+        self.assertEqual(result.status_code, 503)
+        body = json.loads(result.content)
+        self.assertEqual(body['code'], 'darpe_database_permission_denied')
+        self.assertIn('048', body['error'])
 
     @patch.object(att, 'rows')
     def test_missing_papeleta_schema_returns_actionable_error(self, rows):

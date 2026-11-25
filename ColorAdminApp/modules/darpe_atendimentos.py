@@ -78,6 +78,12 @@ def database_error(exc):
         code = response.json().get('code') if response is not None else None
     except (ValueError, AttributeError):
         code = None
+    if code == '42501':
+        return JsonResponse({
+            'error': 'O servidor está sem permissão para concluir esta operação nas papeletas DARPE. '
+                     'Informe a administração para verificar a migração 048 de permissões de gestão.',
+            'code': 'darpe_database_permission_denied',
+        }, status=503)
     if code in {'PGRST204', 'PGRST205', '42P01', '42703'}:
         return JsonResponse({'error': 'O servidor precisa concluir a atualização das papeletas DARPE antes de registrar atendimentos. Informe a administração.',
                              'code': 'darpe_schema_missing'}, status=503)
@@ -255,7 +261,7 @@ def api(request, action='atendimentos'):
             return JsonResponse({'setores': [{'id': n, 'nome': title} for n, title, _ in SECTORS],
                                  'escopo': {k: scope[k] for k in ('level', 'municipio', 'comum')},
                                  'usuario': {'nome': darpe._actor(request)['name']},
-                                 'localidades': localities(scope)})
+                                 'localidades': [] if request.GET.get('resumo') == '1' else localities(scope)})
         if action == 'pessoas' and request.method == 'GET':
             role = request.GET.get('funcao', '')
             query = darpe._norm(request.GET.get('q', '')).split()
@@ -270,7 +276,19 @@ def api(request, action='atendimentos'):
         if action != 'atendimentos':
             raise ValueError('Operação inválida.')
         if request.method == 'GET':
-            data = filtered(visible_records(request), request.GET)
+            if request.GET.get('id'):
+                record_id = str(UUID(request.GET['id']))
+                scope = user_scope(request)
+                data = [row for row in rows(TABLE, {'id': 'eq.' + record_id})
+                        if in_scope(scope, row)]
+                return JsonResponse({'items': data})
+            if request.GET.get('data'):
+                day = date.fromisoformat(request.GET['data']).isoformat()
+                scope = user_scope(request)
+                data = [row for row in rows(TABLE, {'data': 'eq.' + day}) if in_scope(scope, row)]
+            else:
+                data = visible_records(request)
+            data = filtered(data, request.GET)
             data.sort(key=lambda r: (r['data'], r['hora_inicio']), reverse=True)
             return JsonResponse({'items': data})
         payload = json.loads(request.body)

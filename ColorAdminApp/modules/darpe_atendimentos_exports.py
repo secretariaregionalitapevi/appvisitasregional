@@ -306,7 +306,8 @@ def build_papeleta_pdf(record, actor, now):
         field('Comum do responsável', record['comum']),
         field('Atendente', people_for('atendente')),
         field('Orações', people_for('oracao')),
-        field('Músicos', people_for('musico', 'organista')),
+        field('Músicos', people_for('musico')),
+        field('Organista', people_for('organista')),
         field('Colaboradores', people_for('colaborador')),
         field('Hinos', ', '.join(map(str, record.get('hinos', []))) or '—'),
     ]
